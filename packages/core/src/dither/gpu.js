@@ -16,7 +16,7 @@
 // The mask then holds palette indices (index / 255 in the red channel).
 import {fieldCutoffs} from './fields.js';
 import {STYLE_BY_ID, defaultParams} from './styles.js';
-import {DEFAULT_SETTINGS, blockSize, toneTable, colorLut, paletteColors} from './pipeline.js';
+import {DEFAULT_SETTINGS, blockSize, toneTable, colorLut, paletteColors, inkColors, cmykCutoffs} from './pipeline.js';
 import {MAX_COLORS, fieldOffsets, paletteRGB, paletteSpread} from './palette.js';
 import {SHAPE_CODE, isPlainCells, shapeRadius} from './cells.js';
 
@@ -82,10 +82,30 @@ uniform bool uInvert;
 uniform ivec2 uCells;
 uniform vec3 uPal[${MAX_COLORS}];
 uniform int uCount;
+uniform bool uCmyk;
+uniform float uGcr;
+uniform float uZero; // 0.0, set at run time so the compiler can't fold it away
 out vec4 o;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   ivec2 s = min(uSrcSize - 1, ((2 * c + 1) * uSrcSize) / (2 * uCells));
+  if (uCmyk) {
+    // Same steps as cmykScreen() on the CPU: float32 subtract and multiply only.
+    vec3 v = uUseBlurred ? texelFetch(uBlurred, s, 0).rgb : tonedRGB(s);
+    vec4 cut = texelFetch(uCut, c, 0);
+    // max() with a run-time zero rounds the product on its own, so it can't be fused
+    // into the subtractions below (a fused multiply-add would round once, not twice).
+    float K = max((255.0 - max(max(v.r, v.g), v.b)) * uGcr, uZero);
+    float rest = 255.0 - K;
+    vec3 num = (vec3(255.0) - v) - K;
+    int bits = 0;
+    if (num.r > 0.0 && num.r >= cut.r * rest) bits |= 1;
+    if (num.g > 0.0 && num.g >= cut.g * rest) bits |= 2;
+    if (num.b > 0.0 && num.b >= cut.b * rest) bits |= 4;
+    if (K > 0.0 && K >= cut.a * 255.0) bits |= 8;
+    o = vec4(float(bits) / 255.0, 0.0, 0.0, 1.0);
+    return;
+  }
   float cut = texelFetch(uCut, c, 0).r;
   if (uColor) {
     vec3 v = (uUseBlurred ? texelFetch(uBlurred, s, 0).rgb : tonedRGB(s)) + cut; // cut holds the offset here
@@ -200,10 +220,10 @@ export function createGpuDither(canvas) {
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error(`GPU target ${name} is incomplete`);
     sizes[name] = key;
   };
-  const upload = (name, w, h, data) => {
+  const upload = (name, w, h, data, rgba = false) => {
     scratch(name);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, w, h, 0, gl.RED, gl.FLOAT, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, rgba ? gl.RGBA32F : gl.R32F, w, h, 0, rgba ? gl.RGBA : gl.RED, gl.FLOAT, data);
   };
   const bind = (unit, name) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, T[name]); };
   const draw = (fb, w, h) => {
@@ -231,7 +251,6 @@ export function createGpuDither(canvas) {
     supports(settings, w = sw, h = sh) {
       const style = styleOf(settings);
       if (!style || !style.field) return false;
-      if (settings.mode === 'cmyk') return false; // four screens: the CPU worker does these
       if (w > maxTex || h > maxTex) return false;
       if (Math.round(settings.blur || 0) >= 1 && !floatTargets) return false;
       return true;
@@ -258,9 +277,10 @@ export function createGpuDither(canvas) {
       const params = {...defaultParams(style), ...s.params};
       const {w, h} = blockSize(sw, sh, s.block);
       const threshold = (s.threshold / 100) * 255;
-      const color = s.mode === 'palette';
-      const colors = color ? paletteColors(s) : null;
-      const pal = color ? paletteRGB(colors) : null;
+      const cmyk = s.mode === 'cmyk';
+      const color = s.mode === 'palette' || cmyk; // per-channel planes
+      const colors = cmyk ? inkColors() : color ? paletteColors(s) : null;
+      const pal = color && !cmyk ? paletteRGB(colors) : null;
 
       // Tone LUT: identity when every slider is at zero, as on the CPU. In palette mode
       // it's per channel, with invert folded in.
@@ -270,12 +290,16 @@ export function createGpuDither(canvas) {
         upload('lut', 256, 1, lut);
         lutKey = tone;
       }
-      // Per cell: the field's cutoff (two tones) or its offset (palette).
-      const amount = color ? paletteSpread(pal) * (Math.max(0, s.strength ?? 100) / 100) : 0;
-      const ck = [style.id, JSON.stringify(params), w, h, color ? 'offset' + amount : threshold].join('|');
+      // Per cell: the field's cutoff (two tones), its offset (palette) or four ink
+      // cutoffs (CMYK).
+      const amount = color && !cmyk ? paletteSpread(pal) * (Math.max(0, s.strength ?? 100) / 100) : 0;
+      const ck = [style.id, JSON.stringify(params), w, h, cmyk ? 'cmyk' + s.threshold : color ? 'offset' + amount : threshold].join('|');
       if (ck !== cutKey) {
-        const field = style.field(w, h, params);
-        upload('cut', w, h, color ? fieldOffsets(field, w, h, amount) : fieldCutoffs(field, w, h, threshold));
+        if (cmyk) upload('cut', w, h, cmykCutoffs(style, params, w, h, s.threshold), true);
+        else {
+          const field = style.field(w, h, params);
+          upload('cut', w, h, color ? fieldOffsets(field, w, h, amount) : fieldCutoffs(field, w, h, threshold));
+        }
         cutKey = ck;
       }
 
@@ -317,7 +341,12 @@ export function createGpuDither(canvas) {
       gl.uniform1i(P.cell.u('uUseBlurred'), r >= 1 ? 1 : 0);
       gl.uniform1i(P.cell.u('uInvert'), s.invert ? 1 : 0);
       gl.uniform2i(P.cell.u('uCells'), w, h);
-      if (color) {
+      gl.uniform1i(P.cell.u('uCmyk'), cmyk ? 1 : 0);
+      if (cmyk) {
+        gl.uniform1f(P.cell.u('uGcr'), Math.fround(Math.min(1, Math.max(0, (s.black ?? 100) / 100))));
+        gl.uniform1f(P.cell.u('uZero'), 0);
+      }
+      else if (color) {
         gl.uniform3fv(P.cell.u('uPal'), pal);
         gl.uniform1i(P.cell.u('uCount'), colors.length);
       }

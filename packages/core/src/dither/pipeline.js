@@ -13,7 +13,7 @@
 // see ditherCMYK().
 import {STYLE_BY_ID, defaultParams} from './styles.js';
 import {KERNELS} from './diffusion.js';
-import {FIELDS, applyField, equalize} from './fields.js';
+import {FIELDS, equalize} from './fields.js';
 import {MAX_COLORS, paletteRGB, paletteField, paletteDiffuse, paletteScanlines} from './palette.js';
 
 export const DEFAULT_SETTINGS = {
@@ -230,8 +230,56 @@ export function inkColors(paper = '#ffffff') {
 }
 
 /**
+ * Per-cell ink cutoffs for a screen style in CMYK, interleaved [c, m, y, k] per cell
+ * as float32: an ink prints where its amount reaches the cutoff. Each ink's screen
+ * is turned (angle), reseeded (noise) or nudged, then evened out over the frame so
+ * the printed coverage matches the ink amount. 50% threshold = true coverage.
+ */
+export function cmykCutoffs(style, params, sw, sh, threshold) {
+  const n = sw * sh, out = new Float32Array(n * 4), scale = threshold / 50;
+  INKS.forEach((spec, i) => {
+    const p = {...params};
+    let shift = null;
+    if ('angle' in p) p.angle = (p.angle ?? 0) + spec.angle;
+    else if ('seed' in p) p.seed = (p.seed ?? 1) + 101 * i;
+    else shift = INK_SHIFT[i];
+    const f = FIELDS[style.id](sw, sh, p);
+    const moved = shift ? (x, y) => f((x + shift[0]) % sw, (y + shift[1]) % sh) : f;
+    const field = EVEN_FIELDS.has(style.id) ? moved : equalize(moved, sw, sh, 128);
+    // Ink shows where 255·(1 − amount) ≤ field·scale, i.e. amount ≥ 1 − field·scale/255.
+    for (let y = 0, q = 0; y < sh; y++) for (let x = 0; x < sw; x++, q++) out[q * 4 + i] = 1 - (field(x, y) * scale) / 255;
+  });
+  return out;
+}
+
+/**
+ * Screen the inks: R, G, B planes (0..255) against cmykCutoffs. Every step is a
+ * float32 add, subtract or multiply, with no division, so a GPU shader doing the
+ * same steps gets the same bits. Bits: 1 cyan, 2 magenta, 4 yellow, 8 black.
+ */
+export function cmykScreen(R, G, B, cuts, black) {
+  const f = Math.fround, gcr = f(Math.min(1, Math.max(0, black / 100))), n = R.length, out = new Uint8Array(n);
+  for (let p = 0; p < n; p++) {
+    const r = R[p], g = G[p], b = B[p];
+    // Black takes `gcr` of the gray the three share; the colors split what's left.
+    const K = f(f(255 - Math.max(r, g, b)) * gcr), rest = f(255 - K);
+    const nc = f(f(255 - r) - K), nm = f(f(255 - g) - K), ny = f(f(255 - b) - K);
+    const q = p * 4;
+    let bits = 0;
+    // amount = num / den ≥ cut  ⇔  num ≥ cut · den (den > 0); nothing asked, nothing printed.
+    if (nc > 0 && nc >= f(cuts[q] * rest)) bits |= 1;
+    if (nm > 0 && nm >= f(cuts[q + 1] * rest)) bits |= 2;
+    if (ny > 0 && ny >= f(cuts[q + 2] * rest)) bits |= 4;
+    if (K > 0 && K >= f(cuts[q + 3] * 255)) bits |= 8;
+    out[p] = bits;
+  }
+  return out;
+}
+
+/**
  * CMYK pipeline from RGBA: per-channel tone → blur → shrink → split into inks →
- * dither each ink with the style (its screen turned or nudged per ink).
+ * dither each ink with the style. Screen styles go through cmykScreen (the GPU
+ * path matches it); diffusion styles diffuse each ink as a gray image.
  * Returns {indices, colors, w, h} like ditherColor; colors are the 16 overprints.
  */
 export function ditherCMYK(rgba, w, h, settings) {
@@ -240,7 +288,12 @@ export function ditherCMYK(rgba, w, h, settings) {
   if (!style) throw new Error(`Unknown style "${s.style}"`);
   const params = {...defaultParams(style), ...s.params};
   const {planes: [R, G, B], small} = colorPlanes(rgba, w, h, s);
-  const n = R.length, gcr = Math.min(1, Math.max(0, (s.black ?? 100) / 100));
+  const sw = small.w, sh = small.h, n = R.length;
+  if (style.field) {
+    const indices = cmykScreen(R, G, B, cmykCutoffs(style, params, sw, sh, s.threshold), s.black ?? 100);
+    return {indices, colors: inkColors(), w: sw, h: sh};
+  }
+  const gcr = Math.min(1, Math.max(0, (s.black ?? 100) / 100));
   // Ink amounts 0..1 per cell; black takes `gcr` of the gray all three share.
   const ink = INKS.map(() => new Float32Array(n));
   for (let i = 0; i < n; i++) {
@@ -251,32 +304,13 @@ export function ditherCMYK(rgba, w, h, settings) {
     ink[1][i] = rest > 0 ? Math.max(0, (1 - g - k) / rest) : 0;
     ink[2][i] = rest > 0 ? Math.max(0, (1 - b - k) / rest) : 0;
   }
-  // Diffusion: the usual threshold (50% = mid-gray). Screens: 50% compares each ink
-  // with the full field, so the printed coverage matches the ink amount; higher
-  // prints more ink, lower less.
-  const t = (s.threshold / 100) * 255, tField = (s.threshold / 50) * 255, sw = small.w, sh = small.h;
-  const indices = new Uint8Array(n);
+  const t = (s.threshold / 100) * 255, indices = new Uint8Array(n);
   INKS.forEach((spec, i) => {
     // The style sees each ink as a gray image: paper is white, full ink is black.
-    const buf = new Float32Array(n);
-    for (let p = 0; p < n; p++) buf[p] = 255 * (1 - ink[i][p]);
-    if (style.field) {
-      const p = {...params};
-      let shift = null;
-      if ('angle' in p) p.angle = (p.angle ?? 0) + spec.angle;
-      else if ('seed' in p) p.seed = (p.seed ?? 1) + 101 * i;
-      else shift = INK_SHIFT[i];
-      const f = FIELDS[style.id](sw, sh, p);
-      const moved = shift ? (x, y) => f((x + shift[0]) % sw, (y + shift[1]) % sh) : f;
-      // Evened out over the frame, so each ink prints the coverage it asks for
-      // (matrix and noise screens are even already).
-      const field = EVEN_FIELDS.has(style.id) ? moved : equalize(moved, sw, sh, 128);
-      applyField(buf, sw, sh, field, tField);
-    } else {
-      style.run(buf, sw, sh, params, t);
-    }
-    const bit = 1 << i, amount = ink[i];
-    // No ink asked for, none printed (a screen's brightest spot would otherwise tie).
+    const buf = new Float32Array(n), amount = ink[i];
+    for (let p = 0; p < n; p++) buf[p] = 255 * (1 - amount[p]);
+    style.run(buf, sw, sh, params, t);
+    const bit = 1 << i;
     for (let p = 0; p < n; p++) if (buf[p] < 128 && amount[p] > 0) indices[p] |= bit;
   });
   return {indices, colors: inkColors(), w: sw, h: sh};

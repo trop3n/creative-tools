@@ -240,7 +240,7 @@ export function Inspector() {
           <SliderRow label="Threshold" value={st.threshold} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('threshold', v)} />
         )}
         <Switch label="Invert" size="sm" value={!!st.invert} onChange={v => setSetting('invert', v)} />
-        {gpuAvailable() && style.family === 'Pattern' && st.mode !== 'cmyk' ? (
+        {gpuAvailable() && style.family === 'Pattern' ? (
           <Switch label="Render patterns on the GPU" size="sm" value={look.gpu !== false} onChange={v => setLook('gpu', v)} />
         ) : null}
       </InspectorSection>
@@ -340,7 +340,7 @@ function CmykControls() {
       </InspectorRow>
       <SliderRow label="Black" value={st.black ?? 100} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('black', v)} />
       <Text type="supporting">
-        Each ink is dithered on its own with the style and overprinted on white. Pattern screens turn to 15°, 75°, 0° and 45°. Black sets how much of the shared gray prints as black ink. CMYK runs on the CPU.
+        Each ink is dithered on its own with the style and overprinted on white. Pattern screens turn to 15°, 75°, 0° and 45°. Black sets how much of the shared gray prints as black ink.
       </Text>
     </>
   );
