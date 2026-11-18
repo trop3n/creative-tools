@@ -1,7 +1,7 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug, frameCanvasFor, drawVideoFrame} from '@studio/core';
-import {paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
+import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -76,10 +76,36 @@ export function paletteColors({pick = true} = {}) {
 
 /** Settings as the engines take them: current style params, palette colors resolved. */
 const jobSettings = () => {
+  applyKeys();
   const st = {...S.settings, params: currentParams()};
   if (st.mode === 'palette') st.colors = paletteColors();
   return st;
 };
+
+/* ---------- keyframes ---------- */
+let keyTime = null; // the video time keyframes were last applied at
+
+/**
+ * On a video with keyframes, set the sliders to their values at the current time.
+ * Only when the time has moved: hand edits while paused stay until you scrub or
+ * play, so you can tweak a frame and then set a keyframe there.
+ */
+function applyKeys() {
+  const keys = S.media.keys;
+  if (!keys || !keys.length || S.media.kind !== 'video' || !src || !isVideo(src.el)) return;
+  const t = src.el.currentTime;
+  if (t === keyTime) return;
+  keyTime = t;
+  const at = valuesAt(keys, t, {ease: S.media.ease !== false});
+  if (!STYLE_BY_ID[at.style]) return;
+  Object.assign(S.settings, at.values);
+  S.settings.style = at.style;
+  S.paramsByStyle[at.style] = {...(S.paramsByStyle[at.style] || {}), ...at.params};
+}
+/** Apply the keyframes again on the next render (after they change). */
+export const reapplyKeys = () => { keyTime = null; };
+/** The current values are what the keyframes say at `t` (a keyframe was just set there). */
+export const keysApplied = t => { keyTime = t; };
 
 export const isBusy = () => jobs.size > 0;
 /** Resolves once the worker has nothing in flight. */

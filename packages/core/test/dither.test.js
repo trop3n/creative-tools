@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, OSTROMUKHOV_TABLE, OSTROMUKHOV_WEIGHTS, blueNoiseMatrix, ditherCMYK, inkColors, INKS, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, makeKey, putKey, keyAt, valuesAt, OSTROMUKHOV_TABLE, OSTROMUKHOV_WEIGHTS, blueNoiseMatrix, ditherCMYK, inkColors, INKS, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -416,4 +416,35 @@ test('Ostromukhov keeps flat tones and spreads light dots apart', () => {
     if (!mask[y * w + x + 1] || !mask[(y + 1) * w + x]) touching++;
   }
   assert.ok(dots > 1000 && touching / dots < 0.02, `${touching} of ${dots} dots touch`);
+});
+
+test('keyframes: hold at the ends, blend between, and step styles at the key', () => {
+  const base = {style: 'dots', block: 4, threshold: 40, brightness: 0, blur: 0, mode: 'mono'};
+  let keys = [];
+  keys = putKey(keys, makeKey(2, {...base, block: 12, threshold: 80, blur: 3}, {cell: 20, angle: 90}));
+  keys = putKey(keys, makeKey(0, base, {cell: 4, angle: 0}));
+  assert.deepEqual(keys.map(k => k.t), [0, 2]);
+  assert.deepEqual(valuesAt(keys, -1).values, valuesAt(keys, 0).values);
+  assert.equal(valuesAt(keys, 9).values.block, 12);
+  const mid = valuesAt(keys, 1, {ease: false});
+  assert.equal(mid.values.block, 8);
+  assert.equal(mid.values.threshold, 60);
+  assert.equal(mid.values.blur, 2); // 1.5 rounds to a whole pixel
+  assert.equal(mid.params.cell, 12);
+  assert.equal(mid.params.angle, 45);
+  // Easing is slow at the ends and matches linear at the middle.
+  assert.equal(valuesAt(keys, 1).values.threshold, 60);
+  assert.ok(valuesAt(keys, 0.2).values.threshold < valuesAt(keys, 0.2, {ease: false}).values.threshold);
+  // Replacing a keyframe at the same time keeps one.
+  keys = putKey(keys, makeKey(2 + 1 / 120, {...base, threshold: 10}, {cell: 4, angle: 0}));
+  assert.equal(keys.length, 2);
+  assert.equal(keyAt(keys, 2).values.threshold, 10);
+  // A style change steps at its keyframe; params don't blend across styles.
+  keys = putKey(keys, makeKey(4, {...base, style: 'bayer'}, {size: 8}));
+  const before = valuesAt(keys, 3.9);
+  assert.equal(before.style, 'dots');
+  assert.equal(before.params.cell, 4);
+  assert.equal(valuesAt(keys, 4).style, 'bayer');
+  assert.equal(valuesAt(keys, 4).params.size, 8);
+  assert.equal(valuesAt([], 1), null);
 });

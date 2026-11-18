@@ -6,7 +6,8 @@ import {
   cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
-import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase, paletteColors} from './render.js';
+import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule} from './render.js';
+import {makeKey, putKey, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
 
 const M = () => S.media;
 /** Internal handles; S.media mirrors what the UI shows. */
@@ -128,7 +129,7 @@ async function loadVideo(file) {
   stopLive();
   const v = src.video;
   Object.assign(live, {vid: v, file, dispose: src.dispose});
-  Object.assign(M(), {kind: 'video', label: file.name, w: v.videoWidth, h: v.videoHeight});
+  Object.assign(M(), {kind: 'video', label: file.name, w: v.videoWidth, h: v.videoHeight, keys: []});
   startLoop(v);
   v.play().then(() => syncVideoUI(true)).catch(() => {
     // Autoplay with sound can be refused; fall back to muted.
@@ -154,6 +155,39 @@ export function seekFraction(f) {
   v.currentTime = f * v.duration;
   syncVideoUI(true);
 }
+/** Pause and jump to a time in seconds. */
+export function seekTo(t) {
+  const v = live.vid;
+  if (!v || M().exporting) return;
+  v.pause();
+  v.currentTime = Math.max(0, Math.min(t, v.duration || t));
+  syncVideoUI(true);
+}
+
+/* ---------- keyframes ---------- */
+/** Keyframe the current settings at the current time (replacing one already there). */
+export function setKeyframe() {
+  const v = live.vid;
+  if (!v || M().exporting) return;
+  const t = v.currentTime, style = STYLE_BY_ID[S.settings.style];
+  const params = {...defaultParams(style), ...(S.paramsByStyle[style.id] || {})};
+  M().keys = putKey(M().keys, makeKey(t, S.settings, params));
+  keysApplied(t);
+  emit();
+}
+export function removeKeyframe(t) {
+  M().keys = M().keys.filter(k => k.t !== t);
+  reapplyKeys(); schedule(); emit();
+}
+export function clearKeyframes() {
+  M().keys = [];
+  emit();
+}
+export function setEase(on) {
+  M().ease = on;
+  reapplyKeys(); schedule(); emit();
+}
+
 export function setSound(on) {
   M().sound = on;
   if (live.vid && M().kind === 'video') { live.vid.muted = !on; live.vid.volume = M().volume; }

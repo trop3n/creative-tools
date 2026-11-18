@@ -7,4 +7,5 @@ export * from './pipeline.js';
 export * from './palette.js';
 export * from './cells.js';
 export * from './svg.js';
+export * from './keyframes.js';
 export * from './gpu.js';

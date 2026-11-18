@@ -24,6 +24,7 @@ export const S = {
   media: {
     kind: 'sample', label: '', w: 0, h: 0,
     playing: false, time: 0, duration: 0, sound: false, volume: 0.8, // video
+    keys: [], ease: true, // video keyframes (see keyframes.js)
     exporting: false, progress: '', // MP4 render
     cams: [], camId: '', recording: false, recTime: 0, // webcam
   },

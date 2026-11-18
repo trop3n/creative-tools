@@ -13,7 +13,7 @@ import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Slider} from '@astryxdesign/core/Slider';
 import {IconButton} from '@astryxdesign/core/IconButton';
-import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
+import {Camera, CameraOff, Circle, Clapperboard, Crosshair, Diamond, Download, Trash2, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
@@ -23,7 +23,7 @@ import {
 } from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
-  setMirrorImage, toggleRecord,
+  setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase,
 } from '../engine/media.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
@@ -212,6 +212,7 @@ export function Inspector() {
       </InspectorSection>
 
       {s.media.kind === 'video' ? <VideoSection /> : null}
+      {s.media.kind === 'video' ? <KeyframesSection /> : null}
       {s.media.kind === 'camera' ? <WebcamSection /> : null}
 
       <InspectorSection title={style.name}>
@@ -436,6 +437,51 @@ function VideoSection() {
       <Text type="supporting" hasTabularNumbers>
         {m.progress ||
           'Renders every frame offline at full quality. Pixel blocks are scaled up by whole numbers toward 1920 px, so they stay sharp.'}
+      </Text>
+    </InspectorSection>
+  );
+}
+
+/** Keyframe the settings over the video's time; they ease between keyframes as it plays and renders. */
+function KeyframesSection() {
+  const {media: m} = useStore();
+  const here = m.keys.find((k: any) => Math.abs(k.t - m.time) <= 1 / 60);
+  return (
+    <InspectorSection title="Keyframes">
+      <HStack gap={1} wrap="wrap">
+        <Button
+          label={here ? `Update keyframe at ${clock(m.time)}` : `Set keyframe at ${clock(m.time)}`}
+          size="sm"
+          variant="primary"
+          icon={<Icon icon={Diamond} size={ICON} />}
+          isDisabled={m.exporting}
+          onClick={setKeyframe}
+        />
+        {m.keys.length ? <Button label="Clear all" size="sm" variant="ghost" isDisabled={m.exporting} onClick={clearKeyframes} /> : null}
+      </HStack>
+      {m.keys.length ? (
+        <List density="compact">
+          {m.keys.map((k: any) => (
+            <ListItem
+              key={k.t}
+              label={clock(k.t)}
+              description={`${STYLE_BY_ID[k.style]?.name ?? k.style} · ${k.values.block} px`}
+              isSelected={k === here}
+              endContent={
+                <HStack gap={0}>
+                  <IconButton label={`Go to ${clock(k.t)}`} tooltip="Go to this keyframe" size="sm" variant="ghost" icon={<Icon icon={Crosshair} size={ICON} />} isDisabled={m.exporting} onClick={() => seekTo(k.t)} />
+                  <IconButton label={`Remove keyframe at ${clock(k.t)}`} tooltip="Remove" size="sm" variant="ghost" icon={<Icon icon={Trash2} size={ICON} />} isDisabled={m.exporting} onClick={() => removeKeyframe(k.t)} />
+                </HStack>
+              }
+            />
+          ))}
+        </List>
+      ) : null}
+      <Switch label="Ease in and out" size="sm" value={m.ease !== false} onChange={setEase} />
+      <Text type="supporting">
+        {m.keys.length < 2
+          ? 'Pause, set the sliders, and set a keyframe. Do it again at another time, and pixel size, threshold, tone, blur and the style’s own sliders glide between them as the video plays and renders.'
+          : 'Changes you make while paused stay on screen until you set or update a keyframe; playing or scrubbing goes back to the keyframes. A style change takes effect at its keyframe.'}
       </Text>
     </InspectorSection>
   );
