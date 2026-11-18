@@ -1,0 +1,27 @@
+{
+  "name": "@studio/theme",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The suite's Astryx theme (navy accent in light mode, gold in dark; Montserrat + JetBrains Mono).",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./theme.css": "./themes/studio/studio.css"
+  },
+  "peerDependencies": {
+    "@astryxdesign/core": "0.7.16"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "0.7.16",
+    "@astryxdesign/core": "0.7.16",
+    "@astryxdesign/theme-neutral": "0.7.16",
+    "@stylexjs/stylex": "^0.19.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/montserrat": "^5.3.0"
+  },
+  "main": "./index.js"
+}

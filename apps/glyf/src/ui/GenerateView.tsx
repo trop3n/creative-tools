@@ -1,0 +1,345 @@
+import {useEffect, useRef} from 'react';
+import * as stylex from '@stylexjs/stylex';
+import {Button} from '@astryxdesign/core/Button';
+import {Center} from '@astryxdesign/core/Center';
+import {Grid} from '@astryxdesign/core/Grid';
+import {Icon} from '@astryxdesign/core/Icon';
+import {IconButton} from '@astryxdesign/core/IconButton';
+import {HStack, StackItem, VStack} from '@astryxdesign/core/Layout';
+import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
+import {SelectableCard} from '@astryxdesign/core/SelectableCard';
+import {Selector} from '@astryxdesign/core/Selector';
+import {Slider} from '@astryxdesign/core/Slider';
+import {Switch} from '@astryxdesign/core/Switch';
+import {Text} from '@astryxdesign/core/Text';
+import {Toolbar} from '@astryxdesign/core/Toolbar';
+import {Camera, CameraOff, Circle, Clapperboard, ClipboardCopy, Download, ImageUp, Pause, Play, Square, Volume2, VolumeX} from 'lucide-react';
+import {S, A, useStore, byId} from '../engine/store.js';
+import {setGen, setOutCanvas, exportPNG, exportSVG, copySVG} from '../engine/generator.js';
+import {
+  useSample, loadMediaFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, setMirror, stopCamera, toggleRecord,
+} from '../engine/media.js';
+import {GlyphArt, ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
+import {pickFiles} from '@studio/core';
+
+const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344', '#ffffff'];
+const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#4c3046', '#c99530'];
+const tfmt = (s: number) => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); return m + ':' + (s % 60).toFixed(1).padStart(4, '0'); };
+const fixed = (d: number) => (v: number) => v.toFixed(d);
+
+const styles = stylex.create({
+  // The canvas keeps its pixel size and scales down to fit the stage on both axes.
+  output: {
+    display: 'block',
+    maxWidth: '100%',
+    maxHeight: '100%',
+    width: 'auto',
+    height: 'auto',
+    minWidth: 0,
+    minHeight: 0,
+    borderRadius: 'var(--radius-container)',
+    boxShadow: 'var(--shadow-med)',
+  },
+  frame: {position: 'relative', overflow: 'hidden', minHeight: 0},
+  hidden: {display: 'none'},
+});
+
+/* ================= rail ================= */
+export function GenerateRail() {
+  const s = useStore();
+  return (
+    <VStack gap={4}>
+      <VStack gap={2}>
+        <Text type="label" weight="semibold">
+          Ramp, light to dark
+        </Text>
+        {s.ramp.length ? (
+          <Grid columns={{minWidth: 30}} gap={1}>
+            {s.ramp.map(r => {
+              const g = byId(r.id);
+              return g ? (
+                <VStack key={r.id} gap={0.5} hAlign="center">
+                  <GlyphArt shape={g} place={'ramp-' + r.id} small />
+                  <Text type="supporting" size="3xs" hasTabularNumbers>
+                    {Math.round(r.cov * 100)}
+                  </Text>
+                </VStack>
+              ) : null;
+            })}
+          </Grid>
+        ) : (
+          <Text type="supporting">No glyphs in the set.</Text>
+        )}
+        <Text type="supporting">Glyphs sort by measured ink coverage. Each cell gets the glyph closest to its tone.</Text>
+      </VStack>
+      <VStack gap={2}>
+        <HStack gap={1} vAlign="center">
+          <StackItem size="fill">
+            <Text type="label" weight="semibold">
+              Glyph set
+            </Text>
+          </StackItem>
+          <Button label="All" size="sm" variant="ghost" onClick={() => A.allInSet(true)} />
+          <Button label="None" size="sm" variant="ghost" onClick={() => A.allInSet(false)} />
+        </HStack>
+        <Grid columns={{minWidth: 64}} gap={2}>
+          {s.lib.shapes.map(g => (
+            <SelectableCard key={g.id} label={g.name} padding={1} isSelected={!!g.inSet} onChange={v => A.setInSet(g.id, v)}>
+              <VStack gap={0.5}>
+                <GlyphArt shape={g} place={'set-' + g.id} />
+                <Text type="supporting" maxLines={1}>
+                  {g.name}
+                </Text>
+                <Text type="supporting" size="3xs" hasTabularNumbers>
+                  {g.inSet && s.cov[g.id] != null ? `${Math.round(s.cov[g.id] * 100)}% ink` : ' '}
+                </Text>
+              </VStack>
+            </SelectableCard>
+          ))}
+        </Grid>
+      </VStack>
+    </VStack>
+  );
+}
+
+/* ================= stage ================= */
+export function GenerateStage() {
+  const s = useStore();
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => { setOutCanvas(ref.current); return () => setOutCanvas(null); }, []);
+  const empty = !s.ramp.length;
+  return (
+    <VStack gap={2} height="100%">
+      <StackItem size="fill">
+        <Center width="100%" height="100%" xstyle={styles.frame}>
+          {empty ? <Text type="supporting">Add at least one glyph with some ink to the set.</Text> : null}
+          <canvas ref={ref} width={10} height={10} aria-label="Generated image" {...stylex.props(styles.output, empty && styles.hidden)} />
+        </Center>
+      </StackItem>
+      <HStack gap={3} hAlign="between">
+        <Text type="supporting" hasTabularNumbers>
+          {s.stats}
+        </Text>
+        <Text type="supporting" maxLines={1}>
+          {s.media.label}
+        </Text>
+      </HStack>
+    </VStack>
+  );
+}
+
+export function GenerateToolbar() {
+  const {media} = useStore();
+  return (
+    <Toolbar
+      label="Output"
+      size="sm"
+      startContent={
+        <>
+          {media.kind === 'video' ? (
+            <>
+              <IconButton
+                label={media.playing ? 'Pause' : 'Play'}
+                tooltip={media.playing ? 'Pause' : 'Play'}
+                size="sm"
+                variant="ghost"
+                isDisabled={media.exporting}
+                icon={<Icon icon={media.playing ? Pause : Play} size={ICON} />}
+                onClick={playPause}
+              />
+              <IconButton
+                label={media.sound ? 'Turn sound off' : 'Turn sound on'}
+                tooltip={media.sound ? 'Sound on' : 'Sound off'}
+                size="sm"
+                variant="ghost"
+                icon={<Icon icon={media.sound ? Volume2 : VolumeX} size={ICON} />}
+                onClick={() => setSound(!media.sound)}
+              />
+              <Text type="supporting" hasTabularNumbers>
+                {tfmt(media.time)} / {tfmt(media.duration)}
+              </Text>
+            </>
+          ) : null}
+          {media.kind === 'camera' ? (
+            <Button
+              label={media.recording ? `Stop ${tfmt(media.recTime)}` : 'Record'}
+              size="sm"
+              variant={media.recording ? 'destructive' : 'secondary'}
+              icon={<Icon icon={media.recording ? Square : Circle} size={ICON} />}
+              onClick={toggleRecord}
+            />
+          ) : null}
+          <Button label="PNG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
+          <Button label="SVG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
+        </>
+      }
+    />
+  );
+}
+
+/* ================= inspector ================= */
+export function GenerateInspector() {
+  const s = useStore();
+  const g = s.gen, m = s.media, size = g.mode === 'size';
+  return (
+    <>
+      <InspectorSection title="Source">
+        <SegmentedControl
+          label="Sample image"
+          size="sm"
+          layout="fill"
+          value={m.kind === 'sample' ? g.sample || '' : ''}
+          onChange={useSample}>
+          <SegmentedControlItem value="sphere" label="Spheres" />
+          <SegmentedControlItem value="rings" label="Rings" />
+          <SegmentedControlItem value="ramp" label="Ramp" />
+        </SegmentedControl>
+        <HStack gap={1} wrap="wrap">
+          <Button
+            label="Image or video…"
+            size="sm"
+            variant="primary"
+            icon={<Icon icon={ImageUp} size={ICON} />}
+            onClick={async () => { const [f] = await pickFiles('image/*,video/*'); loadMediaFile(f); }}
+          />
+          {m.kind === 'camera' ? (
+            <Button label="Stop camera" size="sm" icon={<Icon icon={CameraOff} size={ICON} />} onClick={stopCamera} />
+          ) : (
+            <Button label="Webcam" size="sm" icon={<Icon icon={Camera} size={ICON} />} onClick={() => startWebcam()} />
+          )}
+        </HStack>
+        <Text type="supporting">You can also drop an image or video on the canvas, or paste an image.</Text>
+      </InspectorSection>
+
+      {m.kind === 'video' ? (
+        <InspectorSection title="Video">
+          <Slider
+            label="Position"
+            isLabelHidden
+            min={0}
+            max={1000}
+            value={m.duration ? Math.round((m.time / m.duration) * 1000) : 0}
+            onChange={(v: number) => seekFraction(v / 1000)}
+            valueDisplay="none"
+            isDisabled={m.exporting}
+          />
+          <SliderRow label="Volume" value={m.volume} min={0} max={1} step={0.01} format={v => Math.round(v * 100) + '%'} onChange={setVolume} />
+          <InspectorRow label="Frame rate">
+            <SegmentedControl label="Frame rate" size="sm" layout="fill" value={g.fps} onChange={v => setGen('fps', v)}>
+              {['24', '25', '30', '60'].map(f => (
+                <SegmentedControlItem key={f} value={f} label={f} />
+              ))}
+            </SegmentedControl>
+          </InspectorRow>
+          <Switch label="Include the source audio" size="sm" value={!!g.audio} onChange={v => setGen('audio', v)} />
+          <Button
+            label={m.exporting ? 'Cancel render' : 'Render video .mp4'}
+            size="sm"
+            variant={m.exporting ? 'destructive' : 'primary'}
+            icon={<Icon icon={Clapperboard} size={ICON} />}
+            onClick={renderVideo}
+          />
+          <Text type="supporting" hasTabularNumbers>
+            {m.progress || 'Renders every frame offline at full quality, up to 1920 px on the long side. Audio is re-encoded as AAC.'}
+          </Text>
+        </InspectorSection>
+      ) : null}
+
+      {m.kind === 'camera' ? (
+        <InspectorSection title="Webcam">
+          {m.cams.length > 1 ? (
+            <Selector label="Camera" size="sm" options={m.cams} value={m.camId} onChange={v => startWebcam(v)} />
+          ) : null}
+          <Switch label="Mirror image" size="sm" value={m.mirror} onChange={setMirror} />
+          <Text type="supporting">Record captures the output live, as you see it, with no sound. Columns are locked while recording.</Text>
+        </InspectorSection>
+      ) : null}
+
+      <InspectorSection title="Grid and tone">
+        <SliderRow label="Columns" value={g.cols} min={8} max={200} onChange={v => setGen('cols', v)} isDisabled={m.recording} />
+        <SliderRow label="Brightness" value={g.bright} min={-0.5} max={0.5} step={0.01} format={v => (v > 0 ? '+' : '') + v.toFixed(2)} onChange={v => setGen('bright', v)} />
+        <SliderRow label="Contrast" value={g.contrast} min={0.2} max={3} step={0.01} format={fixed(2)} onChange={v => setGen('contrast', v)} />
+        <SliderRow label="Gamma" value={g.gamma} min={0.3} max={3} step={0.01} format={fixed(2)} onChange={v => setGen('gamma', v)} />
+        <Switch label="Invert tones" size="sm" value={!!g.invert} onChange={v => setGen('invert', v)} />
+      </InspectorSection>
+
+      <InspectorSection title="Mapping">
+        <SegmentedControl label="Mapping mode" size="sm" layout="fill" value={g.mode} onChange={v => setGen('mode', v)}>
+          <SegmentedControlItem value="density" label="By density" />
+          <SegmentedControlItem value="size" label="By size" />
+        </SegmentedControl>
+        <InspectorRow label="Dither">
+          <Selector
+            label="Dither"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            isDisabled={size}
+            disabledMessage="Size mapping does not dither"
+            value={g.dither}
+            options={[
+              {value: 'none', label: 'None'},
+              {value: 'fs', label: 'Floyd–Steinberg'},
+              {value: 'atk', label: 'Atkinson'},
+              {value: 'bayer', label: 'Bayer 4×4'},
+            ]}
+            onChange={v => setGen('dither', v)}
+          />
+        </InspectorRow>
+        <InspectorRow label="Steps">
+          <SegmentedControl label="Tone steps" size="sm" layout="fill" isDisabled={size} value={g.steps} onChange={v => setGen('steps', v)}>
+            <SegmentedControlItem value="measured" label="Measured" />
+            <SegmentedControlItem value="even" label="Even" />
+          </SegmentedControl>
+        </InspectorRow>
+        <Switch label="Empty cell as lightest step" size="sm" isDisabled={size} value={!!g.blank} onChange={v => setGen('blank', v)} />
+        <Text type="supporting">
+          {size
+            ? 'Each cell draws a glyph from the set, scaled by tone. One glyph in the set gives a classic halftone.'
+            : 'Dithering spreads the in-between tones across neighboring cells.'}
+        </Text>
+      </InspectorSection>
+
+      <InspectorSection title="Marks">
+        <InspectorRow label="Rotation">
+          <SegmentedControl label="Rotation" size="sm" layout="fill" value={g.rot} onChange={v => setGen('rot', v)}>
+            <SegmentedControlItem value="none" label="Upright" />
+            <SegmentedControlItem value="random" label="Random" />
+            <SegmentedControlItem value="checker" label="Checker" />
+          </SegmentedControl>
+        </InspectorRow>
+        <SliderRow label="Gap" value={g.gap} min={0} max={0.45} step={0.01} format={v => Math.round(v * 100) + '%'} onChange={v => setGen('gap', v)} />
+        <SliderRow label="Seed" value={g.seed} min={1} max={999} onChange={v => setGen('seed', v)} />
+      </InspectorSection>
+
+      <InspectorSection title="Color">
+        <SegmentedControl label="Color mode" size="sm" layout="fill" value={g.color} onChange={v => setGen('color', v)}>
+          <SegmentedControlItem value="mono" label="One ink" />
+          <SegmentedControlItem value="source" label="From source" />
+        </SegmentedControl>
+        <InspectorRow label="Ink">
+          {INKS.map(c => (
+            <PresetChip key={c} label="Ink" color={c} isOn={g.ink === c} onPick={() => setGen('ink', c)} />
+          ))}
+          <Swatch label="Custom ink" value={g.ink} onChange={v => setGen('ink', v)} />
+        </InspectorRow>
+        <InspectorRow label="Paper">
+          {PAPERS.map(c => (
+            <PresetChip key={c} label="Paper" color={c} isOn={g.paper === c} onPick={() => setGen('paper', c)} />
+          ))}
+          <Swatch label="Custom paper" value={g.paper} onChange={v => setGen('paper', v)} />
+        </InspectorRow>
+        <Switch label="Transparent paper on export" size="sm" value={!!g.transparent} onChange={v => setGen('transparent', v)} />
+      </InspectorSection>
+
+      <InspectorSection title="Export">
+        <HStack gap={1} wrap="wrap">
+          <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
+          <Button label="Save SVG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
+          <Button label="Copy SVG" size="sm" icon={<Icon icon={ClipboardCopy} size={ICON} />} onClick={copySVG} />
+        </HStack>
+        <Text type="supporting">The SVG keeps every mark as a vector copy of its glyph symbol.</Text>
+      </InspectorSection>
+    </>
+  );
+}

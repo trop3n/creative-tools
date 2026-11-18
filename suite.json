@@ -1,0 +1,24 @@
+{
+  "name": "Creative Tools",
+  "tagline": "Browser tools for shapes, type and motion. Self-hosted, with everything running in your browser.",
+  "tools": [
+    {
+      "id": "glyf",
+      "name": "GLYF",
+      "app": "apps/glyf",
+      "path": "glyf/",
+      "category": "Generators",
+      "description": "Draw geometric glyphs on a snap grid, then use them as the characters of a dithered image, video or webcam feed. Exports PNG, SVG and MP4.",
+      "preview": "glyf.svg"
+    },
+    {
+      "id": "durandal",
+      "name": "DURANDAL",
+      "app": "apps/durandal",
+      "path": "durandal/",
+      "category": "Image effects",
+      "description": "Turn any image into 1-bit pixel art with error-diffusion and pattern dithering, in your own ink and paper colors. Exports PNG.",
+      "preview": "durandal.svg"
+    }
+  ]
+}

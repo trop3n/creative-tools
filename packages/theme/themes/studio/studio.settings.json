@@ -1,0 +1,31 @@
+{
+  "name": "studio",
+  "like": "neutral",
+  "mode": "both",
+  "settings": [
+    {
+      "thing": "--color-accent",
+      "value": "#00304e",
+      "source": "token",
+      "mode": "light"
+    },
+    {
+      "thing": "--color-accent",
+      "value": "#c99530",
+      "source": "token",
+      "mode": "dark"
+    },
+    {
+      "thing": "font",
+      "value": "jetbrains-mono",
+      "source": "dial",
+      "on": "code"
+    },
+    {
+      "thing": "font",
+      "value": "montserrat",
+      "source": "dial"
+    }
+  ],
+  "lifted": []
+}

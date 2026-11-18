@@ -1,0 +1,23 @@
+{
+  "name": "creative-tools",
+  "private": true,
+  "description": "A self-hosted suite of browser creative tools. Each tool is its own app; they share a core library and one Astryx theme.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/check-node.cjs && npm run dev -w @studio/glyf",
+    "dev:glyf": "node scripts/check-node.cjs && npm run dev -w @studio/glyf",
+    "dev:launcher": "node scripts/check-node.cjs && npm run dev -w @studio/launcher",
+    "build": "node scripts/check-node.cjs && node scripts/build-suite.mjs",
+    "build:glyf": "node scripts/check-node.cjs && npm run build -w @studio/glyf",
+    "serve": "node scripts/serve.mjs",
+    "dev:durandal": "node scripts/check-node.cjs && npm run dev -w @studio/durandal",
+    "build:durandal": "node scripts/check-node.cjs && npm run build -w @studio/durandal",
+    "test": "node scripts/check-node.cjs && npm test -w @studio/core"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

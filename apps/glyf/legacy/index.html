@@ -1,0 +1,1248 @@
+<title>GLYF Shape Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: workbench. Library rail | stage | inspector, stacking to one column on phones. */
+:root{
+  --bg:#e6e9eb; --panel:#f4f5f6; --raise:#ffffff; --well:#d9dee1; --line:#cbd2d7;
+  --fg:#242222; --muted:#505a61; --accent:#00304e; --accent-fg:#ffffff; --hl:#c99530;
+  --board:#ffffff; --ink:#242222; --grid:rgba(0,48,78,.10); --grid-strong:rgba(0,48,78,.28);
+  --f-ui:"Montserrat","Gotham","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1317; --panel:#131b21; --raise:#1a242b; --well:#0a0f12; --line:#25313a;
+    --fg:#e9e7e2; --muted:#95a0a8; --accent:#c99530; --accent-fg:#141414; --hl:#90a344;
+    --board:#1c262d; --ink:#f1efe9; --grid:rgba(201,149,48,.09); --grid-strong:rgba(201,149,48,.26);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1317; --panel:#131b21; --raise:#1a242b; --well:#0a0f12; --line:#25313a;
+  --fg:#e9e7e2; --muted:#95a0a8; --accent:#c99530; --accent-fg:#141414; --hl:#90a344;
+  --board:#1c262d; --ink:#f1efe9; --grid:rgba(201,149,48,.09); --grid-strong:rgba(201,149,48,.26);
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:13px;line-height:1.4}
+*{box-sizing:border-box}
+button,input,select{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{display:flex;flex-direction:column;height:100%;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding-block:12px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.32em;font-size:15px}
+.brand svg{width:22px;height:22px;color:var(--accent)}
+.brand small{font-weight:500;letter-spacing:.14em;font-size:10px;color:var(--muted);text-transform:uppercase}
+.tabs{display:flex;gap:4px}
+.tabs button{background:none;border:0;padding:6px 10px;font-weight:500;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--fg);border-bottom-color:var(--accent)}
+.hint{margin-left:auto;color:var(--muted);font-size:11.5px}
+
+.view{flex:1;min-height:0;display:grid;grid-template-columns:236px minmax(0,1fr) 276px;gap:12px;padding-block:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:auto;min-height:0;min-width:0}
+.sec{padding:12px 14px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.sec:last-child{border-bottom:0}
+.sec h3{margin:0;font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
+.sec h3 .sp{flex:1}
+.sec h3 button{font-size:10px;letter-spacing:.08em}
+.note{color:var(--muted);font-size:11.5px;margin:0}
+.row{display:grid;grid-template-columns:78px minmax(0,1fr) 46px;align-items:center;gap:8px}
+.row label{font-size:12px}
+.row output{font-family:var(--f-mono);font-size:11px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+input[type=checkbox]{accent-color:var(--accent);margin:0}
+.check{display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer}
+input[type=text]{width:100%;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+input[type=color]{width:30px;height:26px;padding:0;border:1px solid var(--line);border-radius:4px;background:var(--raise);cursor:pointer}
+
+.seg{display:flex;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--raise)}
+.seg button{flex:1 1 auto;padding:6px 6px;background:none;border:0;border-right:1px solid var(--line);font-size:11px;cursor:pointer;white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:var(--accent-fg)}
+.dim{opacity:.4;pointer-events:none}
+
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.btn{background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:6px 10px;font-size:11.5px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:500}
+.btn.warn{border-color:#b04a3a;color:#b04a3a}
+.btn:disabled{opacity:.4;cursor:default}
+
+.tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.tools button{display:flex;align-items:center;gap:7px;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font-size:11.5px;cursor:pointer;text-align:left}
+.tools button svg{width:14px;height:14px;flex:none}
+.tools button kbd{margin-left:auto;font-family:var(--f-mono);font-size:10px;color:var(--muted)}
+.tools button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:8px}
+.tile{position:relative;display:flex;flex-direction:column;gap:4px;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:6px;cursor:pointer;color:var(--ink);text-align:left;min-width:0}
+.tile svg{width:100%;aspect-ratio:1;display:block}
+.tile .nm{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .cov{font-family:var(--f-mono);font-size:9.5px;color:var(--muted)}
+.tile.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.tile .dot{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--hl)}
+.tile.off{opacity:.35}
+.tile.off:hover{opacity:.7}
+
+.ramp{display:flex;gap:3px;overflow-x:auto;padding-bottom:2px}
+.ramp div{flex:0 0 26px;display:grid;gap:2px;justify-items:center;color:var(--ink)}
+.ramp svg{width:26px;height:26px;background:var(--raise);border-radius:2px}
+.ramp span{font-family:var(--f-mono);font-size:8.5px;color:var(--muted)}
+
+.stage{position:relative;background:var(--well);border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;padding:16px;min-height:0;min-width:0;overflow:hidden}
+#ed{width:100%;height:100%;display:block;touch-action:none;user-select:none}
+#edArt{color:var(--ink)}
+.board{fill:var(--board)}
+.gl{stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
+.gl.s{stroke:var(--grid-strong)}
+.ov{fill:transparent;color:transparent;stroke:var(--accent);stroke-opacity:.3;stroke-width:1}
+.ov *{vector-effect:non-scaling-stroke}
+.ov.cut{stroke-dasharray:4 3}
+.ov.sel{stroke-opacity:1;stroke-width:2}
+#ed:not(.t-select) .ov{pointer-events:none}
+#ed.t-select .ov *{pointer-events:all;cursor:move}
+#ed:not(.t-select){cursor:crosshair}
+.hd{fill:var(--raise);stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:nwse-resize}
+.pv{fill:var(--accent);fill-opacity:.18;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.pv.cut{fill-opacity:0;stroke-dasharray:4 3}
+.pv *{vector-effect:non-scaling-stroke}
+.stagebar{position:absolute;left:12px;right:12px;bottom:8px;display:flex;gap:12px;justify-content:space-between;font-family:var(--f-mono);font-size:10.5px;color:var(--muted);pointer-events:none}
+#out{max-width:100%;max-height:calc(100% - 18px);display:block;box-shadow:0 1px 0 var(--line),0 10px 30px rgba(0,0,0,.18)}
+.empty{color:var(--muted);text-align:center;max-width:32ch}
+.drop{outline:2px dashed var(--accent);outline-offset:-8px}
+
+#toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:5px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+
+@media (max-width:900px){
+  .app{height:auto;min-height:100%}
+  .view{grid-template-columns:minmax(0,1fr)}
+  .panel{overflow:visible}
+  .stage{order:-1;min-height:auto}
+  #view-shapes .stage{aspect-ratio:1}
+  #view-gen .stage{min-height:320px;padding-bottom:30px}
+  #out{max-height:none}
+  .hint{display:none}
+}
+</style>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 2h10A10 10 0 0 1 2 12Z"/><rect fill="currentColor" x="13" y="13" width="9" height="9"/><circle fill="currentColor" cx="17.5" cy="6.5" r="4.5"/><path fill="currentColor" d="M2 22V13L11 22Z"/></svg>
+      GLYF <small>shape studio</small>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <button data-view="shapes">Shapes</button>
+      <button data-view="gen">Generate</button>
+    </nav>
+    <span class="hint" id="hint"></span>
+  </header>
+
+  <!-- ============ SHAPES ============ -->
+  <main class="view" id="view-shapes" hidden>
+    <aside class="panel">
+      <div class="sec">
+        <h3>Library <span class="sp"></span><span id="libCount" style="font-family:var(--f-mono);letter-spacing:0"></span></h3>
+        <div class="btns">
+          <button class="btn primary" data-act="newG">New</button>
+          <button class="btn" data-act="dupG">Duplicate</button>
+          <button class="btn" data-act="importSvg">Import SVG</button>
+        </div>
+        <p class="note">Gold dot = in the generator set. Drop or paste SVG files here to add them.</p>
+      </div>
+      <div class="sec"><div class="lib" id="libGrid"></div></div>
+      <div class="sec">
+        <h3>Library file</h3>
+        <div class="btns">
+          <button class="btn" data-act="exportLib">Export .json</button>
+          <button class="btn" data-act="importLib">Import .json</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="stage" id="edStage">
+      <svg id="ed" viewBox="-4 -4 108 108" class="t-select">
+        <rect class="board" x="0" y="0" width="100" height="100"/>
+        <g id="edGrid"></g>
+        <g id="edArt"></g>
+        <g id="edOverlay"></g>
+        <g id="edHandles"></g>
+        <g id="edPreview" class="pv"></g>
+      </svg>
+      <div class="stagebar"><span id="edInfo"></span><span id="edPos"></span></div>
+    </section>
+
+    <aside class="panel">
+      <div class="sec">
+        <h3>Tools</h3>
+        <div class="tools" id="tools">
+          <button data-tool="select"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M3 2l9 6-4 1 2.5 4.5-1.6.9L6.4 10 3 13z"/></svg>Select<kbd>V</kbd></button>
+          <button data-tool="rect"><svg viewBox="0 0 16 16"><rect fill="currentColor" x="2.5" y="2.5" width="11" height="11"/></svg>Rect<kbd>R</kbd></button>
+          <button data-tool="ellipse"><svg viewBox="0 0 16 16"><circle fill="currentColor" cx="8" cy="8" r="5.8"/></svg>Ellipse<kbd>E</kbd></button>
+          <button data-tool="quarter"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M2.5 2.5H13.5A11 11 0 0 1 2.5 13.5Z"/></svg>Quarter<kbd>Q</kbd></button>
+          <button data-tool="tri"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M2.5 2.5V13.5H13.5Z"/></svg>Triangle<kbd>T</kbd></button>
+          <button data-tool="poly"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.8l6 4.4-2.3 7.2H4.3L2 6.2z"/></svg>Polygon<kbd>P</kbd></button>
+        </div>
+        <div class="row" style="grid-template-columns:78px minmax(0,1fr)"><label>Paint</label>
+          <div class="seg" id="paintSeg"><button data-v="add">Add</button><button data-v="cut">Cut <span style="opacity:.6">X</span></button></div></div>
+        <div class="row" style="grid-template-columns:78px minmax(0,1fr)"><label>Snap</label>
+          <div class="seg" id="snapSeg"><button data-v="0">Off</button><button data-v="5">5</button><button data-v="10">10</button><button data-v="12.5">⅛</button><button data-v="25">¼</button></div></div>
+        <p class="note" id="toolNote"></p>
+      </div>
+      <div class="sec" id="selSec">
+        <h3>Selected part</h3>
+        <p class="note" id="selNone">Nothing selected. Pick the Select tool and click a part.</p>
+        <div id="selBody" class="sec" style="padding:0;border:0">
+          <div class="row" id="rxRow"><label for="elRx">Corner</label><input type="range" id="elRx" min="0" max="50" step="0.5"><output id="elRxOut"></output></div>
+          <div class="btns">
+            <button class="btn" data-act="toggleCut" id="toggleCutBtn">Make cut</button>
+            <button class="btn" data-act="dupEl">Duplicate</button>
+            <button class="btn" data-act="raise">Raise</button>
+            <button class="btn" data-act="lower">Lower</button>
+            <button class="btn" data-act="elRot">Rotate 90°</button>
+            <button class="btn" data-act="elFlipH">Flip ↔</button>
+            <button class="btn" data-act="elFlipV">Flip ↕</button>
+            <button class="btn warn" data-act="delEl">Delete</button>
+          </div>
+        </div>
+      </div>
+      <div class="sec">
+        <h3>Glyph</h3>
+        <input type="text" id="gName" aria-label="Glyph name" spellcheck="false">
+        <label class="check"><input type="checkbox" id="gSet"> Use in generator set</label>
+        <div class="btns">
+          <button class="btn" data-act="rot">Rotate 90°</button>
+          <button class="btn" data-act="flipH">Flip ↔</button>
+          <button class="btn" data-act="flipV">Flip ↕</button>
+          <button class="btn" data-act="undo">Undo</button>
+          <button class="btn" data-act="clear">Clear</button>
+        </div>
+        <div class="btns">
+          <button class="btn" data-act="exportGlyph">Export glyph .svg</button>
+          <button class="btn warn" data-act="delG" id="delGBtn">Delete glyph</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ============ GENERATE ============ -->
+  <main class="view" id="view-gen" hidden>
+    <aside class="panel">
+      <div class="sec">
+        <h3>Ramp, light → dark</h3>
+        <div class="ramp" id="ramp"></div>
+        <p class="note">Glyphs sort by measured ink coverage. Each cell gets the glyph closest to its tone.</p>
+      </div>
+      <div class="sec">
+        <h3>Glyph set <span class="sp"></span><button class="btn" data-gact="all">All</button><button class="btn" data-gact="none">None</button></h3>
+        <div class="lib" id="setGrid"></div>
+        <p class="note">Click to add or remove. Edit glyphs in Shapes.</p>
+      </div>
+    </aside>
+
+    <section class="stage" id="genStage">
+      <canvas id="out" width="10" height="10"></canvas>
+      <div class="empty" id="genEmpty" hidden>Add at least one glyph with some ink to the set.</div>
+      <div class="stagebar"><span id="genInfo"></span><span id="srcInfo"></span></div>
+    </section>
+
+    <aside class="panel">
+      <div class="sec">
+        <h3>Source</h3>
+        <div class="seg" id="sampleSeg"><button data-v="sphere">Spheres</button><button data-v="rings">Rings</button><button data-v="ramp">Ramp</button></div>
+        <div class="btns">
+          <button class="btn primary" data-gact="loadImg">Load image or video…</button>
+          <button class="btn" data-gact="webcam" id="camBtn">Use webcam</button>
+        </div>
+        <div id="camCtl" class="sec" style="padding:0;border:0" hidden>
+          <select id="camSel" aria-label="Camera" style="width:100%;background:var(--raise);border:1px solid var(--line);border-radius:4px;padding:6px 8px"></select>
+          <label class="check"><input type="checkbox" id="camMirror" checked> Mirror image</label>
+          <div class="btns">
+            <button class="btn primary" data-gact="record" id="recBtn">Record</button>
+            <button class="btn" data-gact="stopCam">Stop camera</button>
+          </div>
+          <p class="note" id="camNote">Record captures the output canvas live, as you see it. Column changes are locked while recording.</p>
+        </div>
+        <p class="note">Or drop an image or video onto the canvas, or paste an image.</p>
+        <div id="vidCtl" class="sec" style="padding:0;border:0" hidden>
+          <div class="btns" style="align-items:center"><button class="btn" data-gact="playPause" id="playBtn">Pause</button><button class="btn" data-gact="sound" id="soundBtn" aria-pressed="false">Sound off</button><span id="vidTime" class="note" style="font-family:var(--f-mono);font-variant-numeric:tabular-nums"></span></div>
+          <input type="range" id="vidScrub" min="0" max="1000" step="1" value="0" aria-label="Video position">
+          <div class="row"><label for="vidVol">Volume</label><input type="range" id="vidVol" min="0" max="1" step="0.01" value="0.8"><output id="vidVolOut">80%</output></div>
+          <div class="row" style="grid-template-columns:78px minmax(0,1fr)"><label>Frame rate</label><div class="seg" data-seg="fps"><button data-v="24">24</button><button data-v="25">25</button><button data-v="30">30</button><button data-v="60">60</button></div></div>
+          <label class="check"><input type="checkbox" id="g-audio" data-k="audio"> Include the source audio</label>
+          <button class="btn primary" data-gact="renderVideo" id="renderBtn">Render video .mp4</button>
+          <p class="note" id="vidProg">Renders every frame offline at full quality, up to 1920 px on the long side. Audio is re-encoded as AAC.</p>
+        </div>
+      </div>
+      <div class="sec">
+        <h3>Grid &amp; tone</h3>
+        <div class="row"><label for="g-cols">Columns</label><input type="range" id="g-cols" data-k="cols" min="8" max="200" step="1"><output data-out="cols"></output></div>
+        <div class="row"><label for="g-bright">Brightness</label><input type="range" id="g-bright" data-k="bright" min="-0.5" max="0.5" step="0.01"><output data-out="bright"></output></div>
+        <div class="row"><label for="g-contrast">Contrast</label><input type="range" id="g-contrast" data-k="contrast" min="0.2" max="3" step="0.01"><output data-out="contrast"></output></div>
+        <div class="row"><label for="g-gamma">Gamma</label><input type="range" id="g-gamma" data-k="gamma" min="0.3" max="3" step="0.01"><output data-out="gamma"></output></div>
+        <label class="check"><input type="checkbox" id="g-invert" data-k="invert"> Invert tones</label>
+      </div>
+      <div class="sec">
+        <h3>Mapping</h3>
+        <div class="seg" data-seg="mode"><button data-v="density">By density</button><button data-v="size">By size</button></div>
+        <div class="seg" data-seg="dither" id="ditherSeg"><button data-v="none">None</button><button data-v="fs">Floyd–S.</button><button data-v="atk">Atkinson</button><button data-v="bayer">Bayer</button></div>
+        <div class="seg" data-seg="steps" id="stepsSeg"><button data-v="measured">Measured ink</button><button data-v="even">Even steps</button></div>
+        <label class="check" id="blankRow"><input type="checkbox" id="g-blank" data-k="blank"> Empty cell as lightest step</label>
+        <p class="note" id="mapNote"></p>
+      </div>
+      <div class="sec">
+        <h3>Marks</h3>
+        <div class="seg" data-seg="rot"><button data-v="none">Upright</button><button data-v="random">Random 90°</button><button data-v="checker">Checker</button></div>
+        <div class="row"><label for="g-gap">Gap</label><input type="range" id="g-gap" data-k="gap" min="0" max="0.45" step="0.01"><output data-out="gap"></output></div>
+        <div class="row"><label for="g-seed">Seed</label><input type="range" id="g-seed" data-k="seed" min="1" max="999" step="1"><output data-out="seed"></output></div>
+      </div>
+      <div class="sec">
+        <h3>Color</h3>
+        <div class="seg" data-seg="color"><button data-v="mono">One ink</button><button data-v="source">From source</button></div>
+        <div class="row" style="grid-template-columns:78px minmax(0,1fr) 30px"><label>Ink</label><div class="btns" id="inkSw"></div><input type="color" id="g-ink" data-k="ink" aria-label="Ink color"></div>
+        <div class="row" style="grid-template-columns:78px minmax(0,1fr) 30px"><label>Paper</label><div class="btns" id="paperSw"></div><input type="color" id="g-paper" data-k="paper" aria-label="Paper color"></div>
+        <label class="check"><input type="checkbox" id="g-transparent" data-k="transparent"> Transparent paper on export</label>
+      </div>
+      <div class="sec">
+        <h3>Export</h3>
+        <div class="btns">
+          <button class="btn primary" data-gact="png">Save PNG</button>
+          <button class="btn primary" data-gact="svg">Save SVG</button>
+          <button class="btn" data-gact="copySvg">Copy SVG</button>
+        </div>
+        <p class="note">SVG export keeps every mark as a vector &lt;use&gt; of its glyph symbol.</p>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<input type="file" id="fSvg" accept=".svg,image/svg+xml" multiple hidden>
+<input type="file" id="fImg" accept="image/*,video/*" hidden>
+<input type="file" id="fLib" accept=".json,application/json" hidden>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.1/build/mp4-muxer.js"></script>
+<script>
+'use strict';
+/* ================= utilities ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const uid = () => Math.random().toString(36).slice(2, 10);
+const clone = o => JSON.parse(JSON.stringify(o));
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const n2 = v => Math.round(v * 100) / 100;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+function store(key, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } }
+
+async function saveFile(filename, data, mime) {
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename, data }); toast('Saved ' + filename); }
+    catch (e) { toast(e && e.code === 'declined' ? 'Save canceled' : 'Could not save here. Try Copy SVG instead.'); }
+    return;
+  }
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Saved ' + filename);
+}
+
+/* ================= shape model =================
+   A glyph is a list of parts on a 100×100 board. Parts paint in order;
+   a "cut" part erases everything painted before it. */
+const R = (x, y, w, h, rx) => Object.assign({ t: 'rect', x, y, w, h }, rx ? { rx } : {});
+const E = (cx, cy, rx, ry = rx) => ({ t: 'ellipse', cx, cy, rx, ry });
+const Q = (x, y, w, h, c) => ({ t: 'quarter', x, y, w, h, c });
+const T = (x, y, w, h, c) => ({ t: 'tri', x, y, w, h, c });
+const P = pts => ({ t: 'poly', pts });
+const cut = e => (e.cut = true, e);
+const BOX = { rect: 1, quarter: 1, tri: 1 };
+
+const SEEDS = [
+  ['Line', [R(43.75, 0, 12.5, 100)], 1],
+  ['Dot', [E(50, 50, 18.75)], 1],
+  ['Spandrel', [R(0, 0, 100, 100), cut(Q(0, 0, 100, 100, 2))], 1],
+  ['Plus', [R(37.5, 0, 25, 100), R(0, 37.5, 100, 25)], 1],
+  ['Crescent', [E(50, 50, 50), cut(E(75, 50, 50))], 1],
+  ['Ring', [E(50, 50, 50), cut(E(50, 50, 31.25))], 1],
+  ['Checker', [R(0, 0, 50, 50), R(50, 50, 50, 50)], 1],
+  ['Quarter', [Q(0, 0, 100, 100, 0)], 1],
+  ['Disc', [E(50, 50, 50)], 1],
+  ['Block', [R(0, 0, 100, 100)], 1],
+  ['Wedge', [T(0, 0, 100, 100, 3)], 0],
+  ['Half', [E(50, 50, 50), cut(R(0, 0, 100, 50))], 0],
+  ['Diamond', [P([[50, 0], [100, 50], [50, 100], [0, 50]])], 0],
+  ['Frame', [R(0, 0, 100, 100), cut(R(25, 25, 50, 50))], 0],
+  ['Bowtie', [P([[0, 0], [50, 50], [0, 100]]), P([[100, 0], [50, 50], [100, 100]])], 0],
+  ['Arch', [R(0, 50, 100, 50), E(50, 50, 50), cut(R(25, 50, 50, 50)), cut(E(50, 50, 25))], 0],
+  ['Pill', [R(0, 31.25, 100, 37.5, 18.75)], 0],
+  ['Four dots', [E(25, 25, 15), E(75, 25, 15), E(25, 75, 15), E(75, 75, 15)], 0],
+  ['Steps', [P([[0, 100], [0, 75], [25, 75], [25, 50], [50, 50], [50, 25], [75, 25], [75, 0], [100, 0], [100, 100]])], 0],
+];
+const seedLib = () => ({ v: 1, shapes: SEEDS.map(([name, els, s]) => ({ id: uid(), name, els: clone(els), inSet: !!s })) });
+
+const corners = e => [[e.x, e.y], [e.x + e.w, e.y], [e.x + e.w, e.y + e.h], [e.x, e.y + e.h]];
+const pt = p => n2(p[0]) + ' ' + n2(p[1]);
+function elMarkup(e) {
+  switch (e.t) {
+    case 'rect': return `<rect x="${n2(e.x)}" y="${n2(e.y)}" width="${n2(e.w)}" height="${n2(e.h)}"${e.rx ? ` rx="${n2(Math.min(e.rx, e.w / 2, e.h / 2))}"` : ''}/>`;
+    case 'ellipse': return `<ellipse cx="${n2(e.cx)}" cy="${n2(e.cy)}" rx="${n2(e.rx)}" ry="${n2(e.ry)}"/>`;
+    case 'quarter': {
+      const C = corners(e), Pc = C[e.c], A = C[e.c ^ 1], B = C[3 - e.c], sw = (e.c === 0 || e.c === 2) ? 1 : 0;
+      return `<path d="M${pt(Pc)} L${pt(A)} A${n2(e.w)} ${n2(e.h)} 0 0 ${sw} ${pt(B)}Z"/>`;
+    }
+    case 'tri': { const C = corners(e); return `<polygon points="${pt(C[e.c])} ${pt(C[e.c ^ 1])} ${pt(C[3 - e.c])}"/>`; }
+    case 'poly': return `<polygon points="${e.pts.map(pt).join(' ')}"/>`;
+    case 'raw': return `<g transform="${e.tf || ''}">${e.m}</g>`;
+  }
+  return '';
+}
+let maskSeq = 0;
+function shapeInner(shape) {
+  let acc = '';
+  for (const e of shape.els) {
+    if (e.cut) {
+      const id = 'gm' + (++maskSeq);
+      acc = `<mask id="${id}" maskUnits="userSpaceOnUse" x="-60" y="-60" width="220" height="220"><rect x="-60" y="-60" width="220" height="220" fill="#fff"/><g fill="#000" color="#000">${elMarkup(e)}</g></mask><g mask="url(#${id})">${acc}</g>`;
+    } else acc += elMarkup(e);
+  }
+  return `<g fill="currentColor">${acc}</g>`;
+}
+const glyphSVG = (shape, size, color = '#000') =>
+  `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="${size}" height="${size}" color="${color}">${shapeInner(shape)}</svg>`;
+
+function getBox(e) {
+  if (BOX[e.t]) return { x: e.x, y: e.y, w: e.w, h: e.h };
+  if (e.t === 'ellipse') return { x: e.cx - e.rx, y: e.cy - e.ry, w: e.rx * 2, h: e.ry * 2 };
+  if (e.t === 'poly') { const xs = e.pts.map(p => p[0]), ys = e.pts.map(p => p[1]); const x = Math.min(...xs), y = Math.min(...ys); return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }; }
+  return { x: 0, y: 0, w: 100, h: 100 };
+}
+function setBox(e, b) {
+  if (BOX[e.t]) Object.assign(e, { x: b.x, y: b.y, w: b.w, h: b.h });
+  else if (e.t === 'ellipse') Object.assign(e, { cx: b.x + b.w / 2, cy: b.y + b.h / 2, rx: b.w / 2, ry: b.h / 2 });
+}
+function moveEl(o, dx, dy) {
+  const e = clone(o);
+  if (BOX[e.t]) { e.x += dx; e.y += dy; }
+  else if (e.t === 'ellipse') { e.cx += dx; e.cy += dy; }
+  else if (e.t === 'poly') e.pts = e.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (e.t === 'raw') e.tf = `translate(${n2(dx)} ${n2(dy)}) ` + (e.tf || '');
+  return e;
+}
+// rotate 90° clockwise / flip about the board centre (50,50)
+function xfEl(e, k) {
+  if (BOX[e.t]) {
+    const { x, y, w, h } = e;
+    if (k === 'rot') { e.x = 100 - (y + h); e.y = x; e.w = h; e.h = w; if (e.c != null) e.c = (e.c + 1) % 4; }
+    if (k === 'fh') { e.x = 100 - x - w; if (e.c != null) e.c ^= 1; }
+    if (k === 'fv') { e.y = 100 - y - h; if (e.c != null) e.c = 3 - e.c; }
+  } else if (e.t === 'ellipse') {
+    if (k === 'rot') { const cx = e.cx; e.cx = 100 - e.cy; e.cy = cx; [e.rx, e.ry] = [e.ry, e.rx]; }
+    if (k === 'fh') e.cx = 100 - e.cx;
+    if (k === 'fv') e.cy = 100 - e.cy;
+  } else if (e.t === 'poly') {
+    e.pts = e.pts.map(([x, y]) => k === 'rot' ? [100 - y, x] : k === 'fh' ? [100 - x, y] : [x, 100 - y]);
+  } else if (e.t === 'raw') {
+    e.tf = { rot: 'rotate(90 50 50)', fh: 'matrix(-1 0 0 1 100 0)', fv: 'matrix(1 0 0 -1 0 100)' }[k] + ' ' + (e.tf || '');
+  }
+  return e;
+}
+// same, but about the part's own centre
+function xfLocal(o, k) {
+  const b = getBox(o), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  return moveEl(xfEl(moveEl(o, 50 - cx, 50 - cy), k), cx - 50, cy - 50);
+}
+
+/* ================= library ================= */
+let lib = store('glyf.lib.v1');
+if (!lib || !Array.isArray(lib.shapes) || !lib.shapes.length) lib = seedLib();
+let saveT;
+function saveLib() { clearTimeout(saveT); saveT = setTimeout(() => store('glyf.lib.v1', lib), 250); }
+const byId = id => lib.shapes.find(s => s.id === id);
+const covById = new Map();
+
+function tileHTML(s, mode) {
+  const cls = mode === 'gen' ? (s.inSet ? '' : ' off') : (s.id === ed.id ? ' active' : '');
+  const cov = mode === 'gen' && covById.has(s.id) ? `<span class="cov">${Math.round(covById.get(s.id) * 100)}% ink</span>` : '';
+  return `<button class="tile${cls}" data-id="${s.id}" title="${esc(s.name)}"><svg viewBox="0 0 100 100">${shapeInner(s)}</svg><span class="nm">${esc(s.name)}</span>${cov}${mode !== 'gen' && s.inSet ? '<i class="dot"></i>' : ''}</button>`;
+}
+function renderLibrary() {
+  $('#libGrid').innerHTML = lib.shapes.map(s => tileHTML(s, 'lib')).join('');
+  $('#setGrid').innerHTML = lib.shapes.map(s => tileHTML(s, 'gen')).join('');
+  $('#libCount').textContent = lib.shapes.length;
+}
+function updateThumb(s) {
+  const t = $(`#libGrid [data-id="${s.id}"] svg`); if (t) t.innerHTML = shapeInner(s);
+}
+
+/* ================= editor ================= */
+const ed = { id: lib.shapes[15] ? lib.shapes[15].id : lib.shapes[0].id, tool: 'select', cut: false, sel: -1, snap: 12.5, drag: null, poly: null, hover: null, hist: [] };
+const edSvg = $('#ed');
+const cur = () => byId(ed.id);
+const snapV = v => ed.snap ? Math.round(v / ed.snap) * ed.snap : Math.round(v * 10) / 10;
+function svgPt(ev) { const p = edSvg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; return p.matrixTransform(edSvg.getScreenCTM().inverse()); }
+function pushHist() { const s = cur(); if (!s) return; ed.hist.push({ id: s.id, els: clone(s.els) }); if (ed.hist.length > 150) ed.hist.shift(); }
+function undo() {
+  const h = ed.hist.pop(); if (!h) return toast('Nothing to undo');
+  const s = byId(h.id); if (!s) return undo();
+  s.els = h.els; ed.id = s.id; ed.sel = -1; changed();
+}
+function changed() { renderEditor(); renderLibrary(); saveLib(); genDirty(); }
+
+const TOOL_NOTES = {
+  select: 'Drag a part to move it, drag a corner square to resize. Arrows nudge, [ ] reorder, Delete removes.',
+  rect: 'Drag to draw. Hold Shift for a square.', ellipse: 'Drag to draw. Hold Shift for a circle.',
+  quarter: 'Drag away from the corner the arc pivots on. Shift for a true quarter circle.',
+  tri: 'Drag away from the right-angle corner. Shift keeps it square.',
+  poly: 'Click to place points. Click the first point, double-click, or press Enter to close. Esc cancels.'
+};
+function renderGrid() {
+  const step = ed.snap || 10; let g = '';
+  for (let v = step; v < 100 - 1e-6; v += step) {
+    const s = Math.abs(v - 50) < 1e-6 ? ' s' : '';
+    g += `<line class="gl${s}" x1="${v}" y1="0" x2="${v}" y2="100"/><line class="gl${s}" x1="0" y1="${v}" x2="100" y2="${v}"/>`;
+  }
+  $('#edGrid').innerHTML = g;
+}
+function renderEditor() {
+  const s = cur();
+  edSvg.setAttribute('class', 't-' + ed.tool);
+  $('#edArt').innerHTML = s ? shapeInner(s) : '';
+  $('#edOverlay').innerHTML = s ? s.els.map((e, i) => `<g data-idx="${i}" class="ov${e.cut ? ' cut' : ''}${i === ed.sel ? ' sel' : ''}">${elMarkup(e)}</g>`).join('') : '';
+  renderHandles();
+  // inspector
+  $$('#tools button').forEach(b => b.classList.toggle('on', b.dataset.tool === ed.tool));
+  $$('#paintSeg button').forEach(b => b.classList.toggle('on', (b.dataset.v === 'cut') === ed.cut));
+  $$('#snapSeg button').forEach(b => b.classList.toggle('on', +b.dataset.v === ed.snap));
+  $('#toolNote').textContent = TOOL_NOTES[ed.tool];
+  const e = s && s.els[ed.sel];
+  $('#selNone').hidden = !!e; $('#selBody').hidden = !e;
+  if (e) {
+    $('#rxRow').hidden = e.t !== 'rect';
+    if (e.t === 'rect') { $('#elRx').value = e.rx || 0; $('#elRxOut').textContent = n2(e.rx || 0); }
+    $('#toggleCutBtn').textContent = e.cut ? 'Make add' : 'Make cut';
+  }
+  if (s && document.activeElement !== $('#gName')) $('#gName').value = s.name;
+  if (s) $('#gSet').checked = !!s.inSet;
+  $('#edInfo').textContent = s ? `${s.name} · ${s.els.length} part${s.els.length === 1 ? '' : 's'}` : '';
+}
+function renderHandles() {
+  const s = cur(), e = s && s.els[ed.sel]; let h = '';
+  if (e && ed.tool === 'select') {
+    if (e.t === 'poly') e.pts.forEach((p, i) => { h += `<rect class="hd" data-h="p${i}" x="${p[0] - 1.6}" y="${p[1] - 1.6}" width="3.2" height="3.2"/>`; });
+    else if (e.t !== 'raw') corners(getBox(e)).forEach((p, i) => { h += `<rect class="hd" data-h="c${i}" x="${p[0] - 1.6}" y="${p[1] - 1.6}" width="3.2" height="3.2"/>`; });
+  }
+  $('#edHandles').innerHTML = h;
+}
+function renderLight() { // during drags: no library rebuild
+  const s = cur();
+  $('#edArt').innerHTML = shapeInner(s);
+  const ov = $(`#edOverlay [data-idx="${ed.sel}"]`); if (ov) ov.innerHTML = elMarkup(s.els[ed.sel]);
+  renderHandles(); updateThumb(s);
+}
+function boxFrom(a, b, square) {
+  let dx = b.x - a.x, dy = b.y - a.y;
+  if (square) { const m = Math.max(Math.abs(dx), Math.abs(dy)); dx = Math.sign(dx || 1) * m; dy = Math.sign(dy || 1) * m; }
+  const c = dx >= 0 ? (dy >= 0 ? 0 : 3) : (dy >= 0 ? 1 : 2);
+  return { x: Math.min(a.x, a.x + dx), y: Math.min(a.y, a.y + dy), w: Math.abs(dx), h: Math.abs(dy), c };
+}
+function makeEl(tool, b) {
+  let e;
+  if (tool === 'rect') e = R(b.x, b.y, b.w, b.h);
+  else if (tool === 'ellipse') e = E(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2);
+  else if (tool === 'quarter') e = Q(b.x, b.y, b.w, b.h, b.c);
+  else e = T(b.x, b.y, b.w, b.h, b.c);
+  if (ed.cut) e.cut = true;
+  return e;
+}
+function drawPreview(curPt) {
+  const pv = $('#edPreview'); pv.setAttribute('class', 'pv' + (ed.cut ? ' cut' : ''));
+  if (ed.drag && ed.drag.kind === 'draw') {
+    const b = boxFrom(ed.drag.start, ed.drag.cur, ed.drag.square);
+    pv.innerHTML = b.w && b.h ? elMarkup(makeEl(ed.tool, b)) : '';
+  } else if (ed.poly) {
+    const pts = ed.poly.concat(curPt ? [[curPt.x, curPt.y]] : []);
+    pv.innerHTML = `<polyline fill-opacity="0.18" points="${pts.map(pt).join(' ')}"/>` + ed.poly.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="${i ? 0.9 : 1.6}"/>`).join('');
+  } else pv.innerHTML = '';
+}
+function commitPoly() {
+  if (!ed.poly) return;
+  const pts = ed.poly.filter((p, i, a) => !i || p[0] !== a[i - 1][0] || p[1] !== a[i - 1][1]);
+  if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
+  ed.poly = null; drawPreview();
+  if (pts.length < 3) return toast('A polygon needs at least three points');
+  pushHist(); const e = P(pts); if (ed.cut) e.cut = true;
+  cur().els.push(e); ed.sel = cur().els.length - 1; changed();
+}
+
+edSvg.addEventListener('pointerdown', ev => {
+  if (ev.button !== 0) return; const s = cur(); if (!s) return;
+  const p = svgPt(ev), sp = { x: snapV(p.x), y: snapV(p.y) };
+  if (ed.tool === 'poly') {
+    if (!ed.poly) ed.poly = [];
+    const f = ed.poly[0];
+    if (f && ed.poly.length >= 3 && Math.hypot(sp.x - f[0], sp.y - f[1]) < Math.max(2.5, (ed.snap || 5) / 2)) return commitPoly();
+    ed.poly.push([sp.x, sp.y]); drawPreview(sp); return;
+  }
+  edSvg.setPointerCapture(ev.pointerId);
+  if (ed.tool === 'select') {
+    const h = ev.target.closest('[data-h]');
+    if (h && ed.sel >= 0) { ed.drag = { kind: 'h', h: h.dataset.h, orig: clone(s.els[ed.sel]), pushed: false }; return; }
+    const o = ev.target.closest('[data-idx]');
+    if (o) { ed.sel = +o.dataset.idx; ed.drag = { kind: 'move', start: p, orig: clone(s.els[ed.sel]), pushed: false }; renderEditor(); return; }
+    ed.sel = -1; renderEditor(); return;
+  }
+  ed.drag = { kind: 'draw', start: sp, cur: sp, square: ev.shiftKey }; drawPreview();
+});
+edSvg.addEventListener('pointermove', ev => {
+  const p = svgPt(ev), sp = { x: snapV(p.x), y: snapV(p.y) };
+  $('#edPos').textContent = (p.x >= 0 && p.x <= 100 && p.y >= 0 && p.y <= 100) ? `${n2(sp.x)}, ${n2(sp.y)}` : '';
+  if (ed.poly && !ed.drag) { drawPreview(sp); return; }
+  const d = ed.drag; if (!d) return; const s = cur();
+  if (d.kind === 'draw') { d.cur = sp; d.square = ev.shiftKey; drawPreview(); return; }
+  let ne;
+  if (d.kind === 'move') {
+    const dx = ed.snap ? Math.round((p.x - d.start.x) / ed.snap) * ed.snap : n2(p.x - d.start.x);
+    const dy = ed.snap ? Math.round((p.y - d.start.y) / ed.snap) * ed.snap : n2(p.y - d.start.y);
+    if (!d.pushed && !dx && !dy) return;
+    ne = moveEl(d.orig, dx, dy);
+  } else {
+    ne = clone(d.orig);
+    if (d.h[0] === 'p') ne.pts[+d.h.slice(1)] = [sp.x, sp.y];
+    else {
+      const C = corners(getBox(d.orig)), fx = C[(+d.h.slice(1) + 2) % 4];
+      const b = boxFrom({ x: fx[0], y: fx[1] }, sp, ev.shiftKey);
+      if (b.w < 0.5 || b.h < 0.5) return;
+      setBox(ne, b);
+    }
+  }
+  if (!d.pushed) { pushHist(); d.pushed = true; }
+  s.els[ed.sel] = ne; renderLight();
+});
+function endDrag() {
+  const d = ed.drag; ed.drag = null; if (!d) return;
+  if (d.kind === 'draw') {
+    const b = boxFrom(d.start, d.cur, d.square);
+    drawPreview();
+    if (b.w >= 0.5 && b.h >= 0.5) { pushHist(); cur().els.push(makeEl(ed.tool, b)); ed.sel = cur().els.length - 1; changed(); }
+  } else if (d.pushed) changed();
+}
+edSvg.addEventListener('pointerup', endDrag);
+edSvg.addEventListener('pointercancel', endDrag);
+edSvg.addEventListener('dblclick', () => { if (ed.tool === 'poly') commitPoly(); });
+edSvg.addEventListener('pointerleave', () => { $('#edPos').textContent = ''; });
+
+function setTool(t) { if (ed.poly && t !== 'poly') { ed.poly = null; drawPreview(); } ed.tool = t; renderEditor(); }
+$('#tools').addEventListener('click', ev => { const b = ev.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool); });
+$('#paintSeg').addEventListener('click', ev => { const b = ev.target.closest('[data-v]'); if (b) { ed.cut = b.dataset.v === 'cut'; renderEditor(); } });
+$('#snapSeg').addEventListener('click', ev => { const b = ev.target.closest('[data-v]'); if (b) { ed.snap = +b.dataset.v; renderGrid(); renderEditor(); } });
+$('#elRx').addEventListener('input', () => {
+  const s = cur(), e = s && s.els[ed.sel]; if (!e || e.t !== 'rect') return;
+  if (!ed.rxPushed) { pushHist(); ed.rxPushed = true; }
+  e.rx = +$('#elRx').value; $('#elRxOut').textContent = e.rx; renderLight();
+});
+$('#elRx').addEventListener('change', () => { ed.rxPushed = false; changed(); });
+$('#gName').addEventListener('input', () => { const s = cur(); if (!s) return; s.name = $('#gName').value || 'Untitled'; renderLibrary(); saveLib(); $('#edInfo').textContent = s.name; });
+$('#gSet').addEventListener('change', () => { const s = cur(); if (!s) return; s.inSet = $('#gSet').checked; changed(); });
+$('#libGrid').addEventListener('click', ev => {
+  const t = ev.target.closest('[data-id]'); if (!t) return;
+  ed.id = t.dataset.id; ed.sel = -1; ed.poly = null; drawPreview(); renderEditor(); renderLibrary();
+});
+
+let delArm = 0;
+const ACTS = {
+  newG() { const s = { id: uid(), name: 'Glyph ' + (lib.shapes.length + 1), els: [], inSet: true }; lib.shapes.push(s); ed.id = s.id; ed.sel = -1; if (ed.tool === 'select') ed.tool = 'rect'; changed(); },
+  dupG() { const s = cur(); if (!s) return; const c = { id: uid(), name: s.name + ' copy', els: clone(s.els), inSet: s.inSet }; lib.shapes.splice(lib.shapes.indexOf(s) + 1, 0, c); ed.id = c.id; ed.sel = -1; changed(); },
+  delG() {
+    const s = cur(); if (!s) return;
+    if (Date.now() - delArm > 3000) { delArm = Date.now(); $('#delGBtn').textContent = 'Click again to delete'; setTimeout(() => { $('#delGBtn').textContent = 'Delete glyph'; }, 3000); return; }
+    delArm = 0; $('#delGBtn').textContent = 'Delete glyph';
+    const i = lib.shapes.indexOf(s); lib.shapes.splice(i, 1);
+    if (!lib.shapes.length) lib.shapes.push({ id: uid(), name: 'Glyph 1', els: [], inSet: true });
+    ed.id = lib.shapes[Math.max(0, i - 1)].id; ed.sel = -1; toast('Deleted ' + s.name); changed();
+  },
+  undo,
+  clear() { const s = cur(); if (!s || !s.els.length) return; pushHist(); s.els = []; ed.sel = -1; changed(); toast('Cleared. Undo brings it back.'); },
+  rot() { glyphXf('rot'); }, flipH() { glyphXf('fh'); }, flipV() { glyphXf('fv'); },
+  elRot() { elXf('rot'); }, elFlipH() { elXf('fh'); }, elFlipV() { elXf('fv'); },
+  toggleCut() { const e = selEl(); if (!e) return; pushHist(); e.cut = !e.cut; changed(); },
+  dupEl() { const s = cur(), e = selEl(); if (!e) return; pushHist(); const off = ed.snap || 5; s.els.push(moveEl(e, off, off)); ed.sel = s.els.length - 1; changed(); },
+  delEl() { const s = cur(); if (!selEl()) return; pushHist(); s.els.splice(ed.sel, 1); ed.sel = -1; changed(); },
+  raise() { reorder(1); }, lower() { reorder(-1); },
+  importSvg() { $('#fSvg').click(); }, importLib() { $('#fLib').click(); },
+  exportGlyph() { const s = cur(); if (s) saveFile(slug(s.name) + '.svg', glyphSVG(s, 512, '#000'), 'image/svg+xml'); },
+  exportLib() { saveFile('glyf-library.json', JSON.stringify(lib, null, 1), 'application/json'); },
+};
+const slug = s => (s || 'glyph').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'glyph';
+const selEl = () => { const s = cur(); return s && s.els[ed.sel]; };
+function glyphXf(k) { const s = cur(); if (!s || !s.els.length) return; pushHist(); s.els.forEach(e => xfEl(e, k)); changed(); }
+function elXf(k) { const s = cur(), e = selEl(); if (!e) return; pushHist(); s.els[ed.sel] = xfLocal(e, k); changed(); }
+function reorder(dir) {
+  const s = cur(); if (!selEl()) return; const j = ed.sel + dir; if (j < 0 || j >= s.els.length) return;
+  pushHist(); [s.els[ed.sel], s.els[j]] = [s.els[j], s.els[ed.sel]]; ed.sel = j; changed();
+}
+document.addEventListener('click', ev => { const b = ev.target.closest('[data-act]'); if (b && ACTS[b.dataset.act]) ACTS[b.dataset.act](); });
+
+document.addEventListener('keydown', ev => {
+  if (view !== 'shapes' || ev.target.matches('input,textarea,select')) return;
+  const k = ev.key.toLowerCase(), mod = ev.ctrlKey || ev.metaKey;
+  if (mod && k === 'z') { ev.preventDefault(); undo(); return; }
+  if (mod && k === 'd') { ev.preventDefault(); ACTS.dupEl(); return; }
+  if (mod || ev.altKey) return;
+  const tools = { v: 'select', r: 'rect', e: 'ellipse', q: 'quarter', t: 'tri', p: 'poly' };
+  if (tools[k]) { setTool(tools[k]); return; }
+  if (k === 'x') { ed.cut = !ed.cut; renderEditor(); return; }
+  if (k === 'enter' && ed.poly) { commitPoly(); return; }
+  if (k === 'escape') { if (ed.poly) { ed.poly = null; drawPreview(); } else { ed.sel = -1; renderEditor(); } return; }
+  if (k === '[') { ACTS.lower(); return; } if (k === ']') { ACTS.raise(); return; }
+  if ((k === 'delete' || k === 'backspace') && selEl()) { ev.preventDefault(); ACTS.delEl(); return; }
+  const arrows = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
+  if (arrows[k] && selEl()) {
+    ev.preventDefault(); const st = (ed.snap || 1) * (ev.shiftKey ? 2 : 1), s = cur();
+    pushHist(); s.els[ed.sel] = moveEl(s.els[ed.sel], arrows[k][0] * st, arrows[k][1] * st); changed();
+  }
+});
+
+/* ---------- SVG import ---------- */
+function recolor(str) { return str.replace(/(fill|stroke)\s*:\s*(?!none|url)[^;}"]+/gi, '$1:currentColor'); }
+function parseSVG(text) {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  const svg = doc.documentElement;
+  if (!svg || svg.nodeName.toLowerCase() !== 'svg' || doc.getElementsByTagName('parsererror').length) throw new Error('not an SVG');
+  [...svg.querySelectorAll('script,foreignObject,title,desc,metadata')].forEach(n => n.remove());
+  const pre = 'i' + uid() + '-';
+  const all = [svg, ...svg.querySelectorAll('*')];
+  for (const el of all) {
+    for (const a of [...el.attributes]) {
+      const n = a.name.toLowerCase();
+      if (n.startsWith('on')) { el.removeAttribute(a.name); continue; }
+      if ((n === 'href' || n === 'xlink:href') && !a.value.startsWith('#')) { el.removeAttribute(a.name); continue; }
+      if ((n === 'fill' || n === 'stroke') && !/^(none|url\()/i.test(a.value.trim())) el.setAttribute(a.name, 'currentColor');
+      if (n === 'style') el.setAttribute('style', recolor(a.value));
+    }
+    if (el.id) el.id = pre + el.id;
+    if (el.nodeName.toLowerCase() === 'style') el.textContent = recolor(el.textContent);
+  }
+  let vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  if (vb.length !== 4 || vb.some(isNaN) || !vb[2] || !vb[3]) vb = [0, 0, parseFloat(svg.getAttribute('width')) || 100, parseFloat(svg.getAttribute('height')) || 100];
+  const [vx, vy, vw, vh] = vb, sc = Math.min(100 / vw, 100 / vh);
+  const tx = (100 - vw * sc) / 2 - vx * sc, ty = (100 - vh * sc) / 2 - vy * sc;
+  const ser = new XMLSerializer();
+  let m = [...svg.childNodes].map(n => n.nodeType === 1 ? ser.serializeToString(n) : '').join('');
+  m = m.replace(/url\(\s*['"]?#([^'")\s]+)['"]?\s*\)/g, (_, id) => `url(#${pre}${id})`).replace(/(xlink:href|href)="#([^"]+)"/g, (_, a, id) => `${a}="#${pre}${id}"`);
+  return { t: 'raw', m, tf: `translate(${n2(tx)} ${n2(ty)}) scale(${+sc.toPrecision(5)})` };
+}
+function importSvgText(text, name) {
+  try {
+    const e = parseSVG(text), s = { id: uid(), name: name || 'Imported', els: [e], inSet: true };
+    lib.shapes.push(s); ed.id = s.id; ed.sel = -1; return s;
+  } catch (err) { toast(`${name || 'That file'} is not a readable SVG`); return null; }
+}
+async function importSvgFiles(files) {
+  let n = 0;
+  for (const f of files) if (/svg/i.test(f.type) || /\.svg$/i.test(f.name)) { if (importSvgText(await f.text(), f.name.replace(/\.svg$/i, ''))) n++; }
+  if (n) { changed(); toast(`Imported ${n} glyph${n > 1 ? 's' : ''}`); }
+}
+$('#fSvg').addEventListener('change', ev => { importSvgFiles([...ev.target.files]); ev.target.value = ''; });
+$('#fLib').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text()); const add = (data.shapes || []).filter(s => Array.isArray(s.els));
+    if (!add.length) throw 0;
+    add.forEach(s => lib.shapes.push({ id: uid(), name: String(s.name || 'Glyph'), els: s.els, inSet: !!s.inSet }));
+    changed(); toast(`Added ${add.length} glyphs from ${f.name}`);
+  } catch (e) { toast('That file is not a GLYF library export'); }
+});
+
+/* ================= generator ================= */
+const GEN_DEFAULT = { cols: 56, bright: 0, contrast: 1.15, gamma: 1, invert: false, mode: 'density', dither: 'fs', steps: 'measured', blank: true, rot: 'none', gap: 0.06, seed: 7, color: 'mono', ink: '#00304e', paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true };
+const gen = Object.assign({}, GEN_DEFAULT, store('glyf.gen.v1') || {});
+const saveGen = () => store('glyf.gen.v1', gen);
+const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344', '#ffffff'];
+const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#4c3046', '#c99530'];
+let srcCanvas = null, srcLabel = '';
+
+function sampleCanvas(kind) {
+  const W = 960, H = 720, c = mk(W, H), x = c.getContext('2d');
+  if (kind === 'sphere') {
+    let g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#eef2f4'); g.addColorStop(1, '#7d919c'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const shadow = (cx, cy, r) => { x.save(); x.translate(cx, cy); x.scale(1, 0.2); g = x.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, 'rgba(10,20,28,.55)'); g.addColorStop(1, 'rgba(10,20,28,0)'); x.fillStyle = g; x.fillRect(-r, -r, 2 * r, 2 * r); x.restore(); };
+    shadow(500, 640, 330); shadow(780, 650, 150);
+    const ball = (cx, cy, r, stops) => { g = x.createRadialGradient(cx - r * .35, cy - r * .4, r * .05, cx, cy, r); stops.forEach((s, i) => g.addColorStop(i / (stops.length - 1), s)); x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); };
+    ball(420, 360, 250, ['#fff4da', '#e3b862', '#9a5a4e', '#4c3046', '#140c14']);
+    ball(790, 545, 105, ['#d9ecf5', '#3a7aa0', '#00304e', '#03111b']);
+    ball(165, 600, 55, ['#eef4d4', '#90a344', '#3e4a19']);
+  } else if (kind === 'rings') {
+    const im = x.createImageData(W, H), d = im.data;
+    for (let y = 0; y < H; y++) for (let X = 0; X < W; X++) {
+      const dx = X - 470, dy = y - 340, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      const L = clamp(0.5 + 0.5 * Math.cos(r * 0.05 - a * 3 + Math.sin(r * .012) * 2) * Math.exp(-r / 700), 0, 1);
+      const t = X / W, i = (y * W + X) * 4;
+      d[i] = (76 + (201 - 76) * t) * L + 20 * (1 - L); d[i + 1] = (48 + (149 - 48) * t) * L + 14 * (1 - L); d[i + 2] = (70 + (48 - 70) * t) * L + 22 * (1 - L); d[i + 3] = 255;
+    }
+    x.putImageData(im, 0, 0);
+  } else {
+    let g = x.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#000'); g.addColorStop(1, '#fff'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    g = x.createLinearGradient(260, 0, 700, 0); g.addColorStop(0, '#fff'); g.addColorStop(1, '#000'); x.fillStyle = g;
+    x.beginPath(); x.arc(480, 360, 230, 0, Math.PI * 2); x.fill();
+    for (let i = 0; i < 8; i++) { x.fillStyle = `hsl(0 0% ${i * 14}%)`; x.fillRect(i * 120, 640, 120, 80); }
+  }
+  return c;
+}
+function useSample(kind) { stopVideo(); gen.sample = kind; saveGen(); srcCanvas = sampleCanvas(kind); srcLabel = { sphere: 'Spheres', rings: 'Rings', ramp: 'Ramp' }[kind] + ' (sample)'; syncGenUI(); scheduleGen(); }
+function loadImageFile(f) {
+  if (!f || !/^image\//.test(f.type)) return toast('Choose an image file (PNG, JPG, WebP, SVG)');
+  const url = URL.createObjectURL(f), img = new Image();
+  img.onload = () => {
+    let w = img.naturalWidth || 800, h = img.naturalHeight || 800; const k = Math.min(1, 2000 / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k);
+    const c = mk(w, h), x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url); srcCanvas = c; srcLabel = f.name; gen.sample = null; syncGenUI(); scheduleGen();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('That image could not be read'); };
+  img.src = url;
+}
+$('#fImg').addEventListener('change', ev => { loadMediaFile(ev.target.files[0]); ev.target.value = ''; });
+
+/* ---------- video source ---------- */
+let soundOn = false, vidVolume = 0.8;
+let vid = null, vidFile = null, vidURL = null, exporting = false, exportCancel = false, vidBusy = false, lastVT = -1, scrubbing = false;
+const isVideo = f => f && (/^video\//.test(f.type) || /\.(mp4|m4v|mov|webm|mkv|ogv)$/i.test(f.name));
+function loadMediaFile(f) { if (!f) return; if (isVideo(f)) loadVideoFile(f); else { stopVideo(); loadImageFile(f); } }
+function stopVideo() {
+  if (exporting) exportCancel = true;
+  if (recorder) { recDiscard = true; recorder.stop(); }
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  $('#camCtl').hidden = true; $('#camBtn').hidden = false;
+  if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); vid = null; }
+  if (vidURL) { URL.revokeObjectURL(vidURL); vidURL = null; }
+  vidFile = null;
+  $('#vidCtl').hidden = true;
+}
+function grabFrame() {
+  if (!vid || !srcCanvas) return;
+  const x = srcCanvas.getContext('2d'), w = srcCanvas.width, h = srcCanvas.height;
+  if (camStream && $('#camMirror').checked) { x.setTransform(-1, 0, 0, 1, w, 0); x.drawImage(vid, 0, 0, w, h); x.setTransform(1, 0, 0, 1, 0, 0); }
+  else x.drawImage(vid, 0, 0, w, h);
+}
+
+/* ---------- webcam source ---------- */
+let camStream = null, recorder = null, recChunks = [], recDiscard = false, recT0 = 0, recTimer = null;
+async function startWebcam(deviceId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast('Camera access is not available on this page. Open the file locally in Chrome or Edge.');
+  const video = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  if (deviceId) video.deviceId = { exact: deviceId };
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video, audio: false }); }
+  catch (e) {
+    const n = e && e.name;
+    toast(n === 'NotFoundError' || n === 'OverconstrainedError' ? 'No camera found' :
+      n === 'NotAllowedError' || n === 'SecurityError' ? 'Camera blocked. The claude.ai viewer does not allow cameras; open the local file in Chrome or Edge.' :
+      'Camera failed to start' + (e && e.message ? ': ' + e.message : ''));
+    return;
+  }
+  stopVideo(); camStream = stream;
+  const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = stream;
+  v.onloadeddata = async () => {
+    v.onloadeddata = null;
+    const k = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
+    srcCanvas = mk(Math.max(2, Math.round(v.videoWidth * k)), Math.max(2, Math.round(v.videoHeight * k)));
+    vid = v; lastVT = -1; gen.sample = null;
+    const track = stream.getVideoTracks()[0];
+    srcLabel = (track && track.label) || 'Webcam';
+    $('#camCtl').hidden = false; $('#camBtn').hidden = true;
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const curId = track && track.getSettings ? track.getSettings().deviceId : '';
+      $('#camSel').innerHTML = cams.map((d, i) => `<option value="${esc(d.deviceId)}"${d.deviceId === curId ? ' selected' : ''}>${esc(d.label || 'Camera ' + (i + 1))}</option>`).join('');
+      $('#camSel').hidden = cams.length < 2;
+    } catch (e) { $('#camSel').hidden = true; }
+    syncGenUI(); grabFrame(); scheduleGen(); vidLoop(v);
+  };
+  v.play().catch(() => {});
+}
+$('#camSel').addEventListener('change', () => startWebcam($('#camSel').value));
+$('#camMirror').addEventListener('change', () => { grabFrame(); scheduleGen(); });
+function toggleRecord() {
+  if (recorder) { recorder.stop(); return; }
+  if (!window.MediaRecorder || !outCv.captureStream) return toast('This browser cannot record the canvas');
+  const type = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+  if (!type) return toast('No supported recording format');
+  const stream = outCv.captureStream(30);
+  recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 16e6 });
+  recChunks = []; recDiscard = false;
+  recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    stream.getTracks().forEach(t => t.stop()); clearInterval(recTimer);
+    const ext = type.startsWith('video/mp4') ? 'mp4' : 'webm', blob = new Blob(recChunks, { type: type.split(';')[0] });
+    recorder = null; recChunks = [];
+    $('#recBtn').textContent = 'Record'; $('#recBtn').classList.add('primary'); $('#recBtn').classList.remove('warn'); $('#g-cols').disabled = false;
+    if (!recDiscard && blob.size) saveFile('glyf-webcam-' + gen.cols + '.' + ext, blob, blob.type);
+  };
+  recorder.start(1000); recT0 = performance.now(); $('#g-cols').disabled = true;
+  $('#recBtn').classList.remove('primary'); $('#recBtn').classList.add('warn');
+  const tick = () => { $('#recBtn').textContent = 'Stop recording ' + tfmt((performance.now() - recT0) / 1000); };
+  tick(); recTimer = setInterval(tick, 200);
+}
+function loadVideoFile(f) {
+  stopVideo(); vidFile = f;
+  const v = document.createElement('video'); v.muted = !soundOn; v.volume = vidVolume; v.loop = true; v.playsInline = true; v.preload = 'auto';
+  vidURL = URL.createObjectURL(f);
+  v.onloadeddata = () => {
+    v.onloadeddata = null;
+    const k = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
+    srcCanvas = mk(Math.max(2, Math.round(v.videoWidth * k)), Math.max(2, Math.round(v.videoHeight * k)));
+    vid = v; lastVT = -1; srcLabel = f.name; gen.sample = null; $('#vidCtl').hidden = false;
+    syncGenUI(); grabFrame(); scheduleGen(); vidLoop(v);
+    // Browsers may refuse unmuted autoplay; fall back to muted playback and say so.
+    v.play().catch(() => { if (!v.muted) { v.muted = true; soundOn = false; updateVidUI(); toast('Playing muted. Click Sound on to hear it.'); v.play().catch(() => {}); } });
+  };
+  v.onerror = () => { toast('That video could not be read. Try MP4 (H.264) or WebM.'); stopVideo(); };
+  v.addEventListener('seeked', () => { if (!exporting && vid === v) { grabFrame(); scheduleGen(); updateVidUI(); } });
+  v.src = vidURL;
+}
+const tfmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); return m + ':' + (s % 60).toFixed(1).padStart(4, '0'); };
+function updateVidUI() {
+  if (!vid || camStream) return;
+  $('#playBtn').textContent = vid.paused ? 'Play' : 'Pause';
+  $('#soundBtn').textContent = soundOn ? 'Sound on' : 'Sound off';
+  $('#soundBtn').setAttribute('aria-pressed', String(soundOn));
+  $('#soundBtn').classList.toggle('primary', soundOn);
+  $('#vidTime').textContent = `${tfmt(vid.currentTime)} / ${tfmt(vid.duration)}`;
+  if (!scrubbing && isFinite(vid.duration) && vid.duration > 0) $('#vidScrub').value = Math.round(vid.currentTime / vid.duration * 1000);
+}
+function vidLoop(v) {
+  const tick = () => {
+    if (vid !== v) return;
+    if (!exporting && !v.paused && view === 'gen' && !vidBusy && v.currentTime !== lastVT) {
+      lastVT = v.currentTime; vidBusy = true; grabFrame();
+      genTok++; renderGen().finally(() => { vidBusy = false; });
+    }
+    if (!exporting) updateVidUI();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+$('#vidScrub').addEventListener('input', () => { if (!vid || exporting || !isFinite(vid.duration)) return; scrubbing = true; vid.pause(); vid.currentTime = $('#vidScrub').value / 1000 * vid.duration; });
+$('#vidScrub').addEventListener('change', () => { scrubbing = false; });
+$('#vidVol').addEventListener('input', () => {
+  vidVolume = +$('#vidVol').value; $('#vidVolOut').textContent = Math.round(vidVolume * 100) + '%';
+  if (vid) vid.volume = vidVolume;
+  if (!soundOn && vidVolume > 0) GACTS.sound();
+});
+function seekTo(t) {
+  return new Promise(res => {
+    if (Math.abs(vid.currentTime - t) < 1e-4) return res();
+    let done = false; const fin = () => { if (done) return; done = true; vid.removeEventListener('seeked', fin); res(); };
+    vid.addEventListener('seeked', fin); setTimeout(fin, 4000); vid.currentTime = t;
+  });
+}
+// Decode the source file's audio track at 48 kHz and pick an encoder (AAC, else Opus).
+async function prepareAudio(file) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC({ sampleRate: 48000 });
+  let ab;
+  try { ab = await ac.decodeAudioData(await file.arrayBuffer()); } finally { ac.close(); }
+  if (!ab || !ab.length) return null;
+  const ch = Math.min(2, ab.numberOfChannels);
+  for (const [m, codec] of [['aac', 'mp4a.40.2'], ['opus', 'opus']]) {
+    const conf = { codec, sampleRate: ab.sampleRate, numberOfChannels: ch, bitrate: 192000 };
+    try { if ((await AudioEncoder.isConfigSupported(conf)).supported) return { ab, ch, m, conf }; } catch (e) {}
+  }
+  return { ab, ch, m: null, conf: null };
+}
+async function encodeAudio(audio, muxer, maxSec) {
+  let aerr = null;
+  const enc = new AudioEncoder({ output: (c, meta) => muxer.addAudioChunk(c, meta), error: e => { aerr = e; } });
+  enc.configure(audio.conf);
+  const { ab, ch } = audio, sr = ab.sampleRate, len = Math.min(ab.length, Math.round(maxSec * sr)), N = 4096;
+  const chans = Array.from({ length: ch }, (_, i) => ab.getChannelData(i));
+  for (let s = 0; s < len; s += N) {
+    const n = Math.min(N, len - s), data = new Float32Array(n * ch);
+    for (let c = 0; c < ch; c++) data.set(chans[c].subarray(s, s + n), c * n);
+    const ad = new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: ch, timestamp: Math.round(s / sr * 1e6), data });
+    enc.encode(ad); ad.close();
+    if (aerr) throw aerr;
+    if (enc.encodeQueueSize > 16) await new Promise(r => setTimeout(r, 1));
+  }
+  await enc.flush(); enc.close();
+  if (aerr) throw aerr;
+}
+async function renderVideo() {
+  if (!vid) return;
+  if (exporting) { exportCancel = true; return; }
+  if (!('VideoEncoder' in window) || !window.Mp4Muxer) return toast('This browser cannot encode video. Use Chrome or Edge.');
+  const fps = +gen.fps || 30, dur = vid.duration;
+  if (!isFinite(dur) || dur <= 0) return toast('This video does not report its length');
+  exporting = true; exportCancel = false; vid.pause();
+  const btn = $('#renderBtn'), prog = $('#vidProg'), note = prog.textContent;
+  btn.textContent = 'Cancel render';
+  let encoder = null, err = null;
+  try {
+    await seekTo(0); grabFrame(); await renderGen();
+    const k = Math.min(1, 1920 / Math.max(outCv.width, outCv.height));
+    const EW = Math.max(2, Math.floor(outCv.width * k / 2) * 2), EH = Math.max(2, Math.floor(outCv.height * k / 2) * 2);
+    const bitrate = Math.min(40e6, Math.round(EW * EH * fps * 0.3));
+    let cfg = null, mcodec = null;
+    for (const [m, c] of [['avc', 'avc1.640033'], ['avc', 'avc1.4d0033'], ['vp9', 'vp09.00.41.08']]) {
+      const conf = { codec: c, width: EW, height: EH, bitrate, framerate: fps };
+      try { if ((await VideoEncoder.isConfigSupported(conf)).supported) { cfg = conf; mcodec = m; break; } } catch (e) {}
+    }
+    if (!cfg) throw new Error('No supported video codec for ' + EW + '×' + EH);
+    const ec = mk(EW, EH), ecx = ec.getContext('2d');
+    let audio = null, audioNote = gen.audio ? '' : ' (audio off)';
+    if (gen.audio && vidFile) {
+      if (!('AudioEncoder' in window)) audioNote = ' (no audio: this browser cannot encode it)';
+      else {
+        prog.textContent = 'Decoding audio…';
+        audio = await prepareAudio(vidFile).catch(() => null);
+        if (!audio) audioNote = ' (no audio track found)';
+        else if (!audio.conf) { audioNote = ' (no audio: no supported audio encoder)'; audio = null; }
+      }
+    }
+    const target = new Mp4Muxer.ArrayBufferTarget();
+    const muxer = new Mp4Muxer.Muxer(Object.assign({ target, video: { codec: mcodec, width: EW, height: EH, frameRate: fps }, fastStart: 'in-memory' },
+      audio ? { audio: { codec: audio.m, numberOfChannels: audio.ch, sampleRate: audio.ab.sampleRate } } : {}));
+    encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { err = e; } });
+    encoder.configure(cfg);
+    const total = Math.max(1, Math.floor(dur * fps));
+    for (let i = 0; i < total; i++) {
+      if (exportCancel || err) break;
+      await seekTo(Math.min(dur - 0.001, i / fps + 0.0005)); grabFrame(); await renderGen();
+      ecx.fillStyle = gen.paper; ecx.fillRect(0, 0, EW, EH); ecx.drawImage(outCv, 0, 0, EW, EH);
+      const fr = new VideoFrame(ec, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      encoder.encode(fr, { keyFrame: i % (fps * 2) === 0 }); fr.close();
+      while (encoder.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 4));
+      prog.textContent = `Rendering frame ${i + 1} of ${total}`;
+      $('#vidTime').textContent = `${tfmt(i / fps)} / ${tfmt(dur)}`;
+    }
+    if (!exportCancel && !err) {
+      await encoder.flush();
+      if (audio) { prog.textContent = 'Encoding audio…'; await encodeAudio(audio, muxer, total / fps); }
+      muxer.finalize();
+      await saveFile(fileBase() + '.mp4', new Blob([target.buffer], { type: 'video/mp4' }), 'video/mp4');
+      if (audioNote) setTimeout(() => toast('Video saved' + audioNote), 2300);
+    } else if (exportCancel) toast('Render canceled');
+  } catch (e) { err = e; }
+  if (err) toast('Video render failed: ' + (err.message || err));
+  try { if (encoder && encoder.state !== 'closed') encoder.close(); } catch (e) {}
+  exporting = false; btn.textContent = 'Render video .mp4'; prog.textContent = note; updateVidUI();
+}
+
+const rasterCache = new Map();
+function rasterGlyph(shape) {
+  const key = JSON.stringify(shape.els);
+  if (rasterCache.has(key)) return rasterCache.get(key);
+  const p = new Promise(res => {
+    const img = new Image(), S = 256;
+    img.onload = () => {
+      const c = mk(S, S), x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, S, S);
+      const d = x.getImageData(0, 0, S, S).data; let a = 0; for (let i = 3; i < d.length; i += 4) a += d[i];
+      res({ cv: c, cov: a / (255 * S * S) });
+    };
+    img.onerror = () => res({ cv: null, cov: 0 });
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(glyphSVG(shape, S));
+  });
+  rasterCache.set(key, p); return p;
+}
+function sampleGrid(src, cols, rows) {
+  let c = src, w = src.width, h = src.height;
+  while (w > cols * 4 && h > rows * 4) { const nw = Math.max(cols, w >> 1), nh = Math.max(rows, h >> 1), t = mk(nw, nh), tx = t.getContext('2d'); tx.imageSmoothingQuality = 'high'; tx.drawImage(c, 0, 0, nw, nh); c = t; w = nw; h = nh; }
+  const t = mk(cols, rows), x = t.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high'; x.drawImage(c, 0, 0, cols, rows);
+  return x.getImageData(0, 0, cols, rows).data;
+}
+function hash(x, y, s) { let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 2246822519); h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; }
+function quantize(val, cols, rows, lv, method) {
+  const n = lv.length, out = new Uint8Array(cols * rows);
+  const near = v => { let b = 0, bd = 9; for (let k = 0; k < n; k++) { const d = Math.abs(v - lv[k]); if (d < bd) { bd = d; b = k; } } return b; };
+  if (method === 'none' || method === 'bayer') {
+    const B = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5], step = n > 1 ? 1 / (n - 1) : 1;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const i = y * cols + x; let v = val[i];
+      if (method === 'bayer') v += ((B[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5) * step;
+      out[i] = near(v);
+    }
+    return out;
+  }
+  const buf = Float32Array.from(val);
+  const add = (x, y, e) => { if (x >= 0 && x < cols && y < rows) buf[y * cols + x] += e; };
+  for (let y = 0; y < rows; y++) {
+    const rev = method === 'fs' && (y & 1), dir = rev ? -1 : 1;
+    for (let k = 0; k < cols; k++) {
+      const x = rev ? cols - 1 - k : k, i = y * cols + x, q = near(buf[i]), err = buf[i] - lv[q];
+      out[i] = q;
+      if (method === 'fs') { add(x + dir, y, err * 7 / 16); add(x - dir, y + 1, err * 3 / 16); add(x, y + 1, err * 5 / 16); add(x + dir, y + 1, err / 16); }
+      else { const e8 = err / 8; add(x + 1, y, e8); add(x + 2, y, e8); add(x - 1, y + 1, e8); add(x, y + 1, e8); add(x + 1, y + 1, e8); add(x, y + 2, e8); }
+    }
+  }
+  return out;
+}
+
+const outCv = $('#out'); let layerCv = null, last = null, genTok = 0, genQueued = false;
+function scheduleGen() { if (view !== 'gen' || genQueued || exporting) return; genQueued = true; requestAnimationFrame(() => { genQueued = false; renderGen(); }); }
+function genDirty() { scheduleGen(); }
+async function renderGen() {
+  const tok = ++genTok, set = lib.shapes.filter(s => s.inSet);
+  const rs = await Promise.all(set.map(rasterGlyph));
+  if (tok !== genTok) return;
+  set.forEach((s, i) => covById.set(s.id, rs[i].cov));
+  $$('#setGrid .tile').forEach(t => { const s = byId(t.dataset.id); if (s && s.inSet && !t.querySelector('.cov')) t.insertAdjacentHTML('beforeend', `<span class="cov">${Math.round(covById.get(s.id) * 100)}% ink</span>`); });
+  const glyphs = set.map((s, i) => ({ s, cv: rs[i].cv, cov: rs[i].cov })).filter(g => g.cv && g.cov > 0.002).sort((a, b) => a.cov - b.cov);
+  const rampKey = glyphs.map(g => g.s.id + ':' + g.cov).join() + JSON.stringify(glyphs.map(g => g.s.els));
+  if (rampKey !== renderGen.rampKey) renderGen.rampKey = rampKey, $('#ramp').innerHTML = glyphs.map(g => `<div><svg viewBox="-6 -6 112 112">${shapeInner(g.s)}</svg><span>${Math.round(g.cov * 100)}</span></div>`).join('') || '<p class="note">No glyphs in the set.</p>';
+  const empty = !glyphs.length || !srcCanvas;
+  $('#genEmpty').hidden = !!srcCanvas && !!glyphs.length; outCv.hidden = empty;
+  if (empty) { $('#genInfo').textContent = ''; return; }
+
+  const m = glyphs.length, cols = gen.cols, rows = Math.max(1, Math.round(cols * srcCanvas.height / srcCanvas.width));
+  const px = sampleGrid(srcCanvas, cols, rows), N = cols * rows, val = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    let L = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
+    L = clamp((L - 0.5) * gen.contrast + 0.5 + gen.bright, 0, 1); L = Math.pow(L, 1 / gen.gamma);
+    val[i] = gen.invert ? L : 1 - L;
+  }
+  const maxC = glyphs[m - 1].cov;
+  let lv = glyphs.map((g, i) => ({ g, v: gen.steps === 'even' ? (gen.blank ? (i + 1) / m : (m > 1 ? i / (m - 1) : 1)) : g.cov / maxC }));
+  if (gen.blank) lv.unshift({ g: null, v: 0 });
+  else if (gen.steps !== 'even' && m > 1) { const lo = lv[0].v; lv.forEach(l => { l.v = (l.v - lo) / (1 - lo || 1); }); }
+  const size = gen.mode === 'size';
+  const idx = size ? null : quantize(val, cols, rows, lv.map(l => l.v), gen.dither);
+
+  const cell = Math.max(4, Math.min(40, Math.floor((vid ? 1920 : 2400) / Math.max(cols, rows)))), W = cols * cell, H = rows * cell;
+  outCv.width = W; outCv.height = H;
+  if (!layerCv || layerCv.width !== W || layerCv.height !== H) layerCv = mk(W, H);
+  const lx = layerCv.getContext('2d'); lx.setTransform(1, 0, 0, 1, 0, 0); lx.globalCompositeOperation = 'source-over'; lx.clearRect(0, 0, W, H); lx.imageSmoothingQuality = 'high';
+  const marks = [], gi = new Map(glyphs.map((g, i) => [g, i]));
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const i = y * cols + x; let g, sc = 1;
+    if (size) { const v = val[i]; if (v < 0.03) continue; g = glyphs[m > 1 ? hash(x, y, gen.seed) % m : 0]; sc = Math.sqrt(v); }
+    else { g = lv[idx[i]].g; if (!g) continue; }
+    const rot = gen.rot === 'random' ? hash(x, y, gen.seed * 2 + 1) % 4 : gen.rot === 'checker' ? (x + y) & 1 : 0;
+    const s = cell * (1 - gen.gap) * sc, cx = x * cell + cell / 2, cy = y * cell + cell / 2;
+    lx.setTransform(1, 0, 0, 1, cx, cy); if (rot) lx.rotate(rot * Math.PI / 2);
+    lx.drawImage(g.cv, -s / 2, -s / 2, s, s);
+    marks.push([x, y, gi.get(g), sc, rot]);
+  }
+  lx.setTransform(1, 0, 0, 1, 0, 0); lx.globalCompositeOperation = 'source-in';
+  if (gen.color === 'source') { const cc = mk(cols, rows); cc.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(px), cols, rows), 0, 0); lx.imageSmoothingEnabled = false; lx.drawImage(cc, 0, 0, W, H); lx.imageSmoothingEnabled = true; }
+  else { lx.fillStyle = gen.ink; lx.fillRect(0, 0, W, H); }
+  lx.globalCompositeOperation = 'source-over';
+  const ox = outCv.getContext('2d'); ox.fillStyle = gen.paper; ox.fillRect(0, 0, W, H); ox.drawImage(layerCv, 0, 0);
+  last = { cols, rows, glyphs, marks, px, cell };
+  $('#genInfo').textContent = `${cols} × ${rows} cells · ${marks.length.toLocaleString()} marks · ${m} glyph${m > 1 ? 's' : ''}`;
+}
+
+const hex = (r, g, b) => '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+function buildSVG() {
+  if (!last) return null;
+  const { cols, rows, glyphs, marks, px } = last, cs = 10, W = cols * cs, H = rows * cs, used = new Set(marks.map(m => m[2]));
+  const defs = glyphs.map((g, i) => used.has(i) ? `<symbol id="g${i}" viewBox="0 0 100 100" overflow="visible">${shapeInner(g.s)}</symbol>` : '').join('');
+  const body = marks.map(([x, y, i, sc, rot]) => {
+    const s = cs * (1 - gen.gap) * sc, cx = x * cs + cs / 2, cy = y * cs + cs / 2, p = (y * cols + x) * 4;
+    return `<use xlink:href="#g${i}" x="${n2(cx - s / 2)}" y="${n2(cy - s / 2)}" width="${n2(s)}" height="${n2(s)}"${rot ? ` transform="rotate(${rot * 90} ${cx} ${cy})"` : ''}${gen.color === 'source' ? ` color="${hex(px[p], px[p + 1], px[p + 2])}"` : ''}/>`;
+  }).join('\n');
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" color="${gen.ink}">\n` +
+    (gen.transparent ? '' : `<rect width="${W}" height="${H}" fill="${gen.paper}"/>\n`) + `<defs>${defs}</defs>\n${body}\n</svg>`;
+}
+const fileBase = () => 'glyf-' + slug(srcLabel.replace(/\(sample\)|\.[a-z0-9]+$/gi, '')) + '-' + gen.cols;
+const GACTS = {
+  all() { lib.shapes.forEach(s => s.inSet = true); changed(); },
+  none() { lib.shapes.forEach(s => s.inSet = false); changed(); },
+  loadImg() { $('#fImg').click(); },
+  playPause() { if (!vid || exporting) return; if (vid.paused) vid.play().catch(() => {}); else vid.pause(); updateVidUI(); },
+  renderVideo() { renderVideo(); },
+  webcam() { startWebcam(); },
+  record() { toggleRecord(); },
+  stopCam() { stopVideo(); useSample('sphere'); },
+  sound() { soundOn = !soundOn; if (vid) { vid.muted = !soundOn; vid.volume = vidVolume; } updateVidUI(); },
+  png() {
+    if (!last) return toast('Nothing to export yet');
+    let cv = outCv;
+    if (gen.transparent) { cv = mk(outCv.width, outCv.height); cv.getContext('2d').drawImage(layerCv, 0, 0); }
+    cv.toBlob(b => b ? saveFile(fileBase() + '.png', b, 'image/png') : toast('PNG export failed'), 'image/png');
+  },
+  svg() { const s = buildSVG(); s ? saveFile(fileBase() + '.svg', s, 'image/svg+xml') : toast('Nothing to export yet'); },
+  copySvg() {
+    const s = buildSVG(); if (!s) return toast('Nothing to export yet');
+    try { navigator.clipboard.writeText(s).then(() => toast('SVG copied'), () => toast('Clipboard blocked here. Use Save SVG.')); }
+    catch (e) { toast('Clipboard blocked here. Use Save SVG.'); }
+  },
+};
+document.addEventListener('click', ev => { const b = ev.target.closest('[data-gact]'); if (b && GACTS[b.dataset.gact]) GACTS[b.dataset.gact](); });
+$('#setGrid').addEventListener('click', ev => { const t = ev.target.closest('[data-id]'); if (!t) return; const s = byId(t.dataset.id); s.inSet = !s.inSet; changed(); });
+$('#sampleSeg').addEventListener('click', ev => { const b = ev.target.closest('[data-v]'); if (b) useSample(b.dataset.v); });
+
+const fmt = { cols: v => v, bright: v => (v > 0 ? '+' : '') + v.toFixed(2), contrast: v => v.toFixed(2), gamma: v => v.toFixed(2), gap: v => Math.round(v * 100) + '%', seed: v => v };
+function syncGenUI() {
+  $$('[data-k]').forEach(inp => { const k = inp.dataset.k; if (inp.type === 'checkbox') inp.checked = !!gen[k]; else inp.value = gen[k]; });
+  $$('[data-out]').forEach(o => { o.textContent = fmt[o.dataset.out](gen[o.dataset.out]); });
+  $$('.seg[data-seg]').forEach(sg => $$('button', sg).forEach(b => b.classList.toggle('on', gen[sg.dataset.seg] === b.dataset.v)));
+  $$('#sampleSeg button').forEach(b => b.classList.toggle('on', gen.sample === b.dataset.v));
+  const size = gen.mode === 'size';
+  $('#ditherSeg').classList.toggle('dim', size); $('#stepsSeg').classList.toggle('dim', size); $('#blankRow').classList.toggle('dim', size);
+  $('#mapNote').textContent = size ? 'Each cell draws a glyph from the set, scaled by tone. One glyph in the set gives a classic halftone.' : 'Dithering spreads the in-between tones across neighboring cells.';
+  $('#srcInfo').textContent = srcLabel;
+  $('#inkSw').innerHTML = INKS.map(c => `<button class="btn" data-sw="ink" data-c="${c}" title="${c}" style="width:22px;height:22px;padding:0;background:${c};${gen.ink === c ? 'box-shadow:0 0 0 2px var(--accent)' : ''}"></button>`).join('');
+  $('#paperSw').innerHTML = PAPERS.map(c => `<button class="btn" data-sw="paper" data-c="${c}" title="${c}" style="width:22px;height:22px;padding:0;background:${c};${gen.paper === c ? 'box-shadow:0 0 0 2px var(--accent)' : ''}"></button>`).join('');
+}
+$$('[data-k]').forEach(inp => inp.addEventListener('input', () => {
+  const k = inp.dataset.k; gen[k] = inp.type === 'checkbox' ? inp.checked : inp.type === 'range' ? +inp.value : inp.value;
+  syncGenUI(); saveGen(); scheduleGen();
+}));
+$$('.seg[data-seg]').forEach(sg => sg.addEventListener('click', ev => { const b = ev.target.closest('[data-v]'); if (!b) return; gen[sg.dataset.seg] = b.dataset.v; syncGenUI(); saveGen(); scheduleGen(); }));
+document.addEventListener('click', ev => { const b = ev.target.closest('[data-sw]'); if (!b) return; gen[b.dataset.sw] = b.dataset.c; syncGenUI(); saveGen(); scheduleGen(); });
+
+/* ================= drop / paste ================= */
+for (const [stageId, kind] of [['#edStage', 'shapes'], ['#genStage', 'gen']]) {
+  const st = $(stageId);
+  st.addEventListener('dragover', ev => { ev.preventDefault(); st.classList.add('drop'); });
+  st.addEventListener('dragleave', () => st.classList.remove('drop'));
+  st.addEventListener('drop', ev => {
+    ev.preventDefault(); st.classList.remove('drop'); const files = [...ev.dataTransfer.files];
+    if (kind === 'shapes') importSvgFiles(files); else loadMediaFile(files.find(f => /^image\//.test(f.type) || isVideo(f)));
+  });
+}
+$('#libGrid').closest('.panel').addEventListener('dragover', ev => ev.preventDefault());
+$('#libGrid').closest('.panel').addEventListener('drop', ev => { ev.preventDefault(); importSvgFiles([...ev.dataTransfer.files]); });
+document.addEventListener('paste', ev => {
+  if (ev.target.matches && ev.target.matches('input,textarea')) return;
+  const cd = ev.clipboardData; if (!cd) return;
+  const file = [...cd.files].find(f => /^image\//.test(f.type));
+  const text = cd.getData('text/plain') || '';
+  if (view === 'shapes') {
+    if (/^\s*(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(text)) { ev.preventDefault(); if (importSvgText(text, 'Pasted')) { changed(); toast('Pasted SVG as a new glyph'); } }
+    else if (file && /svg/.test(file.type)) { ev.preventDefault(); importSvgFiles([file]); }
+  } else if (file) { ev.preventDefault(); loadMediaFile(file); }
+});
+
+/* ================= views ================= */
+let view = 'gen';
+const HINTS = { shapes: 'Build glyphs on the grid. Everything saves in this browser.', gen: 'Your glyphs become the characters of an image.' };
+function setView(v) {
+  view = v === 'shapes' ? 'shapes' : 'gen';
+  $('#view-shapes').hidden = view !== 'shapes'; $('#view-gen').hidden = view !== 'gen';
+  $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+  $('#hint').textContent = HINTS[view];
+  if (location.hash.slice(1) !== (view === 'gen' ? 'generate' : 'shapes')) history.replaceState(null, '', '#' + (view === 'gen' ? 'generate' : 'shapes'));
+  if (view === 'shapes') { if (vid && !vid.paused && !recorder) { vid.pause(); updateVidUI(); } renderEditor(); }
+  else { if (camStream && vid && vid.paused) vid.play().catch(() => {}); scheduleGen(); }
+}
+$$('.tabs button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+window.addEventListener('hashchange', () => setView(location.hash === '#shapes' ? 'shapes' : 'gen'));
+
+/* ================= boot ================= */
+if (!byId(ed.id)) ed.id = lib.shapes[0].id;
+srcCanvas = sampleCanvas(gen.sample || 'sphere'); if (!gen.sample) gen.sample = 'sphere';
+srcLabel = { sphere: 'Spheres', rings: 'Rings', ramp: 'Ramp' }[gen.sample] + ' (sample)';
+renderGrid(); renderLibrary(); syncGenUI();
+setView(location.hash === '#shapes' ? 'shapes' : 'gen');
+</script>

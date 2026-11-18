@@ -1,0 +1,21 @@
+{
+  "name": "@studio/launcher",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The suite's home page: one card per tool, read from suite.json.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && studio-inline"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.16",
+    "@stylexjs/stylex": "^0.19.2",
+    "@studio/theme": "*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@studio/build": "*"
+  }
+}
