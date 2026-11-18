@@ -224,13 +224,15 @@ export function Swatch({label, value, onChange}: {label: string; value: string; 
 }
 
 /** A one-click preset chip. */
-export function PresetChip({color, isOn, onPick, label}: {color: string; isOn: boolean; onPick: () => void; label: string}) {
+/** A color chip; without onPick it only shows the color. */
+export function PresetChip({color, isOn, onPick, label}: {color: string; isOn: boolean; onPick?: () => void; label: string}) {
   return (
     <button
       type="button"
       aria-label={`${label} ${color}`}
-      aria-pressed={isOn}
-      title={color}
+      aria-pressed={onPick ? isOn : undefined}
+      disabled={!onPick}
+      title={onPick ? color : `${label} ${color}`}
       onClick={onPick}
       {...stylex.props(styles.swatch, paint.fill(color), isOn && styles.swatchOn)}
     />

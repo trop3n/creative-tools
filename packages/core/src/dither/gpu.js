@@ -231,6 +231,7 @@ export function createGpuDither(canvas) {
     supports(settings, w = sw, h = sh) {
       const style = styleOf(settings);
       if (!style || !style.field) return false;
+      if (settings.mode === 'cmyk') return false; // four screens: the CPU worker does these
       if (w > maxTex || h > maxTex) return false;
       if (Math.round(settings.blur || 0) >= 1 && !floatTargets) return false;
       return true;

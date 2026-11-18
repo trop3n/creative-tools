@@ -96,15 +96,33 @@ const TAU = Math.PI * 2;
 
 /**
  * Spread a field's values evenly over 0..255 while keeping their order, so a flat
- * gray of tone t comes out about t/255 white. Samples a 256×256 patch.
+ * gray of tone t comes out about t/255 white. Samples up to n×n points spread over
+ * a w×h area (by default the 256×256 patch at the origin).
  */
-export function equalize(field) {
-  const n = 256, sorted = new Float64Array(n * n);
-  for (let y = 0, p = 0; y < n; y++) for (let x = 0; x < n; x++) sorted[p++] = field(x, y);
-  sorted.sort();
-  const below = v => { let lo = 0, hi = sorted.length; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < v) lo = m + 1; else hi = m; } return lo; };
-  const upTo = v => { let lo = 0, hi = sorted.length; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] <= v) lo = m + 1; else hi = m; } return lo; };
-  return (x, y) => { const v = field(x, y); return ((below(v) + upTo(v)) / 2 / sorted.length) * 255; };
+export function equalize(field, w = 256, h = 256, n = 256) {
+  const nx = Math.min(n, w), ny = Math.min(n, h), N = nx * ny, samples = new Float64Array(N);
+  let lo = Infinity, hi = -Infinity;
+  for (let j = 0, p = 0; j < ny; j++) {
+    const y = Math.floor(((j + 0.5) * h) / ny);
+    for (let i = 0; i < nx; i++, p++) {
+      const v = field(Math.floor(((i + 0.5) * w) / nx), y);
+      samples[p] = v; if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+  }
+  if (!(hi > lo)) return () => 127.5;
+  // Cumulative histogram: a value's place is the share of samples below it,
+  // interpolated across its bin, so the mapping stays smooth and in order.
+  const B = 4096, scale = B / (hi - lo), below = new Float64Array(B + 1);
+  for (let p = 0; p < N; p++) below[Math.min(B - 1, Math.floor((samples[p] - lo) * scale)) + 1]++;
+  for (let b = 0; b < B; b++) below[b + 1] += below[b];
+  for (let b = 0; b <= B; b++) below[b] = (below[b] / N) * 255;
+  return (x, y) => {
+    const t = (field(x, y) - lo) * scale;
+    if (t <= 0) return below[0];
+    if (t >= B) return below[B];
+    const b = Math.floor(t);
+    return below[b] + (below[b + 1] - below[b]) * (t - b);
+  };
 }
 const rad = deg => (deg * Math.PI) / 180;
 
@@ -142,10 +160,11 @@ export const FIELDS = {
   diamonds: (w, h, p) => {
     const cell = p.cell ?? 8, a = rad(p.angle ?? 0), c = Math.cos(a), s = Math.sin(a);
     const frac = v => v - Math.floor(v);
-    return (x, y) => {
+    // Evened out so each tone covers its share of the page (raw diamond distances don't).
+    return equalize((x, y) => {
       const u = frac((x * c + y * s) / cell), v = frac((-x * s + y * c) / cell);
-      return (1 - (Math.abs(u - 0.5) + Math.abs(v - 0.5))) * 255;
-    };
+      return 1 - (Math.abs(u - 0.5) + Math.abs(v - 0.5));
+    });
   },
   // Layers of hatching: lighter tones get one direction, darker ones add more.
   crosshatch: (w, h, p) => {

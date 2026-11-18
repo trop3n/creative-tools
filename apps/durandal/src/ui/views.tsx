@@ -15,7 +15,7 @@ import {Slider} from '@astryxdesign/core/Slider';
 import {IconButton} from '@astryxdesign/core/IconButton';
 import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
-import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES} from '@studio/core/dither';
+import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, gpuAvailable,
@@ -240,7 +240,7 @@ export function Inspector() {
           <SliderRow label="Threshold" value={st.threshold} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('threshold', v)} />
         )}
         <Switch label="Invert" size="sm" value={!!st.invert} onChange={v => setSetting('invert', v)} />
-        {gpuAvailable() && style.family === 'Pattern' ? (
+        {gpuAvailable() && style.family === 'Pattern' && st.mode !== 'cmyk' ? (
           <Switch label="Render patterns on the GPU" size="sm" value={look.gpu !== false} onChange={v => setLook('gpu', v)} />
         ) : null}
       </InspectorSection>
@@ -258,11 +258,12 @@ export function Inspector() {
       </InspectorSection>
 
       <InspectorSection title="Color">
-        <SegmentedControl label="Color mode" size="sm" layout="fill" value={st.mode === 'palette' ? 'palette' : 'mono'} onChange={v => setSetting('mode', v)}>
+        <SegmentedControl label="Color mode" size="sm" layout="fill" value={st.mode === 'palette' || st.mode === 'cmyk' ? st.mode : 'mono'} onChange={v => setSetting('mode', v)}>
           <SegmentedControlItem value="mono" label="Two tones" />
           <SegmentedControlItem value="palette" label="Palette" />
+          <SegmentedControlItem value="cmyk" label="CMYK" />
         </SegmentedControl>
-        {st.mode === 'palette' ? <PaletteControls /> : <TwoTones />}
+        {st.mode === 'palette' ? <PaletteControls /> : st.mode === 'cmyk' ? <CmykControls /> : <TwoTones />}
       </InspectorSection>
 
       <InspectorSection title="Cell shape">
@@ -327,6 +328,23 @@ const PALETTE_OPTIONS = [
   {value: 'image', label: 'From the image'},
   {value: 'custom', label: 'Custom'},
 ];
+
+function CmykControls() {
+  const {settings: st} = useStore();
+  return (
+    <>
+      <InspectorRow label="Inks">
+        {PROCESS_INKS.map(i => (
+          <PresetChip key={i.id} label={`${i.name} ink`} color={i.color} isOn={false} />
+        ))}
+      </InspectorRow>
+      <SliderRow label="Black" value={st.black ?? 100} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('black', v)} />
+      <Text type="supporting">
+        Each ink is dithered on its own with the style and overprinted on white. Pattern screens turn to 15°, 75°, 0° and 45°. Black sets how much of the shared gray prints as black ink. CMYK runs on the CPU.
+      </Text>
+    </>
+  );
+}
 
 function TwoTones() {
   const {look} = useStore();

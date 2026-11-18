@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, blueNoiseMatrix, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, blueNoiseMatrix, ditherCMYK, inkColors, INKS, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -331,5 +331,60 @@ test('crosshatch keeps the tone of a flat gray', () => {
     const {mask} = ditherGray(new Float32Array(300 * 200).fill(g), 300, 200, {style: 'crosshatch', params: {}, block: 1, threshold: 100});
     const white = mask.reduce((a, v) => a + (v ? 1 : 0), 0) / mask.length;
     assert.ok(Math.abs(white - g / 255) < 0.06, `${g} gray: ${white.toFixed(3)} white`);
+  }
+});
+
+const flatRGBA = (w, h, [r, g, b]) => { const a = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) a.set([r, g, b, 255], i * 4); return a; };
+
+test('CMYK: 16 overprint colors from the four inks', () => {
+  const c = inkColors();
+  assert.equal(c.length, 16);
+  assert.equal(c[0], '#ffffff');
+  INKS.forEach((ink, i) => assert.equal(c[1 << i], ink.color));
+  // Cyan over yellow is a green; all four inks are near black.
+  const [r, g, b] = hexToRGB(c[1 | 4]);
+  assert.ok(g > r && g > b, `cyan + yellow = ${c[5]}`);
+  assert.ok(hexToRGB(c[15]).every(v => v < 20));
+});
+
+test('CMYK: flat colors print with the right inks, for every style', () => {
+  const w = 96, h = 64;
+  const coverage = (rgb, style, extra = {}) => {
+    const {indices, colors} = ditherCMYK(flatRGBA(w, h, rgb), w, h, {style, params: {}, block: 1, threshold: style.match(/floyd|atkinson|stucki|sierra|burkes|jarvis|stevenson|scanline/) ? 50 : 50, ...extra});
+    assert.equal(colors.length, 16);
+    return [0, 1, 2, 3].map(i => indices.reduce((a, v) => a + ((v >> i) & 1), 0) / indices.length);
+  };
+  for (const s of STYLES) {
+    const white = coverage([255, 255, 255], s.id);
+    assert.ok(white.every(v => v < 0.02), `${s.id}: white paper got ink ${white}`);
+    const [c, m, y, k] = coverage([0, 255, 255], s.id); // pure cyan
+    assert.ok(c > 0.9 && m < 0.05 && y < 0.05 && k < 0.05, `${s.id}: cyan gave ${[c, m, y, k]}`);
+    const red = coverage([255, 0, 0], s.id);
+    assert.ok(red[0] < 0.05 && red[1] > 0.9 && red[2] > 0.9, `${s.id}: red gave ${red}`);
+  }
+  // Mid gray: with full black it is black ink only; with none it is C+M+Y.
+  const g1 = coverage([128, 128, 128], 'floyd-steinberg', {black: 100});
+  assert.ok(g1[0] < 0.02 && Math.abs(g1[3] - 0.5) < 0.05, `gray, full black: ${g1}`);
+  const g0 = coverage([128, 128, 128], 'floyd-steinberg', {black: 0});
+  assert.ok(g0[3] === 0 && g0.slice(0, 3).every(v => Math.abs(v - 0.5) < 0.05), `gray, no black: ${g0}`);
+});
+
+test('CMYK: each ink gets its own screen angle', () => {
+  const w = 120, h = 90;
+  const {indices} = ditherCMYK(flatRGBA(w, h, [110, 110, 110]), w, h, {style: 'dots', params: {cell: 8}, block: 1, threshold: 50, black: 0});
+  const plane = i => Array.from(indices, v => (v >> i) & 1).join('');
+  assert.notEqual(plane(0), plane(1));
+  assert.notEqual(plane(1), plane(2));
+});
+
+test('CMYK: screens print about as much ink as asked at 50%', () => {
+  const w = 160, h = 120;
+  for (const style of ['dots', 'bayer', 'stipple', 'diamonds', 'lines']) {
+    for (const level of [64, 128, 192]) {
+      // A flat cyan tint: red channel sets the cyan amount.
+      const {indices} = ditherCMYK(flatRGBA(w, h, [level, 255, 255]), w, h, {style, params: {}, block: 1, threshold: 50});
+      const c = indices.reduce((a, v) => a + (v & 1), 0) / indices.length, want = 1 - level / 255;
+      assert.ok(Math.abs(c - want) < 0.08, `${style} at ${level}: ${c.toFixed(3)} cyan, want ${want.toFixed(3)}`);
+    }
   }
 });

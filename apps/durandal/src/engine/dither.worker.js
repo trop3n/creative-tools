@@ -1,7 +1,7 @@
 // Runs the dither pipeline off the main thread. A job may carry new source pixels
 // (every video frame does); otherwise it re-dithers the last source it was sent,
 // which is what a settings change on a still image needs.
-import {luminance, ditherGray, ditherColor} from '@studio/core/dither';
+import {luminance, ditherGray, ditherColor, ditherCMYK} from '@studio/core/dither';
 
 let source = null; // {rgba, w, h, gray?}
 
@@ -11,8 +11,9 @@ self.onmessage = ({data}) => {
   const t0 = performance.now();
   try {
     const {w, h} = source;
-    if (data.settings.mode === 'palette') {
-      const {indices, colors, w: cw, h: ch} = ditherColor(source.rgba, w, h, data.settings);
+    if (data.settings.mode === 'palette' || data.settings.mode === 'cmyk') {
+      const run = data.settings.mode === 'cmyk' ? ditherCMYK : ditherColor;
+      const {indices, colors, w: cw, h: ch} = run(source.rgba, w, h, data.settings);
       self.postMessage({type: 'done', job: data.job, indices, colors, w: cw, h: ch, ms: performance.now() - t0}, [indices.buffer]);
     } else {
       source.gray ||= luminance(source.rgba, w, h);

@@ -196,7 +196,7 @@ export async function renderVideo() {
       file: live.file,
       fps: +S.look.fps || 30,
       audio: !!S.look.audio,
-      background: S.settings.mode === 'palette' ? paletteColors()[0] : S.look.paper,
+      background: S.settings.mode === 'palette' ? paletteColors()[0] : S.settings.mode === 'cmyk' ? '#ffffff' : S.look.paper,
       pixelated: true,
       renderFrame: async () => {
         const r = await renderFrame();

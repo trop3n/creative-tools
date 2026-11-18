@@ -7,9 +7,13 @@
 // with hard edges and paints it in any two colors.
 //
 // Palette mode (settings.mode = 'palette') runs the same steps on the R, G and B
-// channels and returns palette indices instead; see ditherColor().
+// channels and returns palette indices instead; see ditherColor(). CMYK mode
+// (settings.mode = 'cmyk') splits the color into four process inks, dithers each
+// ink on its own with the style, and returns indices into the 16 ink overprints;
+// see ditherCMYK().
 import {STYLE_BY_ID, defaultParams} from './styles.js';
 import {KERNELS} from './diffusion.js';
+import {FIELDS, applyField, equalize} from './fields.js';
 import {MAX_COLORS, paletteRGB, paletteField, paletteDiffuse, paletteScanlines} from './palette.js';
 
 export const DEFAULT_SETTINGS = {
@@ -20,9 +24,10 @@ export const DEFAULT_SETTINGS = {
   invert: false,
   brightness: 0, contrast: 0, midtones: 0, highlights: 0, shadows: 0, // -100..100
   blur: 0, // radius in source pixels
-  mode: 'mono', // 'mono' (two tones) or 'palette'
+  mode: 'mono', // 'mono' (two tones), 'palette' or 'cmyk'
   colors: null, // palette mode: hex colors, 2..16
   strength: 100, // palette mode: how hard to dither, percent
+  black: 100, // CMYK mode: how much of the shared gray goes to black ink, percent
 };
 
 const clamp255 = v => (v < 0 ? 0 : v > 255 ? 255 : v);
@@ -157,12 +162,8 @@ export const paletteColors = s => (Array.isArray(s.colors) && s.colors.length >=
  * Palette pipeline from RGBA: per-channel tone → blur → shrink → color dither.
  * Returns {indices: Uint8Array, colors, w, h} at block resolution.
  */
-export function ditherColor(rgba, w, h, settings) {
-  const s = {...DEFAULT_SETTINGS, ...settings};
-  const style = STYLE_BY_ID[s.style];
-  if (!style) throw new Error(`Unknown style "${s.style}"`);
-  const params = {...defaultParams(style), ...s.params};
-  const colors = paletteColors(s), pal = paletteRGB(colors);
+/** R, G, B planes at block resolution, after per-channel tone (and invert) and blur. */
+function colorPlanes(rgba, w, h, s) {
   const lut = colorLut(s);
   const small = blockSize(w, h, s.block);
   const pick = sampleIndices(w, h, small.w, small.h);
@@ -181,6 +182,16 @@ export function ditherColor(rgba, w, h, settings) {
     for (let i = 0; i < pick.length; i++) out[i] = lut[rgba[pick[i] * 4 + c]];
     return out;
   });
+  return {planes, small};
+}
+
+export function ditherColor(rgba, w, h, settings) {
+  const s = {...DEFAULT_SETTINGS, ...settings};
+  const style = STYLE_BY_ID[s.style];
+  if (!style) throw new Error(`Unknown style "${s.style}"`);
+  const params = {...defaultParams(style), ...s.params};
+  const colors = paletteColors(s), pal = paletteRGB(colors);
+  const {planes, small} = colorPlanes(rgba, w, h, s);
 
   const strength = Math.max(0, s.strength ?? 100) / 100;
   const [R, G, B] = planes;
@@ -191,9 +202,91 @@ export function ditherColor(rgba, w, h, settings) {
   return {indices, colors, w: small.w, h: small.h};
 }
 
-/** Full pipeline from RGBA pixels (e.g. ImageData.data), in either mode. */
+/* ---------- CMYK ---------- */
+
+// Process inks (cyan, magenta, yellow, black) as they look printed on white paper.
+export const INKS = [
+  {id: 'c', name: 'Cyan', color: '#00aeef', angle: 15},
+  {id: 'm', name: 'Magenta', color: '#ec008c', angle: 75},
+  {id: 'y', name: 'Yellow', color: '#fff200', angle: 0},
+  {id: 'k', name: 'Black', color: '#231f20', angle: 45},
+];
+// Screens without an angle are nudged apart instead, so the inks don't stack.
+const INK_SHIFT = [[0, 0], [2, 1], [1, 3], [3, 2]];
+const EVEN_FIELDS = new Set(['bayer', 'bittone', 'stipple', 'noise', 'crosshatch', 'diamonds']);
+
+/**
+ * The 16 colors overprinting the inks can make, indexed by ink bits
+ * (1 cyan, 2 magenta, 4 yellow, 8 black): each ink multiplies the paper.
+ */
+export function inkColors(paper = '#ffffff') {
+  const toHex = rgb => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  const paperRGB = hexRGB(paper), inks = INKS.map(i => hexRGB(i.color));
+  return Array.from({length: 16}, (_, bits) => {
+    const c = paperRGB.slice();
+    inks.forEach((ink, i) => { if (bits & (1 << i)) for (let j = 0; j < 3; j++) c[j] = (c[j] * ink[j]) / 255; });
+    return toHex(c);
+  });
+}
+
+/**
+ * CMYK pipeline from RGBA: per-channel tone → blur → shrink → split into inks →
+ * dither each ink with the style (its screen turned or nudged per ink).
+ * Returns {indices, colors, w, h} like ditherColor; colors are the 16 overprints.
+ */
+export function ditherCMYK(rgba, w, h, settings) {
+  const s = {...DEFAULT_SETTINGS, ...settings};
+  const style = STYLE_BY_ID[s.style];
+  if (!style) throw new Error(`Unknown style "${s.style}"`);
+  const params = {...defaultParams(style), ...s.params};
+  const {planes: [R, G, B], small} = colorPlanes(rgba, w, h, s);
+  const n = R.length, gcr = Math.min(1, Math.max(0, (s.black ?? 100) / 100));
+  // Ink amounts 0..1 per cell; black takes `gcr` of the gray all three share.
+  const ink = INKS.map(() => new Float32Array(n));
+  for (let i = 0; i < n; i++) {
+    const r = R[i] / 255, g = G[i] / 255, b = B[i] / 255;
+    const k = (1 - Math.max(r, g, b)) * gcr, rest = 1 - k;
+    ink[3][i] = k;
+    ink[0][i] = rest > 0 ? Math.max(0, (1 - r - k) / rest) : 0;
+    ink[1][i] = rest > 0 ? Math.max(0, (1 - g - k) / rest) : 0;
+    ink[2][i] = rest > 0 ? Math.max(0, (1 - b - k) / rest) : 0;
+  }
+  // Diffusion: the usual threshold (50% = mid-gray). Screens: 50% compares each ink
+  // with the full field, so the printed coverage matches the ink amount; higher
+  // prints more ink, lower less.
+  const t = (s.threshold / 100) * 255, tField = (s.threshold / 50) * 255, sw = small.w, sh = small.h;
+  const indices = new Uint8Array(n);
+  INKS.forEach((spec, i) => {
+    // The style sees each ink as a gray image: paper is white, full ink is black.
+    const buf = new Float32Array(n);
+    for (let p = 0; p < n; p++) buf[p] = 255 * (1 - ink[i][p]);
+    if (style.field) {
+      const p = {...params};
+      let shift = null;
+      if ('angle' in p) p.angle = (p.angle ?? 0) + spec.angle;
+      else if ('seed' in p) p.seed = (p.seed ?? 1) + 101 * i;
+      else shift = INK_SHIFT[i];
+      const f = FIELDS[style.id](sw, sh, p);
+      const moved = shift ? (x, y) => f((x + shift[0]) % sw, (y + shift[1]) % sh) : f;
+      // Evened out over the frame, so each ink prints the coverage it asks for
+      // (matrix and noise screens are even already).
+      const field = EVEN_FIELDS.has(style.id) ? moved : equalize(moved, sw, sh, 128);
+      applyField(buf, sw, sh, field, tField);
+    } else {
+      style.run(buf, sw, sh, params, t);
+    }
+    const bit = 1 << i, amount = ink[i];
+    // No ink asked for, none printed (a screen's brightest spot would otherwise tie).
+    for (let p = 0; p < n; p++) if (buf[p] < 128 && amount[p] > 0) indices[p] |= bit;
+  });
+  return {indices, colors: inkColors(), w: sw, h: sh};
+}
+
+/** Full pipeline from RGBA pixels (e.g. ImageData.data), in any mode. */
 export const ditherRGBA = (rgba, w, h, settings) =>
-  settings && settings.mode === 'palette' ? ditherColor(rgba, w, h, settings) : ditherGray(luminance(rgba, w, h), w, h, settings);
+  settings && settings.mode === 'palette' ? ditherColor(rgba, w, h, settings)
+  : settings && settings.mode === 'cmyk' ? ditherCMYK(rgba, w, h, settings)
+  : ditherGray(luminance(rgba, w, h), w, h, settings);
 
 const hexRGB = hex => {
   const n = parseInt(hex.replace('#', ''), 16);
