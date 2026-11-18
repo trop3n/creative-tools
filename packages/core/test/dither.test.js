@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, indicesToSVG, maskToSVG, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -239,4 +239,53 @@ test('SVG export merges flat areas into a few rectangles', () => {
   assert.match(svg, /<path fill="#dfdfdf" d="M10 5h20v20h-20z"\/>/);
   const back = rasterSVG(svg, w, h);
   for (let i = 0; i < w * h; i++) assert.equal(back[i], mask[i] ? '#dfdfdf' : '#00304e');
+});
+
+test('cell shapes: stamps are symmetric and nest as the gap grows', () => {
+  const show = st => [...st].join('');
+  // 6 px cells, no gap: squares fill the cell, dots cut the corners.
+  assert.equal(show(cellStamp('square', 6, 0)), '1'.repeat(36));
+  const dot = cellStamp('dot', 6, 0);
+  assert.equal(dot[0], 0); assert.equal(dot[2 * 6 + 2], 1); assert.equal(dot[2], 1);
+  assert.equal(show(cellStamp('lines', 4, 0.5)), '0000111111110000');
+  assert.equal(show(cellStamp('diamond', 4, 0)), '0110111111110110');
+  for (const shape of ['square', 'dot', 'diamond', 'lines']) {
+    for (const k of [3, 5, 8, 13]) {
+      let prev = null;
+      for (const gap of [0, 0.2, 0.4, 0.6]) {
+        const st = cellStamp(shape, k, gap);
+        for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) {
+          const v = st[j * k + i];
+          assert.equal(v, st[j * k + (k - 1 - i)], `${shape} k=${k} mirrored`);
+          assert.equal(v, st[(k - 1 - j) * k + i], `${shape} k=${k} flipped`);
+          if (prev) assert.ok(v <= prev[j * k + i], `${shape} k=${k} grows with gap`);
+        }
+        prev = st;
+      }
+    }
+  }
+});
+
+test('paintCells draws shapes on the gap color and plain squares like paintIndices', () => {
+  const idx = Uint8Array.from([0, 1, 1, 0]), colors = ['#000000', '#ff8000'];
+  const plain = paintCells(idx, 2, 2, 3, colors, 'square', 0);
+  assert.deepEqual([...plain], [...paintIndices(idx, 2, 2, 6, 6, colors)]);
+  const dots = paintCells(idx, 2, 2, 5, colors, 'dot', 0.2, '#00304e');
+  const at = (x, y) => [...dots.slice((y * 10 + x) * 4, (y * 10 + x) * 4 + 3)];
+  assert.deepEqual(at(5, 0), [0, 0x30, 0x4e]); // corner of cell (1, 0): gap
+  assert.deepEqual(at(7, 2), [255, 128, 0]); // middle of cell (1, 0): its color
+  assert.equal(extremeColor(['#dfdfdf', '#00304e', '#c99530']), '#00304e');
+  assert.equal(extremeColor(['#dfdfdf', '#00304e', '#c99530'], 'light'), '#dfdfdf');
+});
+
+test('SVG export draws one shape per visible cell', () => {
+  const idx = Uint8Array.from([0, 1, 2, 1, 1, 0]), colors = ['#242222', '#c99530', '#dfdfdf'];
+  const dots = indicesToSVG(idx, 3, 2, colors, {shape: 'dot', gap: 0.2, gapColor: '#242222'});
+  assert.match(dots, /<rect width="3" height="2" fill="#242222"\/>/);
+  assert.equal((dots.match(/a0\.4 0\.4 0 1 0 0\.8 0/g) || []).length, 4); // the 4 cells not in the gap color
+  assert.doesNotMatch(dots, /crispEdges/);
+  const lines = indicesToSVG(idx, 3, 2, colors, {shape: 'lines', gap: 0.5, gapColor: '#242222'});
+  assert.match(lines, /<path fill="#c99530" d="M1 0\.25h1v0\.5h-1zM0 1\.25h2v0\.5h-2z"\/>/);
+  const diamonds = indicesToSVG(idx, 3, 2, colors, {shape: 'diamond', gap: 0, gapColor: '#242222'});
+  assert.match(diamonds, /<path fill="#dfdfdf" d="M2\.5 0l0\.5 0\.5l-0\.5 0\.5l-0\.5 -0\.5z"\/>/);
 });

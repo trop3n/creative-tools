@@ -1,7 +1,7 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug, frameCanvasFor, drawVideoFrame} from '@studio/core';
-import {paintMask, paintIndices, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
+import {paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -12,6 +12,7 @@ const jobs = new Map(); // worker job id -> {resolve, reject}
 let pending = false; // a settings change arrived while the worker was busy
 let canvas = null; // the preview canvas on the stage (one pixel per cell)
 let mirror = null; // optional scaled copy of the preview, for live recording
+let mirrorBuf = null; // shaped cells drawn at the recording's scale
 const idleWaiters = [];
 
 // The last source frame: a canvas (images, samples) or a video element (files, webcam).
@@ -184,7 +185,14 @@ worker.onmessage = ({data}) => {
 };
 
 /* ---------- painting ---------- */
-export function setCanvas(c) { canvas = c; paint(); }
+let resize = null;
+export function setCanvas(c) {
+  resize?.disconnect();
+  canvas = c;
+  // Shaped cells are painted at screen resolution, so repaint when the stage resizes.
+  if (c && typeof ResizeObserver !== 'undefined') { resize = new ResizeObserver(() => { if (shaped()) paint(); }); resize.observe(c); }
+  paint();
+}
 export const getCanvas = () => canvas;
 
 /** Keep a scaled copy of every painted frame on `c` (null to stop). Used for recording. */
@@ -194,8 +202,33 @@ const isLiveGpu = r => r && r.gpu && gpu && gpu.generation === r.gen;
 /** Index → color for a result: its palette, or [ink, paper] for two tones. */
 const colorsOf = r => r.colors || [S.look.ink, S.look.paper];
 
+/** Cell shape settings for a result: {shape, gap (0..1), gapColor}. */
+const cellsOf = r => ({
+  shape: S.look.cellShape || 'square',
+  gap: (S.look.gap || 0) / 100,
+  gapColor: extremeColor(colorsOf(r), S.look.gapTone === 'light' ? 'light' : 'dark'),
+});
+const shaped = () => !isPlainCells(S.look.cellShape, (S.look.gap || 0) / 100);
+
+/** Preview pixels per cell: 1 for plain squares (CSS scales them up); about the screen size for shapes. */
+function previewScale(r) {
+  if (!shaped() || !canvas) return 1;
+  const dpr = globalThis.devicePixelRatio || 1;
+  const fit = Math.min(canvas.clientWidth / r.w, canvas.clientHeight / r.h) * dpr;
+  const k = fit > 0 ? Math.round(fit) : Math.floor(S.settings.block) || 1;
+  return Math.max(1, Math.min(k, Math.floor(4096 / Math.max(r.w, r.h)) || 1));
+}
+
 /** A CPU result (or a read-back GPU one) painted as RGBA at outW×outH; null if its bits are gone. */
 function pixels(r, outW, outH) {
+  if (shaped()) {
+    const bits = r.colors ? r.indices : r.mask;
+    if (!bits) return null;
+    let idx = bits;
+    if (!r.colors) { idx = new Uint8Array(bits.length); for (let i = 0; i < idx.length; i++) idx[i] = bits[i] !== 0 ? 1 : 0; }
+    const c = cellsOf(r);
+    return paintCells(idx, r.w, r.h, Math.max(1, Math.round(outW / r.w)), colorsOf(r), c.shape, c.gap, c.gapColor);
+  }
   if (r.colors) return r.indices ? paintIndices(r.indices, r.w, r.h, outW, outH, r.colors) : null;
   return r.mask ? paintMask(r.mask, r.w, r.h, outW, outH, S.look.ink, S.look.paper) : null;
 }
@@ -204,20 +237,23 @@ function pixels(r, outW, outH) {
 export function paint() {
   const r = S.result;
   if (!canvas || !r) return emit();
-  if (canvas.width !== r.w || canvas.height !== r.h) { canvas.width = r.w; canvas.height = r.h; }
+  const k = previewScale(r), W = r.w * k, H = r.h * k;
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   const x = canvas.getContext('2d');
   if (isLiveGpu(r)) {
-    gpu.present(colorsOf(r), 1);
+    gpu.present(colorsOf(r), k, cellsOf(r));
     x.drawImage(gpu.canvas, 0, 0);
   } else {
-    const px = pixels(r, r.w, r.h);
+    const px = pixels(r, W, H);
     if (!px) return emit(); // a GPU result whose engine has gone; the CPU result is on its way
-    x.putImageData(new ImageData(px, r.w, r.h), 0, 0);
+    x.putImageData(new ImageData(px, W, H), 0, 0);
   }
   if (mirror) {
     const m = mirror.getContext('2d');
     m.imageSmoothingEnabled = false;
-    m.drawImage(canvas, 0, 0, mirror.width, mirror.height);
+    // Shapes are drawn at the recording's own scale rather than stretched from the preview.
+    const from = shaped() ? (mirrorBuf = scaledOutput(Math.max(1, Math.floor(mirror.width / r.w)), mirrorBuf, r)) : canvas;
+    m.drawImage(from, 0, 0, mirror.width, mirror.height);
   }
   emit();
 }
@@ -229,7 +265,7 @@ export function scaledOutput(k, into, r = S.result) {
   const x = out.getContext('2d');
   if (isLiveGpu(r)) {
     // Scale on the GPU and copy across: no read-back of the mask.
-    gpu.present(colorsOf(r), k);
+    gpu.present(colorsOf(r), k, cellsOf(r));
     x.drawImage(gpu.canvas, 0, 0);
   } else {
     const px = pixels(r, w, h);
@@ -257,7 +293,7 @@ export function setStyle(id) {
 export function setLook(key, value) {
   S.look[key] = value;
   persist();
-  if (key === 'ink' || key === 'paper') paint();
+  if (key === 'ink' || key === 'paper' || key === 'cellShape' || key === 'gap' || key === 'gapTone') paint();
   else if (key === 'gpu' || key === 'custom') { schedule(); emit(); }
   else emit();
 }
@@ -303,7 +339,7 @@ export async function exportSVG() {
   const r = S.result;
   if (!r) return toast('Nothing to export yet');
   const k = S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block));
-  const opts = {width: r.w * k, height: r.h * k, title: 'DURANDAL ' + (STYLE_BY_ID[S.settings.style]?.name || '')};
+  const opts = {width: r.w * k, height: r.h * k, title: 'DURANDAL ' + (STYLE_BY_ID[S.settings.style]?.name || ''), ...cellsOf(r)};
   // A GPU result reads its cells back here; null means a newer frame replaced it.
   const bits = r.colors ? r.indices : r.mask;
   if (!bits) return toast('That frame is gone. Try again.', 'error');

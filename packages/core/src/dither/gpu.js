@@ -18,6 +18,7 @@ import {fieldCutoffs} from './fields.js';
 import {STYLE_BY_ID, defaultParams} from './styles.js';
 import {DEFAULT_SETTINGS, blockSize, toneTable, colorLut, paletteColors} from './pipeline.js';
 import {MAX_COLORS, fieldOffsets, paletteRGB, paletteSpread} from './palette.js';
+import {SHAPE_CODE, isPlainCells, shapeRadius} from './cells.js';
 
 const VERT = `#version 300 es
 void main() {
@@ -110,12 +111,29 @@ uniform sampler2D uMask;
 uniform int uK;
 uniform int uRows;
 uniform vec3 uColors[${MAX_COLORS}];
+uniform int uShape; // -1 plain squares; else SHAPE_CODE (see cells.js for the rule)
+uniform float uR, uR2;
+uniform vec3 uGap;
 out vec4 o;
 void main() {
-  ivec2 p = ivec2(gl_FragCoord.xy) / uK;
+  ivec2 f = ivec2(gl_FragCoord.xy);
+  ivec2 p = f / uK;
   p.y = uRows - 1 - p.y;
   int i = int(round(texelFetch(uMask, p, 0).r * 255.0));
-  o = vec4(uColors[min(i, ${MAX_COLORS - 1})], 1.0);
+  vec3 c = uColors[min(i, ${MAX_COLORS - 1})];
+  if (uShape >= 0) {
+    // Pixel position inside the cell, counted from the top like the CPU stamp.
+    int ix = f.x - (f.x / uK) * uK;
+    int top = uRows * uK - 1 - f.y;
+    int iy = top - (top / uK) * uK;
+    float dx = float(abs(2 * ix + 1 - uK)), dy = float(abs(2 * iy + 1 - uK));
+    bool inside = uShape == 1 ? dx * dx + dy * dy <= uR2
+      : uShape == 2 ? dx + dy <= uR
+      : uShape == 3 ? dy <= uR
+      : max(dx, dy) <= uR;
+    if (!inside) c = uGap;
+  }
+  o = vec4(c, 1.0);
 }`;
 
 const hexRGB = hex => {
@@ -316,7 +334,11 @@ export function createGpuDither(canvas) {
      * Paint the last result onto the canvas at k pixels per cell. `colors` maps index
      * to color: [ink, paper] for two tones, the palette in palette mode.
      */
-    present(colors, k = 1) {
+    /**
+     * Draw the last result at k pixels per cell. `cells` (optional) shapes them:
+     * {shape, gap, gapColor} as in cells.js.
+     */
+    present(colors, k = 1, cells = null) {
       if (!out) return;
       const W = out.w * k, H = out.h * k;
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
@@ -326,6 +348,14 @@ export function createGpuDither(canvas) {
       gl.uniform1i(P.show.u('uK'), k);
       gl.uniform1i(P.show.u('uRows'), out.h);
       gl.uniform3fv(P.show.u('uColors'), Float32Array.from(colors.slice(0, MAX_COLORS).flatMap(hexRGB)));
+      const shaped = cells && !isPlainCells(cells.shape, cells.gap);
+      gl.uniform1i(P.show.u('uShape'), shaped ? SHAPE_CODE[cells.shape] ?? 0 : -1);
+      if (shaped) {
+        const {r, r2} = shapeRadius(k, cells.gap);
+        gl.uniform1f(P.show.u('uR'), r);
+        gl.uniform1f(P.show.u('uR2'), r2);
+        gl.uniform3fv(P.show.u('uGap'), hexRGB(cells.gapColor || '#000000'));
+      }
       draw(null, W, H);
     },
 

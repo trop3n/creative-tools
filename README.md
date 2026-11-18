@@ -7,7 +7,7 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | --- | --- |
 | `apps/launcher` | Home page: one card per tool, read from `suite.json` |
 | `apps/glyf` | GLYF: draw glyphs, then use them as the characters of a dithered image, video or webcam feed |
-| `apps/durandal` | DURANDAL: dither images, video or a webcam feed into 1-bit or palette pixel art (error diffusion, Bayer and pattern styles; up to 16 colors from presets, the image or a custom set; pattern styles run on the GPU via WebGL2 at full resolution); exports PNG, SVG and MP4 |
+| `apps/durandal` | DURANDAL: dither images, video or a webcam feed into 1-bit or palette pixel art (error diffusion, Bayer and pattern styles; up to 16 colors from presets, the image or a custom set; pattern styles run on the GPU via WebGL2 at full resolution; cells as squares, round dots, diamonds or lines with gaps for dot-matrix and LED looks); exports PNG, SVG and MP4 |
 | `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, and the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles, tested with `npm test`) |
 | `packages/theme` (`@studio/theme`) | The suite's Astryx theme and self-hosted fonts (Montserrat, JetBrains Mono) |
 | `packages/build` (`@studio/build`) | Shared Vite config and the `studio-inline` single-file step |

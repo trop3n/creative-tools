@@ -15,7 +15,7 @@ import {Slider} from '@astryxdesign/core/Slider';
 import {IconButton} from '@astryxdesign/core/IconButton';
 import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
-import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS} from '@studio/core/dither';
+import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, gpuAvailable,
@@ -259,6 +259,32 @@ export function Inspector() {
           <SegmentedControlItem value="palette" label="Palette" />
         </SegmentedControl>
         {st.mode === 'palette' ? <PaletteControls /> : <TwoTones />}
+      </InspectorSection>
+
+      <InspectorSection title="Cell shape">
+        <InspectorRow label="Shape">
+          <Selector
+            label="Cell shape"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            value={look.cellShape || 'square'}
+            options={SHAPES.map(sh => ({value: sh.id, label: sh.name}))}
+            onChange={v => setLook('cellShape', v)}
+          />
+        </InspectorRow>
+        <SliderRow label="Gap" value={look.gap || 0} min={0} max={80} format={v => `${v}%`} onChange={v => setLook('gap', v)} />
+        {(look.cellShape && look.cellShape !== 'square') || look.gap > 0 ? (
+          <>
+            <InspectorRow label="Gap color">
+              <SegmentedControl label="Gap color" size="sm" layout="fill" value={look.gapTone === 'light' ? 'light' : 'dark'} onChange={v => setLook('gapTone', v)}>
+                <SegmentedControlItem value="dark" label="Darkest" />
+                <SegmentedControlItem value="light" label="Lightest" />
+              </SegmentedControl>
+            </InspectorRow>
+            <Text type="supporting">Shapes need a few pixels per cell. Raise Pixel size if they look rough.</Text>
+          </>
+        ) : null}
       </InspectorSection>
 
       <InspectorSection title="Export">
