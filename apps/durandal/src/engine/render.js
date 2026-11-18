@@ -1,7 +1,7 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug, frameCanvasFor, drawVideoFrame} from '@studio/core';
-import {paintMask, paintIndices, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
+import {paintMask, paintIndices, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -296,4 +296,18 @@ export function exportPNG() {
     const res = await saveFile(fileBase() + '.png', b, 'image/png');
     toast(res.message, res.status === 'error' ? 'error' : 'info');
   }, 'image/png');
+}
+
+/** Vector export: one square per cell, sized like the PNG export. */
+export async function exportSVG() {
+  const r = S.result;
+  if (!r) return toast('Nothing to export yet');
+  const k = S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block));
+  const opts = {width: r.w * k, height: r.h * k, title: 'DURANDAL ' + (STYLE_BY_ID[S.settings.style]?.name || '')};
+  // A GPU result reads its cells back here; null means a newer frame replaced it.
+  const bits = r.colors ? r.indices : r.mask;
+  if (!bits) return toast('That frame is gone. Try again.', 'error');
+  const svg = r.colors ? indicesToSVG(bits, r.w, r.h, r.colors, opts) : maskToSVG(bits, r.w, r.h, S.look.ink, S.look.paper, opts);
+  const res = await saveFile(fileBase() + '.svg', new Blob([svg], {type: 'image/svg+xml'}), 'image/svg+xml');
+  toast(res.message, res.status === 'error' ? 'error' : 'info');
 }

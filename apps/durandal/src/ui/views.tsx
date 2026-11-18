@@ -18,7 +18,7 @@ import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
 import {
-  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, gpuAvailable,
+  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, gpuAvailable,
   paletteColors, setImageCount, repickImageColors, editCustom,
 } from '../engine/render.js';
 import {
@@ -167,6 +167,7 @@ export function StageToolbar() {
             <Button label="Open" size="sm" variant="ghost" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openMedia} />
           ) : null}
           <Button label="PNG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
+          <Button label="SVG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
         </>
       }
     />
@@ -277,6 +278,7 @@ export function Inspector() {
         </InspectorRow>
         <HStack gap={1} wrap="wrap">
           <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
+          <Button label="Save SVG" size="sm" variant="secondary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
         </HStack>
         <Text type="supporting">
           {s.result

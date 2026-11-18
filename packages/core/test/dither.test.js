@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, indicesToSVG, maskToSVG, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -197,4 +197,46 @@ test('paintIndices maps indices to colors and scales with hard edges', () => {
   assert.deepEqual([...out.subarray(0, 4)], [0, 0, 0, 255]);
   assert.deepEqual([...out.subarray(8, 12)], [255, 0, 0, 255]);
   assert.deepEqual([...out.subarray(4 * 8, 4 * 8 + 4)], [0, 0, 255, 255]);
+});
+
+// Draw an SVG from indicesToSVG back into cells, to check it against the source.
+const rasterSVG = (svg, w, h) => {
+  const colors = [], out = new Array(w * h).fill(null);
+  const bg = svg.match(/<rect width="\d+" height="\d+" fill="(#[0-9a-f]{6})"\/>/)[1];
+  out.fill(bg);
+  for (const [, fill, d] of svg.matchAll(/<path fill="(#[0-9a-f]{6})" d="([^"]+)"\/>/g)) {
+    colors.push(fill);
+    for (const [, x, y, len, rh] of d.matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-\d+z/g)) {
+      for (let yy = +y; yy < +y + +rh; yy++) for (let xx = +x; xx < +x + +len; xx++) {
+        assert.equal(out[yy * w + xx], bg, `cell ${xx},${yy} painted twice`);
+        out[yy * w + xx] = fill;
+      }
+    }
+  }
+  return out;
+};
+
+test('SVG export redraws every cell in its color', () => {
+  const colors = PALETTE_BY_ID.brand.colors;
+  for (const style of ['floyd-steinberg', 'bayer', 'dots']) {
+    const rgba = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) { rgba[i * 4] = INPUT[i]; rgba[i * 4 + 1] = (i % W) * 0.8; rgba[i * 4 + 2] = 255 - INPUT[i]; rgba[i * 4 + 3] = 255; }
+    const {indices, w, h} = ditherRGBA(rgba, W, H, {mode: 'palette', colors, style, params: {}, block: 3});
+    const svg = indicesToSVG(indices, w, h, colors, {width: w * 3, height: h * 3, title: 'a <test> & "quote"'});
+    assert.match(svg, /^<svg [^>]*width="\d+" height="\d+" viewBox="0 0 \d+ \d+"/);
+    assert.match(svg, /<title>a &lt;test&gt; &amp; &quot;quote&quot;<\/title>/);
+    const back = rasterSVG(svg, w, h);
+    for (let i = 0; i < w * h; i++) assert.equal(back[i], colors[indices[i]], `${style}: cell ${i}`);
+  }
+});
+
+test('SVG export merges flat areas into a few rectangles', () => {
+  const w = 40, h = 30, mask = new Uint8Array(w * h);
+  for (let y = 5; y < 25; y++) for (let x = 10; x < 30; x++) mask[y * w + x] = 255; // one paper square on ink
+  const svg = maskToSVG(mask, w, h, '#00304e', '#dfdfdf');
+  assert.equal((svg.match(/M/g) || []).length, 1);
+  assert.match(svg, /fill="#00304e"\/>/); // ink is the background
+  assert.match(svg, /<path fill="#dfdfdf" d="M10 5h20v20h-20z"\/>/);
+  const back = rasterSVG(svg, w, h);
+  for (let i = 0; i < w * h; i++) assert.equal(back[i], mask[i] ? '#dfdfdf' : '#00304e');
 });
