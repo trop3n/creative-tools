@@ -40,6 +40,7 @@ const BLURBS: Record<string, string> = {
   'two-row-sierra': 'A lighter Sierra.',
   'sierra-lite': 'Tiny kernel, gritty texture.',
   'stevenson-arce': 'Wide, airy scatter.',
+  ostromukhov: 'Weights shift with tone. Even, wormless dots.',
   bayer: 'Regular crosshatch grid. Retro screens.',
   bittone: 'Clustered 4×4 dots, print-like.',
   dots: 'Round halftone dots on a rotated grid.',

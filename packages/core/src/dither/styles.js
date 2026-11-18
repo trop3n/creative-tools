@@ -4,6 +4,7 @@
 // Add a style by appending to STYLES; the UI builds its controls from `params`.
 import {KERNELS, diffuse, diffuseScanlines} from './diffusion.js';
 import {FIELDS, applyField} from './fields.js';
+import {diffuseOstromukhov} from './ostromukhov.js';
 
 const serpentine = {key: 'serpentine', label: 'Serpentine scan', type: 'toggle', default: false};
 
@@ -30,6 +31,12 @@ export const STYLES = [
   diffusionStyle('two-row-sierra', 'Two-Row Sierra'),
   diffusionStyle('sierra-lite', 'Sierra Lite'),
   diffusionStyle('stevenson-arce', 'Stevenson–Arce'),
+  {
+    // Weights change with the input level (always a serpentine scan), for blue-noise dots.
+    id: 'ostromukhov', name: 'Ostromukhov', family: 'Error diffusion',
+    params: [],
+    run: (buf, w, h, p, t) => diffuseOstromukhov(buf, w, h, t),
+  },
 
   fieldStyle('bayer', 'Bayer', [{key: 'size', label: 'Matrix', type: 'select', default: 4, options: [2, 4, 8, 16]}]),
   fieldStyle('bittone', 'Cluster'),

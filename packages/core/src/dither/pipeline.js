@@ -14,7 +14,8 @@
 import {STYLE_BY_ID, defaultParams} from './styles.js';
 import {KERNELS} from './diffusion.js';
 import {FIELDS, equalize} from './fields.js';
-import {MAX_COLORS, paletteRGB, paletteField, paletteDiffuse, paletteScanlines} from './palette.js';
+import {MAX_COLORS, paletteRGB, paletteField, paletteDiffuse, paletteScanlines, nearestColor} from './palette.js';
+import {paletteOstromukhov} from './ostromukhov.js';
 
 export const DEFAULT_SETTINGS = {
   style: 'floyd-steinberg',
@@ -197,6 +198,7 @@ export function ditherColor(rgba, w, h, settings) {
   const [R, G, B] = planes;
   let indices;
   if (style.field) indices = paletteField(R, G, B, small.w, small.h, style.field(small.w, small.h, params), pal, strength);
+  else if (style.id === 'ostromukhov') indices = paletteOstromukhov(R, G, B, small.w, small.h, pal, nearestColor, strength);
   else if (KERNELS[style.id]) indices = paletteDiffuse(R, G, B, small.w, small.h, KERNELS[style.id], pal, strength, !!params.serpentine);
   else indices = paletteScanlines(R, G, B, small.w, small.h, params.sigma ?? 2, pal, strength);
   return {indices, colors, w: small.w, h: small.h};

@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, blueNoiseMatrix, ditherCMYK, inkColors, INKS, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, OSTROMUKHOV_TABLE, OSTROMUKHOV_WEIGHTS, blueNoiseMatrix, ditherCMYK, inkColors, INKS, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -387,4 +387,33 @@ test('CMYK: screens print about as much ink as asked at 50%', () => {
       assert.ok(Math.abs(c - want) < 0.08, `${style} at ${level}: ${c.toFixed(3)} cyan, want ${want.toFixed(3)}`);
     }
   }
+});
+
+test('Ostromukhov: table from the paper, weights sum to 1, mirrored around 127.5', () => {
+  assert.equal(OSTROMUKHOV_TABLE.length, 128 * 3);
+  assert.deepEqual([...OSTROMUKHOV_TABLE.slice(0, 3)], [13, 0, 5]);
+  assert.deepEqual([...OSTROMUKHOV_TABLE.slice(63 * 3, 64 * 3)], [2447, 2200, 57]);
+  for (let v = 0; v < 256; v++) {
+    const s = OSTROMUKHOV_WEIGHTS[v * 3] + OSTROMUKHOV_WEIGHTS[v * 3 + 1] + OSTROMUKHOV_WEIGHTS[v * 3 + 2];
+    assert.ok(Math.abs(s - 1) < 1e-12, `level ${v} sums to ${s}`);
+    for (let k = 0; k < 3; k++) assert.equal(OSTROMUKHOV_WEIGHTS[v * 3 + k], OSTROMUKHOV_WEIGHTS[(255 - v) * 3 + k]);
+  }
+});
+
+test('Ostromukhov keeps flat tones and spreads light dots apart', () => {
+  const w = 200, h = 150;
+  for (const g of [8, 40, 100, 128, 190, 250]) {
+    const {mask} = ditherGray(new Float32Array(w * h).fill(g), w, h, {style: 'ostromukhov', params: {}, block: 1, threshold: 50});
+    const white = mask.reduce((a, v) => a + (v ? 1 : 0), 0) / mask.length;
+    assert.ok(Math.abs(white - g / 255) < 0.01, `${g}: ${white.toFixed(4)} white`);
+  }
+  // At a light gray, black dots should almost never touch each other.
+  const {mask} = ditherGray(new Float32Array(w * h).fill(235), w, h, {style: 'ostromukhov', params: {}, block: 1, threshold: 50});
+  let dots = 0, touching = 0;
+  for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+    if (mask[y * w + x]) continue;
+    dots++;
+    if (!mask[y * w + x + 1] || !mask[(y + 1) * w + x]) touching++;
+  }
+  assert.ok(dots > 1000 && touching / dots < 0.02, `${touching} of ${dots} dots touch`);
 });
