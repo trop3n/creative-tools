@@ -17,8 +17,9 @@ import {Theme} from '@astryxdesign/core/theme';
 import {useToast} from '@astryxdesign/core/Toast';
 import {PanelLeft, Settings2} from 'lucide-react';
 import {studioTheme} from '@studio/theme';
+import {isMediaFile} from '@studio/core';
 import {saved, setToast, toast} from './engine/state.js';
-import {initSource, loadFile} from './engine/render.js';
+import {initSource, loadFile} from './engine/media.js';
 import {StyleRail, Stage, StageToolbar, Inspector} from './ui/views';
 import {ICON} from './ui/parts';
 
@@ -58,14 +59,14 @@ function ToastBridge() {
   return null;
 }
 
-/** Drop or paste an image anywhere to make it the source. */
+/** Drop an image or video, or paste an image, anywhere to make it the source. */
 function useDropAndPaste() {
   useEffect(() => {
     const over = (ev: DragEvent) => ev.preventDefault();
     const drop = (ev: DragEvent) => {
       ev.preventDefault();
-      const f = [...(ev.dataTransfer?.files || [])].find(file => /^image\//.test(file.type));
-      f ? loadFile(f) : toast('Drop an image file');
+      const f = [...(ev.dataTransfer?.files || [])].find(isMediaFile);
+      f ? loadFile(f) : toast('Drop an image or video file');
     };
     const paste = (ev: ClipboardEvent) => {
       const t = ev.target as HTMLElement;

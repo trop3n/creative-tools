@@ -6,7 +6,7 @@ import {DEFAULT_SETTINGS, STYLE_BY_ID, defaultParams} from '@studio/core/dither'
 
 export const saved = toolStore('durandal');
 
-export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', sample: 'spheres'};
+export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', sample: 'spheres', fps: '30', audio: true, mirror: true};
 export const TONE_KEYS = ['brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
 
 const storedSettings = saved.get('settings.v1', {}) || {};
@@ -17,7 +17,13 @@ export const S = {
   settings, // pipeline settings (style, block, threshold, tone …)
   paramsByStyle: saved.get('params.v1', {}) || {}, // remembered per style
   look: {...LOOK_DEFAULT, ...(saved.get('look.v1', {}) || {})},
-  source: {kind: 'sample', label: '', w: 0, h: 0},
+  // What's feeding the stage. kind: 'sample' | 'image' | 'video' | 'camera'
+  media: {
+    kind: 'sample', label: '', w: 0, h: 0,
+    playing: false, time: 0, duration: 0, sound: false, volume: 0.8, // video
+    exporting: false, progress: '', // MP4 render
+    cams: [], camId: '', recording: false, recTime: 0, // webcam
+  },
   result: null, // {mask, w, h, ms}
   busy: false,
 };

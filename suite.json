@@ -17,7 +17,7 @@
       "app": "apps/durandal",
       "path": "durandal/",
       "category": "Image effects",
-      "description": "Turn any image into 1-bit pixel art with error-diffusion and pattern dithering, in your own ink and paper colors. Exports PNG.",
+      "description": "Turn images, video or a webcam feed into 1-bit pixel art with error-diffusion and pattern dithering, in your own ink and paper colors. Exports PNG and MP4.",
       "preview": "durandal.svg"
     }
   ]

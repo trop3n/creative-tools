@@ -54,6 +54,7 @@ async function encodeAudio(audio, muxer, maxSec) {
  * @param {number} o.fps
  * @param {() => Promise<HTMLCanvasElement>} o.renderFrame  called after each seek; returns the tool's output canvas
  * @param {string} [o.background]        fill behind the output (for transparent output)
+ * @param {boolean} [o.pixelated]       scale frames with nearest-neighbour (keeps pixel art sharp)
  * @param {number} [o.maxSide]           longest side of the encoded video
  * @param {boolean} [o.audio]            pass the source's audio through
  * @param {(p: {frame, total, phase}) => void} [o.onProgress]
@@ -61,7 +62,7 @@ async function encodeAudio(audio, muxer, maxSec) {
  * @returns {Promise<{blob: Blob | null, cancelled: boolean, audioNote: string}>}
  */
 export async function renderVideoToMp4(o) {
-  const {video, file, fps, renderFrame, background = '#000', maxSide = 1920, audio: wantAudio = true, onProgress = () => {}, isCancelled = () => false} = o;
+  const {video, file, fps, renderFrame, background = '#000', pixelated = false, maxSide = 1920, audio: wantAudio = true, onProgress = () => {}, isCancelled = () => false} = o;
   if (!canEncodeVideo()) throw new Error('This browser cannot encode video. Use Chrome or Edge.');
   const dur = video.duration;
   if (!isFinite(dur) || dur <= 0) throw new Error('This video does not report its length');
@@ -100,6 +101,7 @@ export async function renderVideoToMp4(o) {
   const encoder = new VideoEncoder({output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { err = e; }});
   encoder.configure(cfg);
   const ec = makeCanvas(EW, EH), ecx = ec.getContext('2d');
+  ecx.imageSmoothingEnabled = !pixelated;
   const total = Math.max(1, Math.floor(dur * fps));
   try {
     for (let i = 0; i < total; i++) {

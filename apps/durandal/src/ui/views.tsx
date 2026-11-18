@@ -11,13 +11,17 @@ import {Selector} from '@astryxdesign/core/Selector';
 import {Switch} from '@astryxdesign/core/Switch';
 import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
-import {Download, ImageUp, RotateCcw} from 'lucide-react';
-import {pickFiles} from '@studio/core';
+import {Slider} from '@astryxdesign/core/Slider';
+import {IconButton} from '@astryxdesign/core/IconButton';
+import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Pause, Play, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
+import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
+import {setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG} from '../engine/render.js';
 import {
-  SAMPLES, loadSample, loadFile, setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG,
-} from '../engine/render.js';
+  SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
+  setMirrorImage, toggleRecord,
+} from '../engine/media.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
@@ -99,27 +103,67 @@ export function Stage() {
       </StackItem>
       <HStack gap={3} hAlign="between">
         <Text type="supporting" hasTabularNumbers>
-          {r ? `${r.w} × ${r.h} cells · ${Math.round(r.ms)} ms${s.busy ? ' · rendering…' : ''}` : 'Rendering…'}
+          {r ? `${r.w} × ${r.h} cells · ${Math.round(r.ms)} ms${s.busy && s.media.kind !== 'video' && s.media.kind !== 'camera' ? ' · rendering…' : ''}` : 'Rendering…'}
         </Text>
         <Text type="supporting" maxLines={1}>
-          {s.source.label}
+          {s.media.label}
         </Text>
       </HStack>
     </VStack>
   );
 }
 
-const openImage = async () => { const [f] = await pickFiles('image/*'); loadFile(f); };
+const openMedia = async () => { const [f] = await pickFiles('image/*,video/*'); loadFile(f); };
+const clock = (sec: number) => {
+  sec = Math.max(0, sec || 0);
+  return Math.floor(sec / 60) + ':' + (sec % 60).toFixed(1).padStart(4, '0');
+};
 
 export function StageToolbar() {
+  const {media} = useStore();
   return (
     <Toolbar
       label="Output"
       size="sm"
       startContent={
         <>
-          <Button label="Open image" size="sm" variant="ghost" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openImage} />
-          <Button label="Save PNG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
+          {media.kind === 'video' ? (
+            <>
+              <IconButton
+                label={media.playing ? 'Pause' : 'Play'}
+                tooltip={media.playing ? 'Pause' : 'Play'}
+                size="sm"
+                variant="ghost"
+                isDisabled={media.exporting}
+                icon={<Icon icon={media.playing ? Pause : Play} size={ICON} />}
+                onClick={playPause}
+              />
+              <IconButton
+                label={media.sound ? 'Turn sound off' : 'Turn sound on'}
+                tooltip={media.sound ? 'Sound on' : 'Sound off'}
+                size="sm"
+                variant="ghost"
+                icon={<Icon icon={media.sound ? Volume2 : VolumeX} size={ICON} />}
+                onClick={() => setSound(!media.sound)}
+              />
+              <Text type="supporting" hasTabularNumbers>
+                {clock(media.time)} / {clock(media.duration)}
+              </Text>
+            </>
+          ) : null}
+          {media.kind === 'camera' ? (
+            <Button
+              label={media.recording ? `Stop ${clock(media.recTime)}` : 'Record'}
+              size="sm"
+              variant={media.recording ? 'destructive' : 'secondary'}
+              icon={<Icon icon={media.recording ? Square : Circle} size={ICON} />}
+              onClick={toggleRecord}
+            />
+          ) : null}
+          {media.kind !== 'video' && media.kind !== 'camera' ? (
+            <Button label="Open" size="sm" variant="ghost" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openMedia} />
+          ) : null}
+          <Button label="PNG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
         </>
       }
     />
@@ -141,17 +185,25 @@ export function Inspector() {
           label="Sample image"
           size="sm"
           layout="fill"
-          value={s.source.kind === 'sample' ? look.sample : ''}
+          value={s.media.kind === 'sample' ? look.sample : ''}
           onChange={loadSample}>
           {Object.entries(SAMPLES).map(([k, label]) => (
             <SegmentedControlItem key={k} value={k} label={label} />
           ))}
         </SegmentedControl>
         <HStack gap={1} wrap="wrap">
-          <Button label="Open image…" size="sm" variant="primary" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openImage} />
+          <Button label="Image or video…" size="sm" variant="primary" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openMedia} />
+          {s.media.kind === 'camera' ? (
+            <Button label="Stop camera" size="sm" icon={<Icon icon={CameraOff} size={ICON} />} onClick={stopCamera} />
+          ) : (
+            <Button label="Webcam" size="sm" icon={<Icon icon={Camera} size={ICON} />} onClick={() => startWebcam()} />
+          )}
         </HStack>
-        <Text type="supporting">You can also drop an image anywhere on the page, or paste one.</Text>
+        <Text type="supporting">You can also drop an image or video anywhere on the page, or paste an image.</Text>
       </InspectorSection>
+
+      {s.media.kind === 'video' ? <VideoSection /> : null}
+      {s.media.kind === 'camera' ? <WebcamSection /> : null}
 
       <InspectorSection title={style.name}>
         <Text type="supporting">{BLURBS[style.id]}</Text>
@@ -232,5 +284,58 @@ export function Inspector() {
         </Text>
       </InspectorSection>
     </>
+  );
+}
+
+function VideoSection() {
+  const {media: m, look} = useStore();
+  return (
+    <InspectorSection title="Video">
+      <Slider
+        label="Position"
+        isLabelHidden
+        min={0}
+        max={1000}
+        value={m.duration ? Math.round((m.time / m.duration) * 1000) : 0}
+        onChange={(v: number) => seekFraction(v / 1000)}
+        valueDisplay="none"
+        isDisabled={m.exporting}
+      />
+      <SliderRow label="Volume" value={m.volume} min={0} max={1} step={0.01} format={v => Math.round(v * 100) + '%'} onChange={setVolume} />
+      <InspectorRow label="Frame rate">
+        <SegmentedControl label="Frame rate" size="sm" layout="fill" value={look.fps} onChange={v => setLook('fps', v)}>
+          {['24', '25', '30', '60'].map(f => (
+            <SegmentedControlItem key={f} value={f} label={f} />
+          ))}
+        </SegmentedControl>
+      </InspectorRow>
+      <Switch label="Include the source audio" size="sm" value={!!look.audio} onChange={v => setLook('audio', v)} />
+      <Button
+        label={m.exporting ? 'Cancel render' : 'Render video .mp4'}
+        size="sm"
+        variant={m.exporting ? 'destructive' : 'primary'}
+        icon={<Icon icon={Clapperboard} size={ICON} />}
+        isDisabled={!canEncodeVideo()}
+        tooltip={canEncodeVideo() ? undefined : "This browser cannot encode video. Use Chrome or Edge."}
+        onClick={renderVideo}
+      />
+      <Text type="supporting" hasTabularNumbers>
+        {m.progress ||
+          'Renders every frame offline at full quality. Pixel blocks are scaled up by whole numbers toward 1920 px, so they stay sharp.'}
+      </Text>
+    </InspectorSection>
+  );
+}
+
+function WebcamSection() {
+  const {media: m, look} = useStore();
+  return (
+    <InspectorSection title="Webcam">
+      {m.cams.length > 1 ? (
+        <Selector label="Camera" size="sm" options={m.cams} value={m.camId} onChange={v => startWebcam(v)} />
+      ) : null}
+      <Switch label="Mirror image" size="sm" value={!!look.mirror} onChange={setMirrorImage} />
+      <Text type="supporting">Record captures the output live, as you see it, with no sound.</Text>
+    </InspectorSection>
   );
 }
