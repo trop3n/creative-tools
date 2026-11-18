@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, fieldCutoffs, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -115,4 +115,25 @@ test('Gaussian helper is normalised', () => {
   const {kernel, radius} = gaussian1d(2);
   assert.equal(radius, 6);
   assert.ok(Math.abs(kernel.reduce((a, b) => a + b, 0) - 1) < 1e-9);
+});
+
+test('field cutoffs give the same answer as the CPU compare, in float32', () => {
+  const v32 = new Float32Array(1);
+  let checked = 0;
+  for (const s of STYLES.filter(st => st.field)) {
+    const w = 97, h = 61, params = Object.fromEntries(s.params.map(p => [p.key, p.default]));
+    for (const thr of [0, 37.4, 127.5, 255]) {
+      const field = s.field(w, h, params), cut = fieldCutoffs(field, w, h, thr);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const c = field(x, y) * (thr / 255), k = cut[y * w + x];
+        // Pixel values right at and around the cutoff, plus every whole level.
+        for (const raw of [c, k, Math.floor(c), Math.ceil(c), c + 1e-6, c - 1e-6]) {
+          v32[0] = raw; const v = v32[0];
+          assert.equal(v > k, v > c, `${s.id} at ${x},${y}: v=${v} c=${c} k=${k}`);
+          checked++;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 100000);
 });

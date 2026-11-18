@@ -16,6 +16,7 @@ const diffusionStyle = (id, name) => ({
 const fieldStyle = (id, name, params = []) => ({
   id, name, family: 'Pattern',
   params,
+  field: (w, h, p) => FIELDS[id](w, h, p), // pattern styles expose their field (the GPU path uses it)
   run: (buf, w, h, p, t) => applyField(buf, w, h, FIELDS[id](w, h, p), t),
 });
 

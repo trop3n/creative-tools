@@ -2,7 +2,7 @@
 // plus MP4 render (video) and live recording (webcam). Video plumbing comes from
 // @studio/core, shared with GLYF.
 import {
-  loadImageFile, isImageFile, isVideoFile, openVideoFile, openWebcam, frameCanvasFor, drawVideoFrame,
+  loadImageFile, isImageFile, isVideoFile, openVideoFile, openWebcam,
   cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
@@ -10,7 +10,7 @@ import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase} fr
 
 const M = () => S.media;
 /** Internal handles; S.media mirrors what the UI shows. */
-const live = {vid: null, file: null, dispose: null, frame: null, recorder: null, recCanvas: null};
+const live = {vid: null, file: null, dispose: null, recorder: null, recCanvas: null};
 let lastVT = -1, lastEmit = 0, cancelExport = false, recTimer = 0;
 
 /* ---------- samples ---------- */
@@ -63,7 +63,7 @@ function stopLive() {
   if (M().exporting) cancelExport = true;
   if (live.recorder) { live.recorder.discard(); live.recorder = null; endRecordingUI(); }
   if (live.dispose) live.dispose();
-  Object.assign(live, {vid: null, file: null, dispose: null, frame: null});
+  Object.assign(live, {vid: null, file: null, dispose: null});
   Object.assign(M(), {playing: false, time: 0, duration: 0});
 }
 
@@ -95,7 +95,8 @@ export async function loadFile(file) {
 }
 
 /* ---------- video and webcam ---------- */
-const grab = () => { if (live.vid && live.frame) drawVideoFrame(live.vid, live.frame, M().kind === 'camera' && S.look.mirror); };
+/** Dither the video's current frame. The GPU takes it at native size; the worker gets a copy at most 1280 wide. */
+const renderFrame = () => renderNow(live.vid, {mirror: M().kind === 'camera' && S.look.mirror});
 
 function syncVideoUI(force = false) {
   const v = live.vid;
@@ -112,8 +113,7 @@ function startLoop(v) {
     if (live.vid !== v) return;
     if (!M().exporting && !isBusy() && v.readyState >= 2 && v.currentTime !== lastVT) {
       lastVT = v.currentTime;
-      grab();
-      renderNow(live.frame).catch(() => {});
+      renderFrame().catch(() => {});
     }
     syncVideoUI();
     requestAnimationFrame(tick);
@@ -127,8 +127,8 @@ async function loadVideo(file) {
   catch (e) { return toast(e.message, 'error'); }
   stopLive();
   const v = src.video;
-  Object.assign(live, {vid: v, file, dispose: src.dispose, frame: frameCanvasFor(v, 1280)});
-  Object.assign(M(), {kind: 'video', label: file.name, w: live.frame.width, h: live.frame.height});
+  Object.assign(live, {vid: v, file, dispose: src.dispose});
+  Object.assign(M(), {kind: 'video', label: file.name, w: v.videoWidth, h: v.videoHeight});
   startLoop(v);
   v.play().then(() => syncVideoUI(true)).catch(() => {
     // Autoplay with sound can be refused; fall back to muted.
@@ -170,8 +170,8 @@ export async function startWebcam(deviceId) {
   try { cam = await openWebcam(deviceId); }
   catch (e) { return toast(cameraErrorMessage(e), 'error'); }
   stopLive();
-  Object.assign(live, {vid: cam.video, dispose: cam.dispose, frame: frameCanvasFor(cam.video, 1280)});
-  Object.assign(M(), {kind: 'camera', label: cam.label || 'Webcam', w: live.frame.width, h: live.frame.height, cams: cam.cameras, camId: cam.deviceId});
+  Object.assign(live, {vid: cam.video, dispose: cam.dispose});
+  Object.assign(M(), {kind: 'camera', label: cam.label || 'Webcam', w: cam.video.videoWidth, h: cam.video.videoHeight, cams: cam.cameras, camId: cam.deviceId});
   startLoop(cam.video);
   emit();
 }
@@ -199,8 +199,7 @@ export async function renderVideo() {
       background: S.look.paper,
       pixelated: true,
       renderFrame: async () => {
-        grab();
-        const r = await renderNow(live.frame);
+        const r = await renderFrame();
         // Blow each cell up by a whole number so blocks stay square and sharp.
         out.canvas = scaledOutput(fitScale(r, 1920), out.canvas, r);
         return out.canvas;

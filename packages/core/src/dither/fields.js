@@ -87,6 +87,28 @@ export const FIELDS = {
   },
 };
 
+const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+
+/**
+ * Per-pixel cutoffs for a field, as float32 values `c` chosen so that, for any
+ * float32 pixel value v, `v > c` gives exactly the same answer as applyField's
+ * `v > field(x, y) * threshold / 255` (worked out in doubles). A GPU shader can
+ * then threshold with one float32 compare and match the CPU bit for bit.
+ */
+export function fieldCutoffs(field, w, h, threshold) {
+  const scale = threshold / 255, out = new Float32Array(w * h);
+  for (let y = 0, p = 0; y < h; y++) {
+    for (let x = 0; x < w; x++, p++) {
+      const c = field(x, y) * scale;
+      f32[0] = c;
+      // Rounded up past c: step one float32 down, since "v > c" = "v ≥ that float32".
+      if (f32[0] > c && f32[0] > 0) u32[0]--;
+      out[p] = f32[0];
+    }
+  }
+  return out;
+}
+
 /** Threshold `buf` in place against a field. */
 export function applyField(buf, w, h, field, threshold) {
   const scale = threshold / 255;

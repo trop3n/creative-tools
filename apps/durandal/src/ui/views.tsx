@@ -17,7 +17,7 @@ import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Pause, Play,
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
-import {setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG} from '../engine/render.js';
+import {setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, gpuAvailable} from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
   setMirrorImage, toggleRecord,
@@ -103,7 +103,7 @@ export function Stage() {
       </StackItem>
       <HStack gap={3} hAlign="between">
         <Text type="supporting" hasTabularNumbers>
-          {r ? `${r.w} × ${r.h} cells · ${Math.round(r.ms)} ms${s.busy && s.media.kind !== 'video' && s.media.kind !== 'camera' ? ' · rendering…' : ''}` : 'Rendering…'}
+          {r ? `${r.w} × ${r.h} cells · ${r.gpu ? 'GPU' : `${Math.round(r.ms)} ms`}${s.busy && s.media.kind !== 'video' && s.media.kind !== 'camera' ? ' · rendering…' : ''}` : 'Rendering…'}
         </Text>
         <Text type="supporting" maxLines={1}>
           {s.media.label}
@@ -228,6 +228,9 @@ export function Inspector() {
         <SliderRow label="Pixel size" value={st.block} min={1} max={32} format={v => `${v} px`} onChange={v => setSetting('block', v)} />
         <SliderRow label="Threshold" value={st.threshold} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('threshold', v)} />
         <Switch label="Invert" size="sm" value={!!st.invert} onChange={v => setSetting('invert', v)} />
+        {gpuAvailable() && style.family === 'Pattern' ? (
+          <Switch label="Render patterns on the GPU" size="sm" value={look.gpu !== false} onChange={v => setLook('gpu', v)} />
+        ) : null}
       </InspectorSection>
 
       <InspectorSection title="Tone">

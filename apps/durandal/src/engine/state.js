@@ -6,7 +6,7 @@ import {DEFAULT_SETTINGS, STYLE_BY_ID, defaultParams} from '@studio/core/dither'
 
 export const saved = toolStore('durandal');
 
-export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', sample: 'spheres', fps: '30', audio: true, mirror: true};
+export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true};
 export const TONE_KEYS = ['brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
 
 const storedSettings = saved.get('settings.v1', {}) || {};
@@ -24,7 +24,7 @@ export const S = {
     exporting: false, progress: '', // MP4 render
     cams: [], camId: '', recording: false, recTime: 0, // webcam
   },
-  result: null, // {mask, w, h, ms}
+  result: null, // {mask, w, h, ms, gpu?}
   busy: false,
 };
 
