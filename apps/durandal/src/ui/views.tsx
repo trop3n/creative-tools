@@ -13,11 +13,14 @@ import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Slider} from '@astryxdesign/core/Slider';
 import {IconButton} from '@astryxdesign/core/IconButton';
-import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Pause, Play, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
+import {Camera, CameraOff, Circle, Clapperboard, Download, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
-import {STYLES, STYLE_BY_ID} from '@studio/core/dither';
+import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
-import {setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, gpuAvailable} from '../engine/render.js';
+import {
+  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, gpuAvailable,
+  paletteColors, setImageCount, repickImageColors, editCustom,
+} from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
   setMirrorImage, toggleRecord,
@@ -226,7 +229,11 @@ export function Inspector() {
 
       <InspectorSection title="Pixels">
         <SliderRow label="Pixel size" value={st.block} min={1} max={32} format={v => `${v} px`} onChange={v => setSetting('block', v)} />
-        <SliderRow label="Threshold" value={st.threshold} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('threshold', v)} />
+        {st.mode === 'palette' ? (
+          <SliderRow label="Strength" value={st.strength ?? 100} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('strength', v)} />
+        ) : (
+          <SliderRow label="Threshold" value={st.threshold} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('threshold', v)} />
+        )}
         <Switch label="Invert" size="sm" value={!!st.invert} onChange={v => setSetting('invert', v)} />
         {gpuAvailable() && style.family === 'Pattern' ? (
           <Switch label="Render patterns on the GPU" size="sm" value={look.gpu !== false} onChange={v => setLook('gpu', v)} />
@@ -246,18 +253,11 @@ export function Inspector() {
       </InspectorSection>
 
       <InspectorSection title="Color">
-        <InspectorRow label="Ink">
-          {INKS.map(c => (
-            <PresetChip key={c} label="Ink" color={c} isOn={look.ink === c} onPick={() => setLook('ink', c)} />
-          ))}
-          <Swatch label="Custom ink" value={look.ink} onChange={v => setLook('ink', v)} />
-        </InspectorRow>
-        <InspectorRow label="Paper">
-          {PAPERS.map(c => (
-            <PresetChip key={c} label="Paper" color={c} isOn={look.paper === c} onPick={() => setLook('paper', c)} />
-          ))}
-          <Swatch label="Custom paper" value={look.paper} onChange={v => setLook('paper', v)} />
-        </InspectorRow>
+        <SegmentedControl label="Color mode" size="sm" layout="fill" value={st.mode === 'palette' ? 'palette' : 'mono'} onChange={v => setSetting('mode', v)}>
+          <SegmentedControlItem value="mono" label="Two tones" />
+          <SegmentedControlItem value="palette" label="Palette" />
+        </SegmentedControl>
+        {st.mode === 'palette' ? <PaletteControls /> : <TwoTones />}
       </InspectorSection>
 
       <InspectorSection title="Export">
@@ -286,6 +286,66 @@ export function Inspector() {
             : ' '}
         </Text>
       </InspectorSection>
+    </>
+  );
+}
+
+const PALETTE_OPTIONS = [
+  ...PALETTES.map(p => ({value: p.id, label: p.name})),
+  {value: 'image', label: 'From the image'},
+  {value: 'custom', label: 'Custom'},
+];
+
+function TwoTones() {
+  const {look} = useStore();
+  return (
+    <>
+      <InspectorRow label="Ink">
+        {INKS.map(c => (
+          <PresetChip key={c} label="Ink" color={c} isOn={look.ink === c} onPick={() => setLook('ink', c)} />
+        ))}
+        <Swatch label="Custom ink" value={look.ink} onChange={v => setLook('ink', v)} />
+      </InspectorRow>
+      <InspectorRow label="Paper">
+        {PAPERS.map(c => (
+          <PresetChip key={c} label="Paper" color={c} isOn={look.paper === c} onPick={() => setLook('paper', c)} />
+        ))}
+        <Swatch label="Custom paper" value={look.paper} onChange={v => setLook('paper', v)} />
+      </InspectorRow>
+    </>
+  );
+}
+
+function PaletteControls() {
+  const {settings: st, look} = useStore();
+  const colors: string[] = paletteColors({pick: false});
+  // Editing any swatch turns the palette on show into the custom palette.
+  const edit = (next: string[]) => editCustom(next);
+  return (
+    <>
+      <InspectorRow label="Palette">
+        <Selector label="Palette" isLabelHidden size="sm" width="100%" value={st.palette} options={PALETTE_OPTIONS} onChange={v => setSetting('palette', v)} />
+      </InspectorRow>
+      <InspectorRow label="Colors">
+        {colors.map((c, i) => (
+          <Swatch key={i} label={`Color ${i + 1}`} value={c} onChange={v => edit(colors.map((x, j) => (j === i ? v : x)))} />
+        ))}
+        {colors.length < MAX_COLORS ? (
+          <IconButton label="Add a color" tooltip="Add a color" size="sm" variant="ghost" icon={<Icon icon={Plus} size={ICON} />} onClick={() => edit([...colors, colors[colors.length - 1]])} />
+        ) : null}
+        {colors.length > 2 ? (
+          <IconButton label="Remove the last color" tooltip="Remove the last color" size="sm" variant="ghost" icon={<Icon icon={Minus} size={ICON} />} onClick={() => edit(colors.slice(0, -1))} />
+        ) : null}
+      </InspectorRow>
+      {st.palette === 'image' ? (
+        <>
+          <SliderRow label="How many" value={look.imageCount} min={2} max={MAX_COLORS} onChange={setImageCount} />
+          <HStack>
+            <Button label="Pick again from this frame" size="sm" variant="ghost" icon={<Icon icon={RefreshCw} size={ICON} />} onClick={repickImageColors} />
+          </HStack>
+        </>
+      ) : null}
+      <Text type="supporting">Up to {MAX_COLORS} colors. Changing one saves the set as your custom palette.</Text>
     </>
   );
 }

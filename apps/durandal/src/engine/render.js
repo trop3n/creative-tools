@@ -1,7 +1,7 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug, frameCanvasFor, drawVideoFrame} from '@studio/core';
-import {paintMask, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
+import {paintMask, paintIndices, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -45,6 +45,41 @@ function onGpu(settings) {
   return gpu.supports(settings, w, h);
 }
 
+/* ---------- palettes ---------- */
+let imageColorsFor = null; // the source element S.look.imageColors were picked from
+
+/** Pick the palette from the current source (median cut on a small copy). */
+export function pickImageColors() {
+  if (!src) return;
+  const [w, h] = sourceSize(src.el);
+  if (!w || !h) return;
+  const k = Math.min(1, 160 / Math.max(w, h)), c = makeCanvas(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k)));
+  const x = c.getContext('2d', {willReadFrequently: true});
+  x.drawImage(src.el, 0, 0, c.width, c.height);
+  S.look.imageColors = adaptivePalette(x.getImageData(0, 0, c.width, c.height).data, c.width, c.height, S.look.imageCount);
+  imageColorsFor = src.el;
+  persist();
+}
+
+/** The colors the current palette setting stands for. */
+export function paletteColors({pick = true} = {}) {
+  const id = S.settings.palette;
+  if (id === 'image') {
+    // Colors follow the source: pick again when it changes (pick: false just reads them).
+    if (pick && (imageColorsFor !== (src && src.el) || !S.look.imageColors.length)) pickImageColors();
+    return S.look.imageColors.length >= 2 ? S.look.imageColors : PALETTE_BY_ID.gray4.colors;
+  }
+  if (id === 'custom') return S.look.custom.slice(0, MAX_COLORS);
+  return (PALETTE_BY_ID[id] || PALETTE_BY_ID.brand).colors;
+}
+
+/** Settings as the engines take them: current style params, palette colors resolved. */
+const jobSettings = () => {
+  const st = {...S.settings, params: currentParams()};
+  if (st.mode === 'palette') st.colors = paletteColors();
+  return st;
+};
+
 export const isBusy = () => jobs.size > 0;
 /** Resolves once the worker has nothing in flight. */
 export const idle = () => (jobs.size ? new Promise(r => idleWaiters.push(r)) : Promise.resolve());
@@ -66,20 +101,20 @@ export function renderNow(el, {mirror: flip = false} = {}) {
   if (el) { src = {el, mirror: flip}; workerHasIt = gpuHasIt = false; }
   if (!src) return Promise.reject(new Error('No image loaded yet'));
   const job = ++jobId;
-  const settings = {...S.settings, params: currentParams()};
+  const settings = jobSettings();
 
   if (onGpu(settings)) {
     try {
       const t0 = performance.now();
       if (!gpuHasIt) { gpu.setSource(src.el, src.mirror); gpuHasIt = true; }
       const {w, h} = gpu.render(settings);
-      const gen = gpu.generation;
-      let mask = null;
-      const result = {
-        w, h, ms: performance.now() - t0, gpu: true, gen,
-        // Read back only when something needs the bits (export without the GPU, tests).
-        get mask() { return mask || (gpu && gpu.generation === gen ? (mask = gpu.readMask()) : null); },
-      };
+      const gen = gpu.generation, colors = gpu.colors;
+      let bits = null;
+      // Read back only when something needs the bits (export without the GPU, tests).
+      const read = f => bits || (gpu && gpu.generation === gen ? (bits = f()) : null);
+      const result = colors
+        ? {w, h, ms: performance.now() - t0, gpu: true, gen, colors, get indices() { return read(() => gpu.readIndices()); }}
+        : {w, h, ms: performance.now() - t0, gpu: true, gen, get mask() { return read(() => gpu.readMask()); }};
       gpuFailures = 0;
       show(job, result);
       return Promise.resolve(result);
@@ -117,7 +152,7 @@ export function renderNow(el, {mirror: flip = false} = {}) {
 let gpuQueued = false;
 export function schedule() {
   if (!src) return;
-  if (onGpu({...S.settings, params: currentParams()})) {
+  if (onGpu(jobSettings())) {
     // Cheap, but a drag can fire faster than frames: once per animation frame is plenty.
     if (gpuQueued) return;
     gpuQueued = true;
@@ -132,7 +167,9 @@ worker.onmessage = ({data}) => {
   const job = jobs.get(data.job);
   jobs.delete(data.job);
   if (data.type === 'done') {
-    const result = {mask: data.mask, w: data.w, h: data.h, ms: data.ms};
+    const result = data.indices
+      ? {indices: data.indices, colors: data.colors, w: data.w, h: data.h, ms: data.ms}
+      : {mask: data.mask, w: data.w, h: data.h, ms: data.ms};
     show(data.job, result);
     job?.resolve(result);
   } else {
@@ -154,6 +191,14 @@ export const getCanvas = () => canvas;
 export function setMirror(c) { mirror = c; if (c) paint(); }
 
 const isLiveGpu = r => r && r.gpu && gpu && gpu.generation === r.gen;
+/** Index → color for a result: its palette, or [ink, paper] for two tones. */
+const colorsOf = r => r.colors || [S.look.ink, S.look.paper];
+
+/** A CPU result (or a read-back GPU one) painted as RGBA at outW×outH; null if its bits are gone. */
+function pixels(r, outW, outH) {
+  if (r.colors) return r.indices ? paintIndices(r.indices, r.w, r.h, outW, outH, r.colors) : null;
+  return r.mask ? paintMask(r.mask, r.w, r.h, outW, outH, S.look.ink, S.look.paper) : null;
+}
 
 /** Paint the last result at cell resolution; CSS scales it up with hard edges. */
 export function paint() {
@@ -162,11 +207,12 @@ export function paint() {
   if (canvas.width !== r.w || canvas.height !== r.h) { canvas.width = r.w; canvas.height = r.h; }
   const x = canvas.getContext('2d');
   if (isLiveGpu(r)) {
-    gpu.present(S.look.ink, S.look.paper, 1);
+    gpu.present(colorsOf(r), 1);
     x.drawImage(gpu.canvas, 0, 0);
   } else {
-    if (!r.mask) return emit(); // a GPU result whose engine has gone; the CPU result is on its way
-    x.putImageData(new ImageData(paintMask(r.mask, r.w, r.h, r.w, r.h, S.look.ink, S.look.paper), r.w, r.h), 0, 0);
+    const px = pixels(r, r.w, r.h);
+    if (!px) return emit(); // a GPU result whose engine has gone; the CPU result is on its way
+    x.putImageData(new ImageData(px, r.w, r.h), 0, 0);
   }
   if (mirror) {
     const m = mirror.getContext('2d');
@@ -183,10 +229,11 @@ export function scaledOutput(k, into, r = S.result) {
   const x = out.getContext('2d');
   if (isLiveGpu(r)) {
     // Scale on the GPU and copy across: no read-back of the mask.
-    gpu.present(S.look.ink, S.look.paper, k);
+    gpu.present(colorsOf(r), k);
     x.drawImage(gpu.canvas, 0, 0);
   } else {
-    x.putImageData(new ImageData(paintMask(r.mask, r.w, r.h, w, h, S.look.ink, S.look.paper), w, h), 0, 0);
+    const px = pixels(r, w, h);
+    if (px) x.putImageData(new ImageData(px, w, h), 0, 0);
   }
   return out;
 }
@@ -211,9 +258,23 @@ export function setLook(key, value) {
   S.look[key] = value;
   persist();
   if (key === 'ink' || key === 'paper') paint();
-  else if (key === 'gpu') { schedule(); emit(); }
+  else if (key === 'gpu' || key === 'custom') { schedule(); emit(); }
   else emit();
 }
+/** Colors-from-image: how many, or pick them again from the current frame. */
+export function setImageCount(n) {
+  S.look.imageCount = n;
+  pickImageColors(); schedule(); emit();
+}
+export function repickImageColors() { pickImageColors(); schedule(); emit(); }
+
+/** Edit the custom palette (starts as a copy of whatever palette is showing). */
+export function editCustom(colors) {
+  S.look.custom = colors.slice(0, MAX_COLORS);
+  S.settings.palette = 'custom';
+  persist(); schedule(); emit();
+}
+
 export function resetTone() {
   Object.assign(S.settings, {brightness: 0, contrast: 0, midtones: 0, highlights: 0, shadows: 0, blur: 0});
   persist(); schedule(); emit();

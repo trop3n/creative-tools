@@ -3,4 +3,5 @@ export * from './diffusion.js';
 export * from './fields.js';
 export * from './styles.js';
 export * from './pipeline.js';
+export * from './palette.js';
 export * from './gpu.js';

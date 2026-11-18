@@ -10,9 +10,14 @@
 // single compare matches the CPU engine exactly. Without blur the output is identical
 // to ditherGray(); with blur the float32 box sums can differ in the last bit, which
 // moves a handful of cells that sit right on a cutoff.
+//
+// Palette mode keeps R, G and B (toned per channel), adds the field's offset from
+// fieldOffsets() and picks the nearest palette color, i.e. ordered color dithering.
+// The mask then holds palette indices (index / 255 in the red channel).
 import {fieldCutoffs} from './fields.js';
 import {STYLE_BY_ID, defaultParams} from './styles.js';
-import {DEFAULT_SETTINGS, blockSize, toneTable} from './pipeline.js';
+import {DEFAULT_SETTINGS, blockSize, toneTable, colorLut, paletteColors} from './pipeline.js';
+import {MAX_COLORS, fieldOffsets, paletteRGB, paletteSpread} from './palette.js';
 
 const VERT = `#version 300 es
 void main() {
@@ -26,18 +31,29 @@ uniform sampler2D uSrc;
 uniform sampler2D uLut;
 uniform ivec2 uSrcSize;
 uniform bool uMirror;
-float toned(ivec2 p) {
+ivec4 source(ivec2 p) {
   if (uMirror) p.x = uSrcSize.x - 1 - p.x;
-  ivec4 c = ivec4(round(texelFetch(uSrc, p, 0) * 255.0));
-  int l = (c.r * 19595 + c.g * 38470 + c.b * 7471 + 32768) >> 16;
-  return texelFetch(uLut, ivec2(l, 0), 0).r;
-}`;
+  return ivec4(round(texelFetch(uSrc, p, 0) * 255.0));
+}
+float tone(int v) { return texelFetch(uLut, ivec2(v, 0), 0).r; }
+float toned(ivec2 p) {
+  ivec4 c = source(p);
+  return tone((c.r * 19595 + c.g * 38470 + c.b * 7471 + 32768) >> 16);
+}
+vec3 tonedRGB(ivec2 p) {
+  ivec4 c = source(p);
+  return vec3(tone(c.r), tone(c.g), tone(c.b));
+}
+uniform bool uColor;`;
 
 const FRAG_LUMA = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 ${LUMA}
 out vec4 o;
-void main() { o = vec4(toned(ivec2(gl_FragCoord.xy)), 0.0, 0.0, 1.0); }`;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  o = uColor ? vec4(tonedRGB(p), 1.0) : vec4(toned(p), 0.0, 0.0, 1.0);
+}`;
 
 const FRAG_BLUR = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
@@ -48,9 +64,9 @@ uniform int uR;
 out vec4 o;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
-  float acc = 0.0;
-  for (int i = -uR; i <= uR; i++) acc += texelFetch(uIn, clamp(p + uDir * i, ivec2(0), uSize - 1), 0).r;
-  o = vec4(acc * (1.0 / float(2 * uR + 1)), 0.0, 0.0, 1.0);
+  vec4 acc = vec4(0.0);
+  for (int i = -uR; i <= uR; i++) acc += texelFetch(uIn, clamp(p + uDir * i, ivec2(0), uSize - 1), 0);
+  o = acc * (1.0 / float(2 * uR + 1));
 }`;
 
 // One fragment per cell. Picks the source pixel the same way resizeNearest does, in
@@ -63,28 +79,43 @@ uniform sampler2D uCut;
 uniform bool uUseBlurred;
 uniform bool uInvert;
 uniform ivec2 uCells;
+uniform vec3 uPal[${MAX_COLORS}];
+uniform int uCount;
 out vec4 o;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   ivec2 s = min(uSrcSize - 1, ((2 * c + 1) * uSrcSize) / (2 * uCells));
+  float cut = texelFetch(uCut, c, 0).r;
+  if (uColor) {
+    vec3 v = (uUseBlurred ? texelFetch(uBlurred, s, 0).rgb : tonedRGB(s)) + cut; // cut holds the offset here
+    int best = 0; float bestD = 1e30;
+    for (int i = 0; i < ${MAX_COLORS}; i++) {
+      if (i >= uCount) break;
+      vec3 d = v - uPal[i];
+      float dd = dot(d, d);
+      if (dd < bestD) { bestD = dd; best = i; }
+    }
+    o = vec4(float(best) / 255.0, 0.0, 0.0, 1.0);
+    return;
+  }
   float v = uUseBlurred ? texelFetch(uBlurred, s, 0).r : toned(s);
-  bool on = (v > texelFetch(uCut, c, 0).r) != uInvert;
-  o = vec4(on ? 1.0 : 0.0, 0.0, 0.0, 1.0);
+  bool on = (v > cut) != uInvert;
+  o = vec4(on ? 1.0 / 255.0 : 0.0, 0.0, 0.0, 1.0);
 }`;
 
-// Paint the mask onto the canvas, k device pixels per cell. Canvas rows run bottom-up.
+// Paint the indices onto the canvas, k device pixels per cell. Canvas rows run bottom-up.
 const FRAG_SHOW = `#version 300 es
 precision highp float; precision highp int; precision highp sampler2D;
 uniform sampler2D uMask;
 uniform int uK;
 uniform int uRows;
-uniform vec3 uInk;
-uniform vec3 uPaper;
+uniform vec3 uColors[${MAX_COLORS}];
 out vec4 o;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy) / uK;
   p.y = uRows - 1 - p.y;
-  o = vec4(texelFetch(uMask, p, 0).r > 0.5 ? uPaper : uInk, 1.0);
+  int i = int(round(texelFetch(uMask, p, 0).r * 255.0));
+  o = vec4(uColors[min(i, ${MAX_COLORS - 1})], 1.0);
 }`;
 
 const hexRGB = hex => {
@@ -142,7 +173,7 @@ export function createGpuDither(canvas) {
 
   /** (Re)allocate a render-target texture and attach it to its framebuffer. */
   const target = (name, w, h, internal, format, type) => {
-    const key = `${w}x${h}`;
+    const key = `${w}x${h}:${internal}`;
     if (sizes[name] === key) return;
     scratch(name);
     gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
@@ -208,18 +239,24 @@ export function createGpuDither(canvas) {
       const params = {...defaultParams(style), ...s.params};
       const {w, h} = blockSize(sw, sh, s.block);
       const threshold = (s.threshold / 100) * 255;
+      const color = s.mode === 'palette';
+      const colors = color ? paletteColors(s) : null;
+      const pal = color ? paletteRGB(colors) : null;
 
-      // Tone LUT: identity when every slider is at zero, as on the CPU.
-      const tone = isToneIdentity(s) ? 'id' : [s.brightness, s.contrast, s.midtones, s.highlights, s.shadows].join();
+      // Tone LUT: identity when every slider is at zero, as on the CPU. In palette mode
+      // it's per channel, with invert folded in.
+      const tone = (color ? 'c' + (s.invert ? 'i' : '') : 'm') + (isToneIdentity(s) ? 'id' : [s.brightness, s.contrast, s.midtones, s.highlights, s.shadows].join());
       if (tone !== lutKey) {
-        const lut = tone === 'id' ? Float32Array.from({length: 256}, (_, i) => i) : toneTable(s);
+        const lut = color ? colorLut(s) : isToneIdentity(s) ? Float32Array.from({length: 256}, (_, i) => i) : toneTable(s);
         upload('lut', 256, 1, lut);
         lutKey = tone;
       }
-      // Field cutoffs, one per cell.
-      const ck = [style.id, JSON.stringify(params), w, h, threshold].join('|');
+      // Per cell: the field's cutoff (two tones) or its offset (palette).
+      const amount = color ? paletteSpread(pal) * (Math.max(0, s.strength ?? 100) / 100) : 0;
+      const ck = [style.id, JSON.stringify(params), w, h, color ? 'offset' + amount : threshold].join('|');
       if (ck !== cutKey) {
-        upload('cut', w, h, fieldCutoffs(style.field(w, h, params), w, h, threshold));
+        const field = style.field(w, h, params);
+        upload('cut', w, h, color ? fieldOffsets(field, w, h, amount) : fieldCutoffs(field, w, h, threshold));
         cutKey = ck;
       }
 
@@ -229,12 +266,15 @@ export function createGpuDither(canvas) {
         gl.uniform1i(prog.u('uLut'), 1);
         gl.uniform2i(prog.u('uSrcSize'), sw, sh);
         gl.uniform1i(prog.u('uMirror'), mirror ? 1 : 0);
+        gl.uniform1i(prog.u('uColor'), color ? 1 : 0);
       };
       bind(0, 'src'); bind(1, 'lut');
 
       if (r >= 1) {
-        target('a', sw, sh, gl.R32F, gl.RED, gl.FLOAT);
-        target('b', sw, sh, gl.R32F, gl.RED, gl.FLOAT);
+        // One channel for luma, four for color.
+        const [fmt, base] = color ? [gl.RGBA32F, gl.RGBA] : [gl.R32F, gl.RED];
+        target('a', sw, sh, fmt, base, gl.FLOAT);
+        target('b', sw, sh, fmt, base, gl.FLOAT);
         gl.useProgram(P.luma.p);
         lumaUniforms(P.luma);
         draw(fbo.a, sw, sh);
@@ -258,15 +298,25 @@ export function createGpuDither(canvas) {
       gl.uniform1i(P.cell.u('uUseBlurred'), r >= 1 ? 1 : 0);
       gl.uniform1i(P.cell.u('uInvert'), s.invert ? 1 : 0);
       gl.uniform2i(P.cell.u('uCells'), w, h);
+      if (color) {
+        gl.uniform3fv(P.cell.u('uPal'), pal);
+        gl.uniform1i(P.cell.u('uCount'), colors.length);
+      }
       draw(fbo.mask, w, h);
 
-      out = {w, h};
+      out = {w, h, colors};
       generation++;
       return {w, h};
     },
 
-    /** Paint the last mask onto the canvas at k pixels per cell. */
-    present(ink = '#000000', paper = '#ffffff', k = 1) {
+    /** The palette of the last render (null in two-tone mode). */
+    get colors() { return out ? out.colors : null; },
+
+    /**
+     * Paint the last result onto the canvas at k pixels per cell. `colors` maps index
+     * to color: [ink, paper] for two tones, the palette in palette mode.
+     */
+    present(colors, k = 1) {
       if (!out) return;
       const W = out.w * k, H = out.h * k;
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
@@ -275,8 +325,7 @@ export function createGpuDither(canvas) {
       gl.uniform1i(P.show.u('uMask'), 0);
       gl.uniform1i(P.show.u('uK'), k);
       gl.uniform1i(P.show.u('uRows'), out.h);
-      gl.uniform3fv(P.show.u('uInk'), hexRGB(ink));
-      gl.uniform3fv(P.show.u('uPaper'), hexRGB(paper));
+      gl.uniform3fv(P.show.u('uColors'), Float32Array.from(colors.slice(0, MAX_COLORS).flatMap(hexRGB)));
       draw(null, W, H);
     },
 
@@ -286,8 +335,18 @@ export function createGpuDither(canvas) {
       const {w, h} = out, px = new Uint8Array(w * h * 4), mask = new Uint8Array(w * h);
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.mask);
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4] > 127 ? 255 : 0;
+      for (let i = 0; i < mask.length; i++) mask[i] = px[i * 4] ? 255 : 0;
       return mask;
+    },
+
+    /** Read the last result back as palette indices (two tones: 0 = ink, 1 = paper). */
+    readIndices() {
+      if (!out) return null;
+      const {w, h} = out, px = new Uint8Array(w * h * 4), idx = new Uint8Array(w * h);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.mask);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      for (let i = 0; i < idx.length; i++) idx[i] = px[i * 4];
+      return idx;
     },
 
     get lost() { return gl.isContextLost(); },

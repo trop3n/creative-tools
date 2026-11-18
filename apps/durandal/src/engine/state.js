@@ -6,11 +6,14 @@ import {DEFAULT_SETTINGS, STYLE_BY_ID, defaultParams} from '@studio/core/dither'
 
 export const saved = toolStore('durandal');
 
-export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true};
+export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true,
+  custom: ['#242222', '#00304e', '#c99530', '#dfdfdf'], // custom palette
+  imageColors: [], imageCount: 6}; // palette picked from the source
 export const TONE_KEYS = ['brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
 
 const storedSettings = saved.get('settings.v1', {}) || {};
-const settings = {...DEFAULT_SETTINGS, ...storedSettings};
+const settings = {...DEFAULT_SETTINGS, palette: 'brand', ...storedSettings};
+delete settings.colors; // resolved from `palette` for each job
 if (!STYLE_BY_ID[settings.style]) settings.style = DEFAULT_SETTINGS.style;
 
 export const S = {
@@ -24,7 +27,7 @@ export const S = {
     exporting: false, progress: '', // MP4 render
     cams: [], camId: '', recording: false, recTime: 0, // webcam
   },
-  result: null, // {mask, w, h, ms, gpu?}
+  result: null, // {mask | indices + colors, w, h, ms, gpu?}
   busy: false,
 };
 

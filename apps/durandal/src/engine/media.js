@@ -6,7 +6,7 @@ import {
   cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
-import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase} from './render.js';
+import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase, paletteColors} from './render.js';
 
 const M = () => S.media;
 /** Internal handles; S.media mirrors what the UI shows. */
@@ -196,7 +196,7 @@ export async function renderVideo() {
       file: live.file,
       fps: +S.look.fps || 30,
       audio: !!S.look.audio,
-      background: S.look.paper,
+      background: S.settings.mode === 'palette' ? paletteColors()[0] : S.look.paper,
       pixelated: true,
       renderFrame: async () => {
         const r = await renderFrame();

@@ -5,7 +5,12 @@
 //
 // The result is a 1-bit mask at block resolution; `paintMask` scales it back up
 // with hard edges and paints it in any two colors.
+//
+// Palette mode (settings.mode = 'palette') runs the same steps on the R, G and B
+// channels and returns palette indices instead; see ditherColor().
 import {STYLE_BY_ID, defaultParams} from './styles.js';
+import {KERNELS} from './diffusion.js';
+import {MAX_COLORS, paletteRGB, paletteField, paletteDiffuse, paletteScanlines} from './palette.js';
 
 export const DEFAULT_SETTINGS = {
   style: 'floyd-steinberg',
@@ -15,6 +20,9 @@ export const DEFAULT_SETTINGS = {
   invert: false,
   brightness: 0, contrast: 0, midtones: 0, highlights: 0, shadows: 0, // -100..100
   blur: 0, // radius in source pixels
+  mode: 'mono', // 'mono' (two tones) or 'palette'
+  colors: null, // palette mode: hex colors, 2..16
+  strength: 100, // palette mode: how hard to dither, percent
 };
 
 const clamp255 = v => (v < 0 ? 0 : v > 255 ? 255 : v);
@@ -126,8 +134,66 @@ export function ditherGray(gray, w, h, settings) {
   return {mask, w: small.w, h: small.h};
 }
 
-/** Full pipeline from RGBA pixels (e.g. ImageData.data). */
-export const ditherRGBA = (rgba, w, h, settings) => ditherGray(luminance(rgba, w, h), w, h, settings);
+/** The tone LUT for palette mode, applied to each channel. Invert is folded in (a negative). */
+export function colorLut(settings) {
+  const lut = isIdentity(settings) ? Float32Array.from({length: 256}, (_, i) => i) : toneTable(settings);
+  if (settings.invert) for (let i = 0; i < 256; i++) lut[i] = 255 - lut[i];
+  return lut;
+}
+
+/** For each cell of a dw×dh grid, the index of the source pixel resizeNearest would pick. */
+export function sampleIndices(sw, sh, dw, dh) {
+  const out = new Int32Array(dw * dh);
+  for (let y = 0; y < dh; y++) {
+    const row = Math.min(sh - 1, Math.floor(((y + 0.5) * sh) / dh)) * sw;
+    for (let x = 0; x < dw; x++) out[y * dw + x] = row + Math.min(sw - 1, Math.floor(((x + 0.5) * sw) / dw));
+  }
+  return out;
+}
+
+export const paletteColors = s => (Array.isArray(s.colors) && s.colors.length >= 2 ? s.colors.slice(0, MAX_COLORS) : ['#000000', '#ffffff']);
+
+/**
+ * Palette pipeline from RGBA: per-channel tone → blur → shrink → color dither.
+ * Returns {indices: Uint8Array, colors, w, h} at block resolution.
+ */
+export function ditherColor(rgba, w, h, settings) {
+  const s = {...DEFAULT_SETTINGS, ...settings};
+  const style = STYLE_BY_ID[s.style];
+  if (!style) throw new Error(`Unknown style "${s.style}"`);
+  const params = {...defaultParams(style), ...s.params};
+  const colors = paletteColors(s), pal = paletteRGB(colors);
+  const lut = colorLut(s);
+  const small = blockSize(w, h, s.block);
+  const pick = sampleIndices(w, h, small.w, small.h);
+  const r = Math.round(s.blur);
+
+  const planes = [0, 1, 2].map(c => {
+    if (r >= 1) {
+      const full = new Float32Array(w * h);
+      for (let i = 0; i < full.length; i++) full[i] = lut[rgba[i * 4 + c]];
+      blur(full, w, h, r);
+      const out = new Float32Array(pick.length);
+      for (let i = 0; i < pick.length; i++) out[i] = full[pick[i]];
+      return out;
+    }
+    const out = new Float32Array(pick.length);
+    for (let i = 0; i < pick.length; i++) out[i] = lut[rgba[pick[i] * 4 + c]];
+    return out;
+  });
+
+  const strength = Math.max(0, s.strength ?? 100) / 100;
+  const [R, G, B] = planes;
+  let indices;
+  if (style.field) indices = paletteField(R, G, B, small.w, small.h, style.field(small.w, small.h, params), pal, strength);
+  else if (KERNELS[style.id]) indices = paletteDiffuse(R, G, B, small.w, small.h, KERNELS[style.id], pal, strength, !!params.serpentine);
+  else indices = paletteScanlines(R, G, B, small.w, small.h, params.sigma ?? 2, pal, strength);
+  return {indices, colors, w: small.w, h: small.h};
+}
+
+/** Full pipeline from RGBA pixels (e.g. ImageData.data), in either mode. */
+export const ditherRGBA = (rgba, w, h, settings) =>
+  settings && settings.mode === 'palette' ? ditherColor(rgba, w, h, settings) : ditherGray(luminance(rgba, w, h), w, h, settings);
 
 const hexRGB = hex => {
   const n = parseInt(hex.replace('#', ''), 16);

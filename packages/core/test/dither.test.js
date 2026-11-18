@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, fieldCutoffs, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -136,4 +136,65 @@ test('field cutoffs give the same answer as the CPU compare, in float32', () => 
     }
   }
   assert.ok(checked > 100000);
+});
+
+/* ---------- palette mode ---------- */
+const RGBA = (() => {
+  // The test image in color: the gray ramp in red and green, a blue gradient top to bottom.
+  const px = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    const y = Math.floor(i / W);
+    px[i * 4] = INPUT[i]; px[i * 4 + 1] = 255 - INPUT[i]; px[i * 4 + 2] = Math.round((y * 255) / (H - 1)); px[i * 4 + 3] = 255;
+  }
+  return px;
+})();
+
+test('palette mode: every style returns valid indices that use the palette', () => {
+  const colors = PALETTE_BY_ID.primaries.colors;
+  for (const s of STYLES) {
+    const {indices, w, h, colors: used} = ditherRGBA(RGBA, W, H, {style: s.id, mode: 'palette', colors, block: 2});
+    assert.equal(indices.length, w * h);
+    assert.deepEqual(used, colors);
+    const seen = new Set(indices);
+    assert.ok([...seen].every(i => i < colors.length), s.id);
+    assert.ok(seen.size >= 3, `${s.id} uses only ${seen.size} colors`);
+  }
+});
+
+test('palette mode: gray levels keep the average tone of a flat field', () => {
+  // A flat 40% gray over a 4-level gray palette should average out near 40%.
+  const n = 64 * 64, flat = new Uint8ClampedArray(n * 4).fill(102);
+  const colors = PALETTE_BY_ID.gray4.colors, levels = colors.map(c => hexToRGB(c)[0]);
+  for (const style of ['floyd-steinberg', 'bayer', 'scanline']) {
+    const {indices} = ditherRGBA(flat, 64, 64, {style, mode: 'palette', colors, block: 1});
+    const mean = indices.reduce((a, i) => a + levels[i], 0) / n;
+    assert.ok(Math.abs(mean - 102) < 6, `${style}: mean ${mean.toFixed(1)}`);
+  }
+});
+
+test('palette mode: strength 0 is plain nearest-color quantising', () => {
+  const colors = PALETTE_BY_ID.gray4.colors, pal = paletteRGB(colors);
+  for (const style of ['atkinson', 'dots']) {
+    const {indices, w, h} = ditherRGBA(RGBA, W, H, {style, mode: 'palette', colors, strength: 0, block: 4});
+    const pick = sampleIndices(W, H, w, h);
+    for (let i = 0; i < indices.length; i += 7) {
+      const p = pick[i] * 4;
+      assert.equal(indices[i], nearestColor(pal, RGBA[p], RGBA[p + 1], RGBA[p + 2]));
+    }
+  }
+});
+
+test('adaptive palette finds the colors an image is made of', () => {
+  const n = 90 * 30, px = new Uint8ClampedArray(n * 4);
+  const want = [[200, 30, 40], [20, 60, 180], [240, 230, 210]];
+  for (let i = 0; i < n; i++) px.set([...want[Math.floor((i % 90) / 30)], 255], i * 4);
+  const got = adaptivePalette(px, 90, 30, 3).map(hexToRGB);
+  for (const c of want) assert.ok(got.some(g => g.every((v, k) => Math.abs(v - c[k]) < 2)), `missing ${c}`);
+});
+
+test('paintIndices maps indices to colors and scales with hard edges', () => {
+  const out = paintIndices(Uint8Array.from([0, 1, 2, 1]), 2, 2, 4, 4, ['#000000', '#ff0000', '#0000ff']);
+  assert.deepEqual([...out.subarray(0, 4)], [0, 0, 0, 255]);
+  assert.deepEqual([...out.subarray(8, 12)], [255, 0, 0, 255]);
+  assert.deepEqual([...out.subarray(4 * 8, 4 * 8 + 4)], [0, 0, 255, 255]);
 });
