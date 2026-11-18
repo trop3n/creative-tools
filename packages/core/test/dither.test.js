@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STYLES, KERNELS, bayerMatrix, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
+  STYLES, KERNELS, bayerMatrix, blueNoiseMatrix, FIELDS, indicesToSVG, maskToSVG, cellStamp, paintCells, extremeColor, fieldCutoffs, PALETTE_BY_ID, hexToRGB, paletteRGB, nearestColor, sampleIndices, adaptivePalette, paintIndices, ditherGray, ditherRGBA, resizeNearest, luminance, toneTable, paintMask, gaussian1d,
 } from '../src/dither/index.js';
 
 // Test image: left-to-right gradient with a dark soft blob in the middle (320×200).
@@ -288,4 +288,48 @@ test('SVG export draws one shape per visible cell', () => {
   assert.match(lines, /<path fill="#c99530" d="M1 0\.25h1v0\.5h-1zM0 1\.25h2v0\.5h-2z"\/>/);
   const diamonds = indicesToSVG(idx, 3, 2, colors, {shape: 'diamond', gap: 0, gapColor: '#242222'});
   assert.match(diamonds, /<path fill="#dfdfdf" d="M2\.5 0l0\.5 0\.5l-0\.5 0\.5l-0\.5 -0\.5z"\/>/);
+});
+
+test('blue noise: a full ranking, spread evenly at every level', () => {
+  const t0 = performance.now();
+  const m = blueNoiseMatrix(64), n = 64, flat = m.flat();
+  const ms = performance.now() - t0;
+  assert.ok(ms < 1500, `took ${Math.round(ms)} ms`);
+  assert.deepEqual([...flat].sort((a, b) => a - b), Array.from({length: n * n}, (_, i) => i));
+  for (const level of [0.1, 0.5, 0.9]) {
+    const cut = level * n * n;
+    for (let by = 0; by < n; by += 8) for (let bx = 0; bx < n; bx += 8) {
+      let k = 0;
+      for (let y = by; y < by + 8; y++) for (let x = bx; x < bx + 8; x++) k += m[y][x] < cut;
+      assert.ok(Math.abs(k - 64 * level) <= 7, `level ${level}, block ${bx},${by}: ${k} of 64`);
+    }
+    // No two neighbours on at a 10% level: blue noise keeps dots apart.
+    if (level === 0.1) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++)
+      if (m[y][x] < cut) assert.ok(!(m[y][(x + 1) % n] < cut && m[(y + 1) % n][x] < cut), `clump at ${x},${y}`);
+  }
+});
+
+test('new pattern fields stay in 0..255 and track tone', () => {
+  for (const id of ['crosshatch', 'stipple', 'diamonds', 'spiral']) {
+    const f = FIELDS[id](200, 150, {});
+    let lo = Infinity, hi = -Infinity;
+    for (let y = 0; y < 150; y++) for (let x = 0; x < 200; x++) { const v = f(x, y); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    assert.ok(lo >= 0 && hi <= 255 && hi - lo > 150, `${id} range ${lo}..${hi}`);
+    // A lighter flat gray never turns out darker.
+    let prev = -1;
+    for (const g of [30, 90, 150, 210]) {
+      const {mask} = ditherGray(new Float32Array(200 * 150).fill(g), 200, 150, {style: id, params: {}, block: 1, threshold: 50});
+      const white = mask.reduce((a, v) => a + (v ? 1 : 0), 0) / mask.length;
+      assert.ok(white >= prev, `${id}: ${g} gray gave ${white}`);
+      prev = white;
+    }
+  }
+});
+
+test('crosshatch keeps the tone of a flat gray', () => {
+  for (const g of [64, 128, 192]) {
+    const {mask} = ditherGray(new Float32Array(300 * 200).fill(g), 300, 200, {style: 'crosshatch', params: {}, block: 1, threshold: 100});
+    const white = mask.reduce((a, v) => a + (v ? 1 : 0), 0) / mask.length;
+    assert.ok(Math.abs(white - g / 255) < 0.06, `${g} gray: ${white.toFixed(3)} white`);
+  }
 });

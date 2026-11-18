@@ -41,11 +41,25 @@ export const STYLES = [
     {key: 'spacing', label: 'Spacing', min: 2, max: 32, step: 1, default: 6},
     {key: 'angle', label: 'Angle', min: 0, max: 180, step: 1, default: 30},
   ]),
+  fieldStyle('crosshatch', 'Crosshatch', [
+    {key: 'spacing', label: 'Spacing', min: 2, max: 32, step: 1, default: 6},
+    {key: 'layers', label: 'Layers', min: 1, max: 4, step: 1, default: 4},
+    {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 45},
+  ]),
+  fieldStyle('stipple', 'Stipple'),
+  fieldStyle('diamonds', 'Diamonds', [
+    {key: 'cell', label: 'Cell size', min: 2, max: 32, step: 1, default: 8},
+    {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 0},
+  ]),
   fieldStyle('wave', 'Wave', [
     {key: 'cycles', label: 'Cycles', min: 1, max: 20, step: 1, default: 1},
     {key: 'slant', label: 'Slant', min: 1, max: 40, step: 1, default: 10},
   ]),
   fieldStyle('rings', 'Rings', [{key: 'spacing', label: 'Spacing', min: 1, max: 30, step: 1, default: 5}]),
+  fieldStyle('spiral', 'Spiral', [
+    {key: 'arms', label: 'Arms', min: 1, max: 12, step: 1, default: 3},
+    {key: 'spacing', label: 'Spacing', min: 2, max: 40, step: 1, default: 8},
+  ]),
   fieldStyle('noise', 'Noise', [{key: 'seed', label: 'Seed', min: 1, max: 999, step: 1, default: 1}]),
 
   {

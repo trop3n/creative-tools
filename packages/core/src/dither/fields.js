@@ -49,7 +49,63 @@ export function mulberry32(seed) {
   };
 }
 
+/**
+ * Blue-noise rank matrix (void and cluster, Ulichney 1993) of size n×n on a torus.
+ * Values 0..n²-1; thresholding it gives evenly spread dots with no grid.
+ */
+export function blueNoiseMatrix(n = 64, sigma = 1.5, seed = 7) {
+  const N = n * n;
+  // Toroidal Gaussian, indexed by wrapped offset.
+  const g = new Float64Array(N);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = Math.min(x, n - x), dy = Math.min(y, n - y);
+    g[y * n + x] = Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
+  }
+  const on = new Uint8Array(N), energy = new Float64Array(N);
+  const flip = (p, sign) => {
+    on[p] = sign > 0 ? 1 : 0;
+    const px = p % n, py = (p / n) | 0;
+    for (let y = 0; y < n; y++) {
+      const gy = ((y - py + n) % n) * n, row = y * n;
+      for (let x = 0; x < n; x++) energy[row + x] += sign * g[gy + ((x - px + n) % n)];
+    }
+  };
+  const tightest = () => { let b = -1, e = -Infinity; for (let p = 0; p < N; p++) if (on[p] && energy[p] > e) { e = energy[p]; b = p; } return b; };
+  const largestVoid = () => { let b = -1, e = Infinity; for (let p = 0; p < N; p++) if (!on[p] && energy[p] < e) { e = energy[p]; b = p; } return b; };
+  // 1. A random starting set of about a tenth of the pixels, then even it out.
+  const rand = mulberry32(seed), start = Math.max(1, Math.floor(N / 10));
+  for (let k = 0; k < start;) { const p = Math.floor(rand() * N); if (!on[p]) { flip(p, 1); k++; } }
+  for (let guard = 0; guard < N * 4; guard++) {
+    const c = tightest();
+    flip(c, -1);
+    const v = largestVoid();
+    if (v === c) { flip(c, 1); break; }
+    flip(v, 1);
+  }
+  const rank = new Int32Array(N), initial = on.slice(), initialEnergy = energy.slice();
+  // 2. Rank the starting set by taking out the tightest cluster each time.
+  for (let r = start - 1; r >= 0; r--) { const c = tightest(); rank[c] = r; flip(c, -1); }
+  // 3. From the starting set, fill the largest void each time for the rest.
+  on.set(initial); energy.set(initialEnergy);
+  for (let r = start; r < N; r++) { const v = largestVoid(); rank[v] = r; flip(v, 1); }
+  return Array.from({length: n}, (_, y) => Array.from(rank.subarray(y * n, y * n + n)));
+}
+let blueNoise = null;
+
 const TAU = Math.PI * 2;
+
+/**
+ * Spread a field's values evenly over 0..255 while keeping their order, so a flat
+ * gray of tone t comes out about t/255 white. Samples a 256×256 patch.
+ */
+export function equalize(field) {
+  const n = 256, sorted = new Float64Array(n * n);
+  for (let y = 0, p = 0; y < n; y++) for (let x = 0; x < n; x++) sorted[p++] = field(x, y);
+  sorted.sort();
+  const below = v => { let lo = 0, hi = sorted.length; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < v) lo = m + 1; else hi = m; } return lo; };
+  const upTo = v => { let lo = 0, hi = sorted.length; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] <= v) lo = m + 1; else hi = m; } return lo; };
+  return (x, y) => { const v = field(x, y); return ((below(v) + upTo(v)) / 2 / sorted.length) * 255; };
+}
 const rad = deg => (deg * Math.PI) / 180;
 
 // Field builders: (w, h, params) => (x, y) => 0..255
@@ -79,6 +135,39 @@ export const FIELDS = {
       const u = x * c + y * s, v = -x * s + y * c;
       return (0.5 + 0.25 * (Math.cos((TAU * u) / cell) + Math.cos((TAU * v) / cell))) * 255;
     };
+  },
+  // Evenly scattered dots with no grid, like hand stippling (blue noise).
+  stipple: () => (blueNoise ??= matrixField(blueNoiseMatrix())),
+  // Diamond dots on a grid that grow and join as the tone darkens.
+  diamonds: (w, h, p) => {
+    const cell = p.cell ?? 8, a = rad(p.angle ?? 0), c = Math.cos(a), s = Math.sin(a);
+    const frac = v => v - Math.floor(v);
+    return (x, y) => {
+      const u = frac((x * c + y * s) / cell), v = frac((-x * s + y * c) / cell);
+      return (1 - (Math.abs(u - 0.5) + Math.abs(v - 0.5))) * 255;
+    };
+  },
+  // Layers of hatching: lighter tones get one direction, darker ones add more.
+  crosshatch: (w, h, p) => {
+    const spacing = p.spacing ?? 6, layers = Math.max(1, Math.min(4, p.layers ?? 4)), base = rad(p.angle ?? 45);
+    const sets = [0, 90, 45, 135].slice(0, layers).map((deg, i) => {
+      const a = base + rad(deg);
+      return {c: Math.cos(a), s: Math.sin(a), level: (1 - i / layers) * 0.85, phase: i * 0.37};
+    });
+    // Raw values bunch up near zero (most of the page is between lines), so even them out.
+    return equalize((x, y) => {
+      let f = 0;
+      for (const L of sets) {
+        const line = 0.5 + 0.5 * Math.cos(TAU * ((x * L.c + y * L.s) / spacing + L.phase));
+        f = Math.max(f, L.level * line);
+      }
+      return f;
+    });
+  },
+  // Arms that wind out from the middle of the frame.
+  spiral: (w, h, p) => {
+    const cx = w / 2, cy = h / 2, arms = p.arms ?? 3, spacing = p.spacing ?? 8;
+    return (x, y) => 128 + 127 * Math.sin(arms * Math.atan2(y - cy, x - cx) + (TAU * Math.hypot(x - cx, y - cy)) / spacing);
   },
   // Parallel lines that thicken in the shadows, like an engraving.
   lines: (w, h, p) => {
