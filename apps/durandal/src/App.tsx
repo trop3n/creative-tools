@@ -35,8 +35,8 @@ const styles = stylex.create({
   mark: {width: 'var(--spacing-5)', height: 'var(--spacing-5)', color: 'var(--color-accent)', flexShrink: 0},
   brand: {letterSpacing: '0.3em'},
   toolBarCard: {maxWidth: '100%'},
-  narrowOnly: {display: {default: 'none', [HIDE_INSPECTOR]: null}},
-  railButton: {display: {default: 'none', [HIDE_RAIL]: null}},
+  narrowOnly: {display: {default: 'none', [HIDE_INSPECTOR]: 'flex'}}, // null in a media query sets nothing, so it would stay hidden
+  railButton: {display: {default: 'none', [HIDE_RAIL]: 'flex'}},
   wideOnly: {display: {default: null, '@media (max-width: 599.98px)': 'none'}},
 });
 

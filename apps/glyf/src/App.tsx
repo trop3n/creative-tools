@@ -37,8 +37,8 @@ const styles = stylex.create({
   brand: {letterSpacing: '0.3em'},
   toolBarCard: {maxWidth: '100%'},
   // Below the widths where the side panels fold, these buttons open them as drawers.
-  narrowOnly: {display: {default: 'none', [HIDE_INSPECTOR]: null}},
-  railButton: {display: {default: 'none', [HIDE_RAIL]: null}},
+  narrowOnly: {display: {default: 'none', [HIDE_INSPECTOR]: 'flex'}}, // null in a media query sets nothing, so it would stay hidden
+  railButton: {display: {default: 'none', [HIDE_RAIL]: 'flex'}},
   wideOnly: {display: {default: null, '@media (max-width: 599.98px)': 'none'}},
 });
 
