@@ -72,6 +72,7 @@ uniform vec2 uRes;          // full frame size in pixels
 uniform vec2 uOrigin;       // this draw's lower-left corner within the frame (tiles); 0 normally
 uniform float uCell;        // > 0: cell pass, one fragment per cell of this many pixels (grain left to the effect)
 uniform float uGlass, uRib; // glass: strength, and rib width in pixels
+uniform vec3 uHover;        // pointer (x, y in 0..1, y down) and strength: + pulls colors in, − pushes them away; 0 off
 uniform float uTime;        // seconds
 uniform uint uSeed;
 uniform int uShape;         // 0 blob, 1 pill, 2 band, 3 ring, 4 mesh
@@ -182,7 +183,17 @@ void main() {
   vec2 q = p * uWarpScale + seedOff;
   vec2 coarse = vec2(evolving(q, 0.0, drift), evolving(q + 17.31, 0.0, drift));
   vec2 fine = vec2(evolving(q * 1.9 + coarse * 1.2 + 5.2, 4.0, drift), evolving(q * 1.9 + coarse * 1.2 + 23.7, 4.0, drift));
-  vec2 d = p + (coarse + 0.3 * fine) * uWarp * 0.5 + sway;
+  // Push size is divided by the feature scale: finer warp means steeper noise, and
+  // once a push changes faster than space itself the picture folds over (a seam).
+  // This way folds start only near the top of the Amount slider, at any scale.
+  vec2 d = p + (coarse + 0.3 * fine) * uWarp * (0.3 / uWarpScale) + sway;
+  // Hover: near the pointer, look a little further from it (colors gather in toward
+  // the pointer) or closer to it (they swell out away from it), fading with distance.
+  if (uHover.z != 0.0) {
+    vec2 ptr = (uHover.xy - 0.5) * uRes / unit;
+    vec2 away = d - ptr;
+    d += away * uHover.z * 0.9 * exp(-dot(away, away) / 0.035);
+  }
 
   vec3 lab;
   if (uShape == 4) {
@@ -230,7 +241,9 @@ void main() {
 
     vec2 dir = vec2(cos(radians(uAngle)), sin(radians(uAngle)));
     float axisT = dot(d - c, dir) / max(1e-3, max(uSize.x, uSize.y)) + 0.5;
-    float t = mix(clamp(1.0 - radial, 0.0, 1.0), axisT, uRamp) + flow;
+    // The ramp from the middle rounds off at the very center; a sharp tip there,
+    // shaped by a blob's boiling outline, would show as a star-shaped crease.
+    float t = mix(clamp(1.0 - softAbs(radial, 0.12), 0.0, 1.0), axisT, uRamp) + flow;
     if (uMotion == 2) t = 1.0 - abs(1.0 - 2.0 * fract(0.5 * t)); // slide back and forth with no jump
     lab = mix(uBackground, ramp(t), mask);
   }

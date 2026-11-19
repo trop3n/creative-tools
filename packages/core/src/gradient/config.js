@@ -8,6 +8,7 @@ export const SHAPES = ['blob', 'pill', 'band', 'ring', 'mesh'];
 export const MOTIONS = ['drift', 'breathe', 'flow', 'none'];
 export const EFFECTS = ['none', 'pixelate', 'ascii', 'glass', 'dither'];
 export const DITHER_COLORS = ['gradient', 'two', 'cmyk'];
+export const HOVER_MODES = ['push', 'pull'];
 export const MAX_STOPS = 10;
 export const MAX_POINTS = 16;
 
@@ -36,6 +37,8 @@ export const DEFAULT_CONFIG = {
   effectAmount: 0.5, // glass: how strongly the ribs bend the picture; ASCII: contrast
   ditherStyle: 'dots', // dither: a DURANDAL style id
   ditherColors: 'gradient', // dither: the gradient's own colors, two tones, or CMYK
+  hover: 0, // how strongly the picture bends around the pointer on the stage (0 = off)
+  hoverMode: 'push', // push colors away from the pointer, or pull them in
 };
 
 /** An effect's cell size in pixels for a w×h frame (it is set for a 1080-pixel frame). */
@@ -78,6 +81,8 @@ export function cleanConfig(raw = {}) {
     effectAmount: num(r.effectAmount, 0, 1, d.effectAmount),
     ditherStyle: STYLE_BY_ID[r.ditherStyle] ? r.ditherStyle : d.ditherStyle,
     ditherColors: DITHER_COLORS.includes(r.ditherColors) ? r.ditherColors : d.ditherColors,
+    hover: num(r.hover, 0, 1, d.hover),
+    hoverMode: HOVER_MODES.includes(r.hoverMode) ? r.hoverMode : d.hoverMode,
   };
 }
 

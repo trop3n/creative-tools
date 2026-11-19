@@ -135,9 +135,25 @@ function fit() {
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; draw(); }
 }
 
+/* ---------- hover ---------- */
+// The pointer, eased: position glides after it and the bend fades in and out, so
+// the picture never jumps. Exports leave it out.
+const hover = {x: 0.5, y: 0.5, tx: 0.5, ty: 0.5, on: 0, target: 0};
+
+function hoverStep(dt) {
+  const k = 1 - Math.exp(-dt * 12), f = 1 - Math.exp(-dt * 5);
+  hover.x += (hover.tx - hover.x) * k;
+  hover.y += (hover.ty - hover.y) * k;
+  hover.on += (hover.target - hover.on) * f;
+  return Math.abs(hover.tx - hover.x) > 1e-4 || Math.abs(hover.ty - hover.y) > 1e-4 || Math.abs(hover.target - hover.on) > 1e-3;
+}
+const hoverArg = () => (S.config.hover > 0 && hover.on > 0.002
+  ? [hover.x, hover.y, (S.config.hoverMode === 'pull' ? 1 : -1) * S.config.hover * hover.on]
+  : null);
+
 function draw() {
   if (!renderer || renderer.lost) return;
-  renderer.render(S.config, S.time);
+  renderer.render(S.config, S.time, null, hoverArg());
   if (S.config.effect === 'dither' && fxCanvas) {
     const w = canvas.width, h = canvas.height;
     if (fxCanvas.width !== w || fxCanvas.height !== h) { fxCanvas.width = w; fxCanvas.height = h; }
@@ -153,7 +169,8 @@ function tick(now) {
   raf = requestAnimationFrame(tick);
   const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
   last = now;
-  if (!S.playing) return;
+  const easing = hoverStep(dt) && S.config.hover > 0;
+  if (!S.playing) { if (easing) draw(); return; }
   S.time += dt;
   draw();
   if (now - lastEmit > 250) { lastEmit = now; emit(); }
@@ -262,12 +279,21 @@ export function pointerDown(ev) {
   emit();
 }
 export function pointerMove(ev) {
-  if (S.drag === -1 || !canvas?.hasPointerCapture(ev.pointerId)) return;
+  if (S.drag === -1 || !canvas?.hasPointerCapture(ev.pointerId)) {
+    // Not dragging a handle: the pointer is just passing over, for hover.
+    if (!canvas || ev.pointerType === 'touch' && ev.buttons === 0) return;
+    const p = local(ev);
+    if (hover.on < 0.01) { hover.x = clamp01(p.x); hover.y = clamp01(p.y); }
+    hover.tx = clamp01(p.x); hover.ty = clamp01(p.y); hover.target = 1;
+    return;
+  }
+  hover.target = 0;
   const p = local(ev), x = +clamp01(p.x).toFixed(4), y = +clamp01(p.y).toFixed(4);
   if (S.drag === -2) set('center', [x, y]);
   else setPoint(S.drag, {x, y});
 }
 export function pointerUp() { if (S.drag !== -1) { S.drag = -1; emit(); } }
+export function pointerLeave() { hover.target = 0; }
 
 /* ---------- saved looks, project files and links ---------- */
 const storeLooks = () => saved.set('looks.v1', S.looks);

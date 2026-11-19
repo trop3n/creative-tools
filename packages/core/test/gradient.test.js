@@ -136,6 +136,15 @@ test('effects: settings check out, cells scale with the frame, glyphs ramp up', 
   assert.ok(GLYPHS.every(g => g < 1 << 25));
 });
 
+test('hover: off by default, strength clamps, two directions', () => {
+  assert.equal(cleanConfig({}).hover, 0);
+  assert.equal(cleanConfig({}).hoverMode, 'push');
+  assert.equal(cleanConfig({hover: 3}).hover, 1);
+  assert.equal(cleanConfig({hoverMode: 'pull'}).hoverMode, 'pull');
+  assert.equal(cleanConfig({hoverMode: 'spin'}).hoverMode, 'push');
+  assert.ok(FRAG.includes('uniform vec3 uHover'));
+});
+
 test('shader source: constants are filled in and sizes match the config', () => {
   assert.ok(FRAG_FX.includes('uniform uint uGlyph[10]'));
   assert.ok(!FRAG_FX.includes('${') && !FRAG_FX.includes('undefined'));

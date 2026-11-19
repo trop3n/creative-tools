@@ -21,7 +21,7 @@ import {PRESETS, MAX_STOPS, MAX_POINTS} from '@studio/core/gradient';
 import {STYLES} from '@studio/core/dither';
 import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, toggleHandles, set, setPair, setShape, asHex,
-  setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp,
+  setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp, pointerLeave,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
   SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal, attachFx, gradientColors,
 } from '../engine/live.js';
@@ -66,6 +66,7 @@ export function Stage() {
         onPointerMove={pointerMove}
         onPointerUp={pointerUp}
         onPointerCancel={pointerUp}
+        onPointerLeave={pointerLeave}
         {...stylex.props(styles.canvas, mesh && styles.meshCursor)}
       />
       {c.effect === 'dither' ? <DitherLayer /> : null}
@@ -222,6 +223,17 @@ export function Inspector() {
                 : 'A still image. Grain stays fixed.'}
           {c.motion !== 'none' && c.loop > 0 ? ' The loop ends exactly where it began, so it repeats with no seam.' : ''}
         </Text>
+      </InspectorSection>
+
+      <InspectorSection title="Hover">
+        <SliderRow label="Strength" value={c.hover} min={0} max={1} step={0.01} format={v => (v ? pct(v) : 'Off')} onChange={v => set('hover', v)} />
+        {c.hover > 0 ? (
+          <SegmentedControl label="Hover direction" size="sm" layout="fill" value={c.hoverMode} onChange={v => set('hoverMode', v)}>
+            <SegmentedControlItem value="push" label="Push away" />
+            <SegmentedControlItem value="pull" label="Pull in" />
+          </SegmentedControl>
+        ) : null}
+        <Text type="supporting">The picture bends around the pointer on the stage, easing in and out. It's for live use, so exports leave it out.</Text>
       </InspectorSection>
 
       <InspectorSection title="Grain">
