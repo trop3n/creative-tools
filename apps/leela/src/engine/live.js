@@ -4,8 +4,9 @@ import {useSyncExternalStore} from 'react';
 import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, putHandoff} from '@studio/core';
 import {
   createGradientRenderer, cleanConfig, presetConfig, randomConfig, spreadPoints, parseColor, oklabToHex,
-  PRESETS, MAX_STOPS, MAX_POINTS,
+  PRESETS, MAX_STOPS, MAX_POINTS, effectCell,
 } from '@studio/core/gradient';
+import {createGpuDither, ditherRGBA, paintIndices, paintMask, STYLE_BY_ID, defaultParams, MAX_COLORS} from '@studio/core/dither';
 
 export const saved = toolStore('leela');
 
@@ -64,6 +65,68 @@ function persist() {
 
 /* ---------- the canvas and the loop ---------- */
 let renderer = null, canvas = null, resize = null, raf = 0, last = 0, lastEmit = 0;
+let fxCanvas = null; // the stage's dither layer, over the gradient
+
+/* ---------- the dither effect (DURANDAL's engine) ---------- */
+const byLightness = colors => colors.slice().sort((a, b) => parseColor(a)[0] - parseColor(b)[0]);
+
+/** The gradient's colors (ramp or mesh points, plus the backdrop) as hex, darkest first, at most 16. */
+export function gradientColors(cfg = S.config) {
+  const src = cfg.shape === 'mesh' ? cfg.mesh.map(p => p.color) : cfg.palette;
+  return byLightness([...new Set([cfg.background, ...src].map(asHex))]).slice(0, MAX_COLORS);
+}
+
+/** DURANDAL settings for the dither effect at a given cell size. */
+function ditherSettings(cfg, cell) {
+  const style = STYLE_BY_ID[cfg.ditherStyle];
+  const base = {style: style.id, params: defaultParams(style), block: cell, threshold: 50, strength: 100, black: 100, invert: false};
+  const colors = gradientColors(cfg);
+  if (cfg.ditherColors === 'cmyk') return {...base, mode: 'cmyk'};
+  if (cfg.ditherColors === 'two') return {...base, mode: 'mono', ink: colors[0], paper: colors[colors.length - 1]};
+  return {...base, mode: 'palette', colors: colors.length >= 2 ? colors : [colors[0], '#ffffff']};
+}
+
+let dgpu; // DURANDAL's GPU engine, made on first use (null if unavailable)
+let readback = null, painted = null;
+
+/**
+ * Dither a rendered w×h frame. Returns a canvas of the cells blown up to whole
+ * pixels (a little smaller than w×h when w or h isn't a multiple of the cell).
+ * Pattern styles run on DURANDAL's GPU path; diffusion styles on the CPU.
+ */
+function ditherFrame(src, w, h, cfg) {
+  const cell = effectCell(cfg, w, h), st = ditherSettings(cfg, cell);
+  if (dgpu === undefined) { try { dgpu = createGpuDither(); } catch (e) { dgpu = null; } }
+  if (dgpu && dgpu.supports(st, w, h)) {
+    dgpu.setSource(src, false);
+    dgpu.render(st);
+    dgpu.present(dgpu.colors || [st.ink, st.paper], cell);
+    return dgpu.canvas;
+  }
+  // CPU: read the frame back, dither it, paint the cells at full size.
+  if (!readback) readback = document.createElement('canvas');
+  if (readback.width !== w || readback.height !== h) { readback.width = w; readback.height = h; }
+  const rx = readback.getContext('2d', {willReadFrequently: true});
+  rx.drawImage(src, 0, 0);
+  const r = ditherRGBA(rx.getImageData(0, 0, w, h).data, w, h, st);
+  const W = r.w * cell, H = r.h * cell;
+  const px = r.colors ? paintIndices(r.indices, r.w, r.h, W, H, r.colors) : paintMask(r.mask, r.w, r.h, W, H, st.ink, st.paper);
+  if (!painted) painted = document.createElement('canvas');
+  if (painted.width !== W || painted.height !== H) { painted.width = W; painted.height = H; }
+  painted.getContext('2d').putImageData(new ImageData(px, W, H), 0, 0);
+  return painted;
+}
+
+/** Dither `src` and draw it onto `out` (w×h), backdrop showing in any sliver the cells don't cover. */
+function composeDither(src, out, w, h, cfg) {
+  const d = ditherFrame(src, w, h, cfg);
+  const x = out.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.fillStyle = gradientColors(cfg)[0];
+  x.fillRect(0, 0, w, h);
+  x.drawImage(d, 0, 0);
+  return out;
+}
 
 function fit() {
   if (!canvas) return;
@@ -73,8 +136,18 @@ function fit() {
 }
 
 function draw() {
-  if (renderer && !renderer.lost) renderer.render(S.config, S.time);
+  if (!renderer || renderer.lost) return;
+  renderer.render(S.config, S.time);
+  if (S.config.effect === 'dither' && fxCanvas) {
+    const w = canvas.width, h = canvas.height;
+    if (fxCanvas.width !== w || fxCanvas.height !== h) { fxCanvas.width = w; fxCanvas.height = h; }
+    try { composeDither(canvas, fxCanvas, w, h, S.config); }
+    catch (e) { console.error(e); }
+  }
 }
+
+/** The stage's dither layer (null to let go). */
+export function attachFx(c) { fxCanvas = c; draw(); }
 
 function tick(now) {
   raf = requestAnimationFrame(tick);
@@ -294,6 +367,14 @@ const TILE = 2048;
  * buffer can stall or fail without a word).
  */
 function renderStill(w, h, time) {
+  const g = renderGradient(w, h, time);
+  if (S.config.effect !== 'dither') return g;
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  return composeDither(g, out, w, h, S.config);
+}
+
+function renderGradient(w, h, time) {
   if (w <= TILE && h <= TILE) { const r = offscreen(w, h); r.render(S.config, time); return r.canvas; }
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
@@ -332,6 +413,7 @@ async function renderMP4() {
   const {w, h} = outSize(), {frames} = videoPlan(), fps = S.out.fps;
   const W = Math.floor(w / 2) * 2, H = Math.floor(h / 2) * 2; // video needs even sizes
   const r = offscreen(W, H);
+  let frameOut = null; // the dithered frame, when the dither effect is on
   cancelExport = false;
   S.exporting = true; S.progress = 'Starting…'; emit();
   try {
@@ -339,7 +421,12 @@ async function renderMP4() {
     const res = await encodeFramesToMp4({
       width: W, height: H, fps, frames,
       // Frame i shows time i / fps from the start, so a loop's last frame leads into its first.
-      drawFrame: i => { r.render(S.config, i / fps); return r.canvas; },
+      drawFrame: i => {
+        r.render(S.config, i / fps);
+        if (S.config.effect !== 'dither') return r.canvas;
+        if (!frameOut) { frameOut = document.createElement('canvas'); frameOut.width = W; frameOut.height = H; }
+        return composeDither(r.canvas, frameOut, W, H, S.config);
+      },
       onProgress: p => { S.progress = p.phase; const now = performance.now(); if (now - lastEmit > 200) { lastEmit = now; emit(); } },
       isCancelled: () => cancelExport,
     });

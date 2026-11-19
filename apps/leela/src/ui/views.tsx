@@ -18,19 +18,21 @@ import {
 } from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {PRESETS, MAX_STOPS, MAX_POINTS} from '@studio/core/gradient';
+import {STYLES} from '@studio/core/dither';
 import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, toggleHandles, set, setPair, setShape, asHex,
   setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
-  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal,
+  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal, attachFx, gradientColors,
 } from '../engine/live.js';
-import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
+import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
   canvas: {display: 'block', width: '100%', height: '100%', borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-med)', touchAction: 'none'},
   meshCursor: {cursor: 'crosshair'},
   overlay: {position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible'},
+  fxLayer: {position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', borderRadius: 'var(--radius-container)', imageRendering: 'pixelated'},
   ringOuter: {fill: 'none', stroke: 'var(--color-background-inverted)', strokeWidth: 4, opacity: 0.55},
   ringInner: {stroke: 'var(--color-background-body)', strokeWidth: 2},
   cross: {stroke: 'var(--color-background-body)', strokeWidth: 2},
@@ -66,6 +68,7 @@ export function Stage() {
         onPointerCancel={pointerUp}
         {...stylex.props(styles.canvas, mesh && styles.meshCursor)}
       />
+      {c.effect === 'dither' ? <DitherLayer /> : null}
       {s.handles ? (
         <svg aria-hidden="true" {...stylex.props(styles.overlay)}>
           {mesh ? (
@@ -85,6 +88,13 @@ export function Stage() {
       ) : null}
     </Center>
   );
+}
+
+/** The dithered picture, drawn over the gradient (drags pass through to it). */
+function DitherLayer() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => { attachFx(ref.current); return () => attachFx(null); }, []);
+  return <canvas ref={ref} aria-hidden="true" {...stylex.props(styles.fxLayer)} />;
 }
 
 export function StageToolbar() {
@@ -219,10 +229,64 @@ export function Inspector() {
         <Text type="supporting">Film grain hides banding, and is lighter in the shadows.</Text>
       </InspectorSection>
 
+      <EffectSection />
+
       <ExportSection />
 
       <LooksSection />
     </>
+  );
+}
+
+const EFFECT_LABELS: Record<string, string> = {none: 'None', pixelate: 'Pixelate', ascii: 'ASCII', glass: 'Ribbed glass', dither: 'Dither (DURANDAL)'};
+const STYLE_OPTIONS = STYLES.map(st => ({value: st.id, label: `${st.name} · ${st.family === 'Pattern' ? 'pattern' : st.family === 'Scanline' ? 'scanline' : 'diffusion'}`}));
+
+function EffectSection() {
+  const {config: c} = useStore();
+  const fx = c.effect;
+  return (
+    <InspectorSection title="Effect">
+      <Selector label="Effect" isLabelHidden size="sm" width="100%" value={fx} options={Object.entries(EFFECT_LABELS).map(([value, label]) => ({value, label}))} onChange={v => set('effect', v)} />
+      {fx !== 'none' ? (
+        <SliderRow label={fx === 'glass' ? 'Rib width' : 'Cell size'} value={c.effectSize} min={2} max={64} step={1} format={v => `${v} px`} onChange={v => set('effectSize', v)} />
+      ) : null}
+      {fx === 'glass' ? <SliderRow label="Strength" value={c.effectAmount} min={0} max={1} step={0.01} format={pct} onChange={v => set('effectAmount', v)} /> : null}
+      {fx === 'ascii' ? <SliderRow label="Contrast" value={c.effectAmount} min={0} max={1} step={0.01} format={pct} onChange={v => set('effectAmount', v)} /> : null}
+      {fx === 'dither' ? (
+        <>
+          <InspectorRow label="Style">
+            <Selector label="Dither style" isLabelHidden size="sm" width="100%" value={c.ditherStyle} options={STYLE_OPTIONS} onChange={v => set('ditherStyle', v)} />
+          </InspectorRow>
+          <SegmentedControl label="Dither colors" size="sm" layout="fill" value={c.ditherColors} onChange={v => set('ditherColors', v)}>
+            <SegmentedControlItem value="gradient" label="Its colors" />
+            <SegmentedControlItem value="two" label="Two tones" />
+            <SegmentedControlItem value="cmyk" label="CMYK" />
+          </SegmentedControl>
+          {c.ditherColors !== 'cmyk' ? (
+            <InspectorRow label="Colors">
+              {(c.ditherColors === 'two' ? [gradientColors()[0], gradientColors().slice(-1)[0]] : gradientColors()).map((col, i) => (
+                <PresetChip key={i} label="Dither color" color={col} isOn={false} />
+              ))}
+            </InspectorRow>
+          ) : null}
+        </>
+      ) : null}
+      <Text type="supporting">
+        {fx === 'none'
+          ? 'Pixelate, ASCII and glass are drawn here; Dither runs the frame through DURANDAL’s engine.'
+          : fx === 'pixelate'
+            ? 'One color per cell. Sizes are set for a 1080-pixel frame and scale with the export.'
+            : fx === 'ascii'
+              ? 'Characters whose density follows how far each cell stands out from the backdrop. Contrast thickens faint ones.'
+              : fx === 'glass'
+                ? 'Vertical ribs, each a small lens that flips what lies behind it.'
+                : c.ditherColors === 'gradient'
+                  ? 'Dithers to the gradient’s own colors: the ramp (or mesh points) and the backdrop. Pattern styles run on the GPU, diffusion styles on the CPU.'
+                  : c.ditherColors === 'two'
+                    ? 'Dithers to the darkest and lightest of the gradient’s colors.'
+                    : 'Splits into cyan, magenta, yellow and black ink, each dithered on its own, on white.'}
+      </Text>
+    </InspectorSection>
   );
 }
 
