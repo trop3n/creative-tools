@@ -18,6 +18,8 @@ const run = async (mode, fn) => {
       const tx = db.transaction(STORE, mode), out = fn(tx.objectStore(STORE));
       tx.oncomplete = () => resolve(out && 'result' in out ? out.result : undefined);
       tx.onerror = () => reject(tx.error);
+      // A write the browser refuses (e.g. out of storage) aborts without an error event.
+      tx.onabort = () => reject(tx.error || new Error('The browser would not store the file'));
     });
   } finally {
     db.close();

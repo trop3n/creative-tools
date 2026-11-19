@@ -64,7 +64,7 @@ export function createGradientRenderer(canvas) {
   };
 
   /** The gradient pass. `cell` > 0 draws one sample per cell into the cell texture. */
-  function drawGradient(P, time, fullW, fullH, origin, cell, glass, rib) {
+  function drawGradient(P, time, fullW, fullH, origin, cell, glass, rib, hover) {
     const {cfg, stops, points, pointColors, background} = P;
     const {u} = main;
     gl.useProgram(main.p);
@@ -73,6 +73,7 @@ export function createGradientRenderer(canvas) {
     gl.uniform1f(u('uCell'), cell);
     gl.uniform1f(u('uGlass'), glass);
     gl.uniform1f(u('uRib'), rib);
+    gl.uniform3f(u('uHover'), hover ? hover[0] : 0, hover ? hover[1] : 0, hover ? hover[2] : 0);
     gl.uniform1f(u('uTime'), time);
     gl.uniform1ui(u('uSeed'), cfg.seed >>> 0);
     gl.uniform1i(u('uShape'), SHAPES.indexOf(cfg.shape));
@@ -108,9 +109,11 @@ export function createGradientRenderer(canvas) {
      * Draw `config` at `time` seconds into the whole canvas. With `tile`
      * ({x, y, width, height} of a w×h frame, y down) the canvas holds just that part
      * of a bigger frame; the pieces line up exactly, noise, grain and cells included.
-     * Effects other than glass, pixelate and ASCII are left to the caller.
+     * Effects other than glass, pixelate and ASCII are left to the caller. `hover`
+     * ([x, y, strength], x and y 0..1 across and down, strength + pull in / − push away)
+     * bends the picture around a pointer; leave it out for exports.
      */
-    render(config, time = 0, tile = null) {
+    render(config, time = 0, tile = null, hover = null) {
       const P = prepare(config), cfg = P.cfg;
       const w = canvas.width, h = canvas.height;
       const fullW = tile ? tile.width : w, fullH = tile ? tile.height : h;
@@ -122,7 +125,7 @@ export function createGradientRenderer(canvas) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, w, h);
         const glass = cfg.effect === 'glass' ? cfg.effectAmount : 0;
-        drawGradient(P, time, fullW, fullH, origin, 0, glass, cell);
+        drawGradient(P, time, fullW, fullH, origin, 0, glass, cell, hover);
         return;
       }
       // Pass 1: one gradient sample per cell, for the whole frame (tiles share it).
@@ -130,7 +133,7 @@ export function createGradientRenderer(canvas) {
       cellTarget(cw, ch);
       gl.bindFramebuffer(gl.FRAMEBUFFER, cellFbo);
       gl.viewport(0, 0, cw, ch);
-      drawGradient(P, time, fullW, fullH, [0, 0], cell, 0, 0);
+      drawGradient(P, time, fullW, fullH, [0, 0], cell, 0, 0, hover);
       // Pass 2: the effect, per pixel.
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, w, h);
