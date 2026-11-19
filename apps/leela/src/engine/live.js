@@ -1,7 +1,7 @@
 // LEELA's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, putHandoff} from '@studio/core';
 import {
   createGradientRenderer, cleanConfig, presetConfig, randomConfig, spreadPoints, parseColor, oklabToHex,
   PRESETS, MAX_STOPS, MAX_POINTS,
@@ -35,6 +35,10 @@ export const S = {
   supported: true,
   looks: (saved.get('looks.v1', []) || []).filter(l => l && typeof l.name === 'string' && l.config),
   toast: null, // set by the app: (message, kind) => void
+  // Export settings (kept) and progress (not kept).
+  out: {size: '1080p', w: 1920, h: 1080, fps: 30, seconds: 6, loops: 1, ...(saved.get('out.v1', {}) || {})},
+  exporting: false,
+  progress: '',
 };
 // A shared link becomes the saved gradient, and the address goes back to plain, so a
 // reload keeps the gradient and a later edit isn't undone by an old link.
@@ -233,4 +237,146 @@ export async function copyLink() {
   const b64 = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const url = location.origin + location.pathname + '#c=' + b64;
   toast((await copyText(url)) ? 'Link copied' : 'Could not copy the link', 'info');
+}
+
+/* ---------- export ---------- */
+export const SIZES = [
+  {id: 'stage', label: 'Same as the stage'},
+  {id: '1080p', label: '1920 × 1080', w: 1920, h: 1080},
+  {id: '4k', label: '3840 × 2160 (4K)', w: 3840, h: 2160},
+  {id: 'square', label: '1080 × 1080', w: 1080, h: 1080},
+  {id: 'portrait', label: '1080 × 1920 (portrait)', w: 1080, h: 1920},
+  {id: 'custom', label: 'Custom'},
+];
+export const MAX_SIDE = 8192;
+
+export function setOut(patch) {
+  Object.assign(S.out, patch);
+  saved.set('out.v1', S.out);
+  emit();
+}
+
+/** The export size in pixels. */
+export function outSize() {
+  const o = S.out, preset = SIZES.find(z => z.id === o.size);
+  if (preset?.w) return {w: preset.w, h: preset.h};
+  if (o.size === 'stage' && canvas) return {w: canvas.width, h: canvas.height};
+  return {w: Math.round(Math.min(MAX_SIDE, Math.max(16, o.w))), h: Math.round(Math.min(MAX_SIDE, Math.max(16, o.h)))};
+}
+
+/** Seconds and frames a video export will have (a whole number of loops when looping). */
+export function videoPlan() {
+  const o = S.out, loop = S.config.motion !== 'none' && S.config.loop > 0 ? S.config.loop : 0;
+  const seconds = loop ? loop * Math.max(1, o.loops) : o.seconds;
+  return {seconds, frames: Math.round(seconds * o.fps), loop};
+}
+
+// A second renderer for exports, so the stage keeps its own size.
+let off = null;
+function offscreen(w, h) {
+  if (!off) off = createGradientRenderer(document.createElement('canvas'));
+  if (!off) throw new Error('This browser cannot draw with WebGL2');
+  off.canvas.width = w; off.canvas.height = h;
+  const gl = off.gl;
+  if (gl.drawingBufferWidth !== w || gl.drawingBufferHeight !== h) {
+    throw new Error(`This graphics card can draw at most ${gl.drawingBufferWidth} × ${gl.drawingBufferHeight}. Try a smaller size.`);
+  }
+  return off;
+}
+
+const pngBlob = c => new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('PNG export failed'))), 'image/png'));
+
+const TILE = 2048;
+
+/**
+ * The frame at w×h. Up to one tile it draws in one go; bigger frames draw tile by
+ * tile into a plain 2D canvas, which keeps the GPU's buffers small (one huge WebGL
+ * buffer can stall or fail without a word).
+ */
+function renderStill(w, h, time) {
+  if (w <= TILE && h <= TILE) { const r = offscreen(w, h); r.render(S.config, time); return r.canvas; }
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const x2 = out.getContext('2d');
+  if (!x2) throw new Error(`This browser cannot hold a ${w} × ${h} image. Try a smaller size.`);
+  for (let y = 0; y < h; y += TILE) {
+    for (let x = 0; x < w; x += TILE) {
+      const tw = Math.min(TILE, w - x), th = Math.min(TILE, h - y), r = offscreen(tw, th);
+      r.render(S.config, time, {x, y, width: w, height: h});
+      x2.drawImage(r.canvas, x, y);
+    }
+  }
+  return out;
+}
+
+async function renderPNG() {
+  const {w, h} = outSize();
+  return {blob: await pngBlob(renderStill(w, h, S.time)), name: `${fileName()}-${w}x${h}.png`};
+}
+
+/** Save the frame on screen as a PNG at the export size. */
+export async function exportPNG() {
+  try {
+    const {blob, name} = await renderPNG();
+    const res = await saveFile(name, blob, 'image/png');
+    toast(res.message, res.status === 'error' ? 'error' : 'info');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+let cancelExport = false;
+export function cancelVideo() { cancelExport = true; }
+
+async function renderMP4() {
+  const {w, h} = outSize(), {frames} = videoPlan(), fps = S.out.fps;
+  const W = Math.floor(w / 2) * 2, H = Math.floor(h / 2) * 2; // video needs even sizes
+  const r = offscreen(W, H);
+  cancelExport = false;
+  S.exporting = true; S.progress = 'Starting…'; emit();
+  try {
+    let lastEmit = 0;
+    const res = await encodeFramesToMp4({
+      width: W, height: H, fps, frames,
+      // Frame i shows time i / fps from the start, so a loop's last frame leads into its first.
+      drawFrame: i => { r.render(S.config, i / fps); return r.canvas; },
+      onProgress: p => { S.progress = p.phase; const now = performance.now(); if (now - lastEmit > 200) { lastEmit = now; emit(); } },
+      isCancelled: () => cancelExport,
+    });
+    return res.cancelled ? null : {blob: res.blob, name: `${fileName()}-${W}x${H}-${fps}fps.mp4`};
+  } finally {
+    S.exporting = false; S.progress = ''; emit();
+  }
+}
+
+/** Render the animation to MP4 offline, frame by frame. */
+export async function exportMP4() {
+  if (!canEncodeVideo()) return toast('This browser cannot encode video. Use Chrome or Edge.', 'error');
+  try {
+    const out = await renderMP4();
+    if (!out) return toast('Render canceled');
+    const res = await saveFile(out.name, out.blob, 'video/mp4');
+    toast(res.message, res.status === 'error' ? 'error' : 'info');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+/**
+ * Open the frame (kind 'image') or the animation (kind 'video') in DURANDAL as its
+ * source. Both tools share one site, so the file waits in the browser for it.
+ */
+export async function sendToDurandal(kind) {
+  // Open the tab now, while the click still counts as the person's, then point it there.
+  const tab = window.open('', '_blank');
+  try {
+    const out = kind === 'video' ? await renderMP4() : await renderPNG();
+    if (!out) { tab?.close(); return toast('Render canceled'); }
+    await putHandoff(out.blob, out.name, 'leela');
+    const url = new URL('../durandal/?from=leela', location.href).href;
+    if (tab) tab.location.href = url; else location.href = url;
+  } catch (e) {
+    tab?.close();
+    toast(e.message, 'error');
+  }
 }

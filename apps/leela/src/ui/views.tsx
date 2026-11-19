@@ -14,14 +14,15 @@ import {Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {
-  ArrowLeftRight, Check, Dices, Download, FolderOpen, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Shuffle, Trash2,
+  ArrowLeftRight, Check, Clapperboard, Dices, Download, FolderOpen, Image as ImageIcon, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Send, Shuffle, Trash2,
 } from 'lucide-react';
-import {pickFiles} from '@studio/core';
+import {pickFiles, canEncodeVideo} from '@studio/core';
 import {PRESETS, MAX_STOPS, MAX_POINTS} from '@studio/core/gradient';
 import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, toggleHandles, set, setPair, setShape, asHex,
   setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
+  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal,
 } from '../engine/live.js';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
 
@@ -107,6 +108,8 @@ export function StageToolbar() {
             icon={<Icon icon={Move} size={ICON} />}
             onClick={toggleHandles}
           />
+          <Button label="PNG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} isDisabled={s.exporting} onClick={exportPNG} />
+          <Button label="MP4" size="sm" variant="ghost" icon={<Icon icon={Clapperboard} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={exportMP4} />
         </>
       }
     />
@@ -216,8 +219,82 @@ export function Inspector() {
         <Text type="supporting">Film grain hides banding, and is lighter in the shadows.</Text>
       </InspectorSection>
 
+      <ExportSection />
+
       <LooksSection />
     </>
+  );
+}
+
+function ExportSection() {
+  const s = useStore();
+  const o = s.out, {w, h} = outSize(), plan = videoPlan();
+  const num = (v: string, d: number) => { const n = parseInt(v, 10); return isFinite(n) ? Math.min(MAX_SIDE, Math.max(16, n)) : d; };
+  const moving = s.config.motion !== 'none';
+  return (
+    <InspectorSection title="Export">
+      <InspectorRow label="Size">
+        <Selector label="Export size" isLabelHidden size="sm" width="100%" value={o.size} options={SIZES.map(z => ({value: z.id, label: z.label}))} onChange={v => setOut({size: v})} />
+      </InspectorRow>
+      {o.size === 'custom' ? (
+        <InspectorRow label="Pixels">
+          <StackItem size="fill">
+            <TextInput label="Width in pixels" isLabelHidden size="sm" width="100%" value={String(o.w)} onChange={v => setOut({w: num(v, o.w)})} />
+          </StackItem>
+          <Text type="supporting">×</Text>
+          <StackItem size="fill">
+            <TextInput label="Height in pixels" isLabelHidden size="sm" width="100%" value={String(o.h)} onChange={v => setOut({h: num(v, o.h)})} />
+          </StackItem>
+        </InspectorRow>
+      ) : null}
+      <HStack gap={1} wrap="wrap">
+        <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} isDisabled={s.exporting} onClick={exportPNG} />
+      </HStack>
+      <Text type="supporting" hasTabularNumbers>{`${w} × ${h} px, the frame on screen now. Up to ${MAX_SIDE} px on a side.`}</Text>
+
+      {moving ? (
+        <>
+          <InspectorRow label="Frame rate">
+            <SegmentedControl label="Frame rate" size="sm" layout="fill" value={String(o.fps)} onChange={v => setOut({fps: Number(v)})}>
+              {['24', '30', '60'].map(f => (
+                <SegmentedControlItem key={f} value={f} label={f} />
+              ))}
+            </SegmentedControl>
+          </InspectorRow>
+          {plan.loop ? (
+            <SliderRow label="Loops" value={o.loops} min={1} max={10} step={1} format={v => `${v} × ${plan.loop} s`} onChange={v => setOut({loops: v})} />
+          ) : (
+            <SliderRow label="Length" value={o.seconds} min={1} max={30} step={1} format={v => `${v} s`} onChange={v => setOut({seconds: v})} />
+          )}
+          <HStack gap={1} wrap="wrap">
+            <Button
+              label={s.exporting ? 'Cancel render' : 'Render MP4'}
+              size="sm"
+              variant={s.exporting ? 'destructive' : 'primary'}
+              icon={<Icon icon={Clapperboard} size={ICON} />}
+              isDisabled={!canEncodeVideo()}
+              tooltip={canEncodeVideo() ? undefined : 'This browser cannot encode video. Use Chrome or Edge.'}
+              onClick={s.exporting ? cancelVideo : exportMP4}
+            />
+          </HStack>
+          <Text type="supporting" hasTabularNumbers>
+            {s.progress ||
+              `${plan.seconds} s at ${o.fps} fps: ${plan.frames} frames at ${Math.floor(w / 2) * 2} × ${Math.floor(h / 2) * 2}. ` +
+                (plan.loop
+                  ? 'It starts at the beginning of the loop and ends where it began, so it repeats with no seam.'
+                  : 'Turn on Seamless loop under Motion for a video that repeats with no seam.')}
+          </Text>
+        </>
+      ) : null}
+
+      <InspectorRow label="Send to">
+        <Button label="Frame" size="sm" variant="ghost" icon={<Icon icon={ImageIcon} size={ICON} />} isDisabled={s.exporting} onClick={() => sendToDurandal('image')} />
+        {moving ? (
+          <Button label="Animation" size="sm" variant="ghost" icon={<Icon icon={Send} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={() => sendToDurandal('video')} />
+        ) : null}
+      </InspectorRow>
+      <Text type="supporting">Sends this frame or animation to DURANDAL, which opens in a new tab with it as the source, ready to dither.</Text>
+    </InspectorSection>
   );
 }
 

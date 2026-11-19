@@ -5,6 +5,18 @@ import {makeCanvas, seekVideo} from './media.js';
 
 export const canEncodeVideo = () => 'VideoEncoder' in window;
 
+/** The first H.264 (or VP9) setup this browser can encode at w×h; null if none. */
+async function pickVideoConfig(w, h, fps) {
+  const bitrate = Math.min(40e6, Math.round(w * h * fps * 0.3));
+  for (const [m, c] of [['avc', 'avc1.640033'], ['avc', 'avc1.4d0033'], ['vp9', 'vp09.00.41.08']]) {
+    const conf = {codec: c, width: w, height: h, bitrate, framerate: fps};
+    try {
+      if ((await VideoEncoder.isConfigSupported(conf)).supported) return {cfg: conf, mcodec: m};
+    } catch (e) {}
+  }
+  return null;
+}
+
 async function prepareAudio(file) {
   const AC = window.AudioContext || window.webkitAudioContext;
   const ac = new AC({sampleRate: 48000});
@@ -71,15 +83,9 @@ export async function renderVideoToMp4(o) {
   const first = await renderFrame();
   const k = Math.min(1, maxSide / Math.max(first.width, first.height));
   const EW = Math.max(2, Math.floor((first.width * k) / 2) * 2), EH = Math.max(2, Math.floor((first.height * k) / 2) * 2);
-  const bitrate = Math.min(40e6, Math.round(EW * EH * fps * 0.3));
-  let cfg = null, mcodec = null;
-  for (const [m, c] of [['avc', 'avc1.640033'], ['avc', 'avc1.4d0033'], ['vp9', 'vp09.00.41.08']]) {
-    const conf = {codec: c, width: EW, height: EH, bitrate, framerate: fps};
-    try {
-      if ((await VideoEncoder.isConfigSupported(conf)).supported) { cfg = conf; mcodec = m; break; }
-    } catch (e) {}
-  }
-  if (!cfg) throw new Error('No supported video codec for ' + EW + '×' + EH);
+  const picked = await pickVideoConfig(EW, EH, fps);
+  if (!picked) throw new Error('No supported video codec for ' + EW + '×' + EH);
+  const {cfg, mcodec} = picked;
 
   let audio = null, audioNote = wantAudio ? '' : ' (audio off)';
   if (wantAudio && file) {
@@ -126,6 +132,52 @@ export async function renderVideoToMp4(o) {
     }
     muxer.finalize();
     return {blob: new Blob([target.buffer], {type: 'video/mp4'}), cancelled: false, audioNote};
+  } finally {
+    try { if (encoder.state !== 'closed') encoder.close(); } catch (e) {}
+  }
+}
+
+/**
+ * Encode generated frames to MP4 (no source video, no audio): frame i is drawn by
+ * drawFrame(i), which returns a canvas of width×height (even numbers).
+ *
+ * @param {object} o
+ * @param {number} o.width
+ * @param {number} o.height
+ * @param {number} o.fps
+ * @param {number} o.frames                 how many frames
+ * @param {(i: number) => CanvasImageSource | Promise<CanvasImageSource>} o.drawFrame
+ * @param {(p: {frame, total, phase}) => void} [o.onProgress]
+ * @param {() => boolean} [o.isCancelled]
+ * @returns {Promise<{blob: Blob | null, cancelled: boolean}>}
+ */
+export async function encodeFramesToMp4(o) {
+  const {fps, frames, drawFrame, onProgress = () => {}, isCancelled = () => false} = o;
+  if (!canEncodeVideo()) throw new Error('This browser cannot encode video. Use Chrome or Edge.');
+  const W = Math.max(2, Math.floor(o.width / 2) * 2), H = Math.max(2, Math.floor(o.height / 2) * 2);
+  const picked = await pickVideoConfig(W, H, fps);
+  if (!picked) throw new Error(`This browser cannot encode ${W}×${H} video. Try a smaller size.`);
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({target, video: {codec: picked.mcodec, width: W, height: H, frameRate: fps}, fastStart: 'in-memory'});
+  let err = null;
+  const encoder = new VideoEncoder({output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { err = e; }});
+  encoder.configure(picked.cfg);
+  const total = Math.max(1, Math.round(frames));
+  try {
+    for (let i = 0; i < total; i++) {
+      if (isCancelled() || err) break;
+      const src = await drawFrame(i);
+      const fr = new VideoFrame(src, {timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps)});
+      encoder.encode(fr, {keyFrame: i % (fps * 2) === 0});
+      fr.close();
+      while (encoder.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 4));
+      onProgress({frame: i + 1, total, phase: `Rendering frame ${i + 1} of ${total}`});
+    }
+    if (err) throw err;
+    if (isCancelled()) return {blob: null, cancelled: true};
+    await encoder.flush();
+    muxer.finalize();
+    return {blob: new Blob([target.buffer], {type: 'video/mp4'}), cancelled: false};
   } finally {
     try { if (encoder.state !== 'closed') encoder.close(); } catch (e) {}
   }

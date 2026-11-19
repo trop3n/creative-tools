@@ -18,7 +18,8 @@ void main() {
 export const FRAG = `#version 300 es
 precision highp float; precision highp int;
 
-uniform vec2 uRes;          // canvas size in pixels
+uniform vec2 uRes;          // full frame size in pixels
+uniform vec2 uOrigin;       // this draw's lower-left corner within the frame (tiles); 0 normally
 uniform float uTime;        // seconds
 uniform uint uSeed;
 uniform int uShape;         // 0 blob, 1 pill, 2 band, 3 ring, 4 mesh
@@ -121,7 +122,8 @@ mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 
 void main() {
   float unit = min(uRes.x, uRes.y);
-  vec2 frag = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y); // y down, like the config
+  vec2 full = gl_FragCoord.xy + uOrigin;                     // pixel in the whole frame, y up
+  vec2 frag = vec2(full.x, uRes.y - full.y);                 // y down, like the config
   vec2 p = (frag - 0.5 * uRes) / unit;                        // short side spans -0.5..0.5
   vec2 c = (uCenter - 0.5) * uRes / unit;
   float seedOff = float(uSeed % 997u) * 0.731;
@@ -192,7 +194,7 @@ void main() {
   // Film grain on lightness: full in highlights, 30% in shadows.
   if (uGrain > 0.0) {
     int frame = uMotion == 3 ? 0 : int(floor((uLoop > 0.0 ? mod(uTime, uLoop) : uTime) * 24.0));
-    ivec2 px = ivec2(gl_FragCoord.xy);
+    ivec2 px = ivec2(full);
     float g = 0.35 * (hashf(px, frame) + hashf(px + 7919, frame)) + 0.3 * hashf(px / 2 + 3571, frame);
     lab.x += g * 0.14 * uGrain * mix(0.3, 1.0, smoothstep(0.0, 0.2, lab.x));
   }

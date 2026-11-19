@@ -47,14 +47,20 @@ export function createGradientRenderer(canvas) {
     gl,
     get lost() { return gl.isContextLost(); },
 
-    /** Draw `config` at `time` seconds into the whole canvas. */
-    render(config, time = 0) {
+    /**
+     * Draw `config` at `time` seconds into the whole canvas. With `tile`
+     * ({x, y, width, height} of a w×h frame, y down) the canvas holds just that part
+     * of a bigger frame; the pieces line up exactly, noise and grain included.
+     */
+    render(config, time = 0, tile = null) {
       const {cfg, stops, points, pointColors, background} = prepare(config);
       const w = canvas.width, h = canvas.height;
+      const fullW = tile ? tile.width : w, fullH = tile ? tile.height : h;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, w, h);
       gl.useProgram(prog);
-      gl.uniform2f(u('uRes'), w, h);
+      gl.uniform2f(u('uRes'), fullW, fullH);
+      gl.uniform2f(u('uOrigin'), tile ? tile.x : 0, tile ? fullH - tile.y - h : 0);
       gl.uniform1f(u('uTime'), time);
       gl.uniform1ui(u('uSeed'), cfg.seed >>> 0);
       gl.uniform1i(u('uShape'), SHAPES.indexOf(cfg.shape));
