@@ -3,10 +3,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseColor, oklabToHex, linearToOklab, oklabToLinear, rampAt,
-  cleanConfig, DEFAULT_CONFIG, PRESETS, presetConfig, randomConfig, spreadPoints,
+  cleanConfig, DEFAULT_CONFIG, PRESETS, presetConfig, randomConfig, spreadPoints, effectCell,
   gradientNoise, evolvingNoise, correlation, loopLevel,
 } from '../src/gradient/index.js';
-import {VERT, FRAG} from '../src/gradient/shader.js';
+import {VERT, FRAG, FRAG_FX, GLYPHS} from '../src/gradient/shader.js';
 
 const close = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
 
@@ -112,7 +112,33 @@ test('loops: the last frame meets the first, with no dip in contrast mid-fade', 
   close(correlation(0), 1, 1e-12, 'a field matches itself');
 });
 
+test('effects: settings check out, cells scale with the frame, glyphs ramp up', () => {
+  const d = cleanConfig({});
+  assert.equal(d.effect, 'none');
+  const c = cleanConfig({effect: 'sparkle', effectSize: 500, effectAmount: -1, ditherStyle: 'nope', ditherColors: 'rainbow'});
+  assert.equal(c.effect, 'none');
+  assert.equal(c.effectSize, 64);
+  assert.equal(c.effectAmount, 0);
+  assert.equal(c.ditherStyle, 'dots');
+  assert.equal(c.ditherColors, 'gradient');
+  assert.equal(cleanConfig({effect: 'dither', ditherStyle: 'ostromukhov'}).ditherStyle, 'ostromukhov');
+  // The same look at any size: an 8 px cell on 1080 lines is 16 px at 4K and 4 px at 540.
+  const e = cleanConfig({effectSize: 8});
+  assert.equal(effectCell(e, 1920, 1080), 8);
+  assert.equal(effectCell(e, 3840, 2160), 16);
+  assert.equal(effectCell(e, 960, 540), 4);
+  assert.equal(effectCell(cleanConfig({effectSize: 2}), 300, 200), 2); // never below 2
+  // Glyphs: ten of them, from empty to dense, each lighting more pixels than the last.
+  const lit = n => { let k = 0; for (; n; n &= n - 1) k++; return k; };
+  assert.equal(GLYPHS.length, 10);
+  assert.equal(GLYPHS[0], 0);
+  for (let i = 1; i < GLYPHS.length; i++) assert.ok(lit(GLYPHS[i]) > lit(GLYPHS[i - 1]), `glyph ${i}`);
+  assert.ok(GLYPHS.every(g => g < 1 << 25));
+});
+
 test('shader source: constants are filled in and sizes match the config', () => {
+  assert.ok(FRAG_FX.includes('uniform uint uGlyph[10]'));
+  assert.ok(!FRAG_FX.includes('${') && !FRAG_FX.includes('undefined'));
   assert.ok(FRAG.includes('uniform vec3 uStops[10]'));
   assert.ok(FRAG.includes('uniform vec2 uPoints[16]'));
   assert.ok(!FRAG.includes('${') && !FRAG.includes('undefined') && !FRAG.includes('NaN'));

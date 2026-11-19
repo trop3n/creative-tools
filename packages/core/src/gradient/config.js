@@ -2,9 +2,12 @@
 // saved, shared, randomized and animated. cleanConfig() takes anything (a saved
 // file, a URL) and returns a valid config, falling back to defaults field by field.
 import {parseColor} from './color.js';
+import {STYLE_BY_ID} from '../dither/styles.js';
 
 export const SHAPES = ['blob', 'pill', 'band', 'ring', 'mesh'];
 export const MOTIONS = ['drift', 'breathe', 'flow', 'none'];
+export const EFFECTS = ['none', 'pixelate', 'ascii', 'glass', 'dither'];
+export const DITHER_COLORS = ['gradient', 'two', 'cmyk'];
 export const MAX_STOPS = 10;
 export const MAX_POINTS = 16;
 
@@ -28,7 +31,15 @@ export const DEFAULT_CONFIG = {
   motion: 'drift',
   speed: 0.5, // 0..2
   loop: 0, // seconds for a seamless loop; 0 = runs on forever
+  effect: 'none', // see EFFECTS
+  effectSize: 8, // cell (or rib) size in pixels on a 1080-pixel frame; scales with the frame
+  effectAmount: 0.5, // glass: how strongly the ribs bend the picture; ASCII: contrast
+  ditherStyle: 'dots', // dither: a DURANDAL style id
+  ditherColors: 'gradient', // dither: the gradient's own colors, two tones, or CMYK
 };
+
+/** An effect's cell size in pixels for a w×h frame (it is set for a 1080-pixel frame). */
+export const effectCell = (cfg, w, h) => Math.max(2, Math.round((cfg.effectSize * Math.min(w, h)) / 1080));
 
 const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
 const color = (v, d) => (parseColor(v) ? String(v).trim() : d);
@@ -62,6 +73,11 @@ export function cleanConfig(raw = {}) {
     motion: MOTIONS.includes(r.motion) ? r.motion : d.motion,
     speed: num(r.speed, 0, 2, d.speed),
     loop: num(r.loop, 0, 30, d.loop),
+    effect: EFFECTS.includes(r.effect) ? r.effect : d.effect,
+    effectSize: num(r.effectSize, 2, 64, d.effectSize),
+    effectAmount: num(r.effectAmount, 0, 1, d.effectAmount),
+    ditherStyle: STYLE_BY_ID[r.ditherStyle] ? r.ditherStyle : d.ditherStyle,
+    ditherColors: DITHER_COLORS.includes(r.ditherColors) ? r.ditherColors : d.ditherColors,
   };
 }
 

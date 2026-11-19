@@ -1,12 +1,11 @@
 // BLOOM's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
 import {buildPlant, meshPlant, Mesh} from './plant.js';
 import {createBloomRenderer, frameCamera} from './renderer.js';
 import {toRGB} from './color.js';
 import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, ASPECTS, MAX_RAMPS, MAX_RAMP_STOPS} from './config.js';
-import {encodeFrames, canEncodeVideo} from './encode.js';
 
 export const saved = toolStore('bloom');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -239,10 +238,10 @@ export async function exportMP4() {
   emit();
   try {
     const c = exportTarget(w, h);
-    const blob = await encodeFrames({
+    const {blob} = await encodeFramesToMp4({
       width: w, height: h, fps, frames,
       drawFrame: i => { exportRenderer.render(sceneFrame(S.config, i / fps, w / h)); return c; },
-      onProgress: (done, total) => { S.exporting = {done, total}; emit(); },
+      onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
       isCancelled: () => cancelExport,
     });
     if (blob) {

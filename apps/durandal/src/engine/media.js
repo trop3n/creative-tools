@@ -3,7 +3,7 @@
 // @studio/core, shared with GLYF.
 import {
   loadImageFile, isImageFile, isVideoFile, openVideoFile, openWebcam,
-  cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile,
+  cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
 import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule} from './render.js';
@@ -82,7 +82,19 @@ export function loadSample(kind) {
   setStill(sampleCanvas(kind), 'sample', SAMPLES[kind] + ' (sample)');
 }
 
-export function initSource() { loadSample(S.look.sample); }
+export function initSource() {
+  loadSample(S.look.sample);
+  // Opened from another tool (e.g. LEELA's "Send to DURANDAL"): take the file it left.
+  const params = new URLSearchParams(location.search);
+  if (params.has('from')) {
+    history.replaceState(null, '', location.pathname);
+    takeHandoff().then(file => {
+      if (!file) return toast('Nothing was waiting from the other tool. It may have taken too long.', 'error');
+      loadFile(file);
+      toast(`Opened ${file.name} from ${String(file.from || 'another tool').toUpperCase()}`);
+    });
+  }
+}
 
 /** Open an image or a video file. */
 export async function loadFile(file) {

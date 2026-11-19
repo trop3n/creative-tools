@@ -14,22 +14,25 @@ import {Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {
-  ArrowLeftRight, Check, Dices, Download, FolderOpen, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Shuffle, Trash2,
+  ArrowLeftRight, Check, Clapperboard, Dices, Download, FolderOpen, Image as ImageIcon, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Send, Shuffle, Trash2,
 } from 'lucide-react';
-import {pickFiles} from '@studio/core';
+import {pickFiles, canEncodeVideo} from '@studio/core';
 import {PRESETS, MAX_STOPS, MAX_POINTS} from '@studio/core/gradient';
+import {STYLES} from '@studio/core/dither';
 import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, toggleHandles, set, setPair, setShape, asHex,
   setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
+  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal, attachFx, gradientColors,
 } from '../engine/live.js';
-import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
+import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
   canvas: {display: 'block', width: '100%', height: '100%', borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-med)', touchAction: 'none'},
   meshCursor: {cursor: 'crosshair'},
   overlay: {position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible'},
+  fxLayer: {position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', borderRadius: 'var(--radius-container)', imageRendering: 'pixelated'},
   ringOuter: {fill: 'none', stroke: 'var(--color-background-inverted)', strokeWidth: 4, opacity: 0.55},
   ringInner: {stroke: 'var(--color-background-body)', strokeWidth: 2},
   cross: {stroke: 'var(--color-background-body)', strokeWidth: 2},
@@ -65,6 +68,7 @@ export function Stage() {
         onPointerCancel={pointerUp}
         {...stylex.props(styles.canvas, mesh && styles.meshCursor)}
       />
+      {c.effect === 'dither' ? <DitherLayer /> : null}
       {s.handles ? (
         <svg aria-hidden="true" {...stylex.props(styles.overlay)}>
           {mesh ? (
@@ -84,6 +88,13 @@ export function Stage() {
       ) : null}
     </Center>
   );
+}
+
+/** The dithered picture, drawn over the gradient (drags pass through to it). */
+function DitherLayer() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => { attachFx(ref.current); return () => attachFx(null); }, []);
+  return <canvas ref={ref} aria-hidden="true" {...stylex.props(styles.fxLayer)} />;
 }
 
 export function StageToolbar() {
@@ -107,6 +118,8 @@ export function StageToolbar() {
             icon={<Icon icon={Move} size={ICON} />}
             onClick={toggleHandles}
           />
+          <Button label="PNG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} isDisabled={s.exporting} onClick={exportPNG} />
+          <Button label="MP4" size="sm" variant="ghost" icon={<Icon icon={Clapperboard} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={exportMP4} />
         </>
       }
     />
@@ -216,8 +229,136 @@ export function Inspector() {
         <Text type="supporting">Film grain hides banding, and is lighter in the shadows.</Text>
       </InspectorSection>
 
+      <EffectSection />
+
+      <ExportSection />
+
       <LooksSection />
     </>
+  );
+}
+
+const EFFECT_LABELS: Record<string, string> = {none: 'None', pixelate: 'Pixelate', ascii: 'ASCII', glass: 'Ribbed glass', dither: 'Dither (DURANDAL)'};
+const STYLE_OPTIONS = STYLES.map(st => ({value: st.id, label: `${st.name} · ${st.family === 'Pattern' ? 'pattern' : st.family === 'Scanline' ? 'scanline' : 'diffusion'}`}));
+
+function EffectSection() {
+  const {config: c} = useStore();
+  const fx = c.effect;
+  return (
+    <InspectorSection title="Effect">
+      <Selector label="Effect" isLabelHidden size="sm" width="100%" value={fx} options={Object.entries(EFFECT_LABELS).map(([value, label]) => ({value, label}))} onChange={v => set('effect', v)} />
+      {fx !== 'none' ? (
+        <SliderRow label={fx === 'glass' ? 'Rib width' : 'Cell size'} value={c.effectSize} min={2} max={64} step={1} format={v => `${v} px`} onChange={v => set('effectSize', v)} />
+      ) : null}
+      {fx === 'glass' ? <SliderRow label="Strength" value={c.effectAmount} min={0} max={1} step={0.01} format={pct} onChange={v => set('effectAmount', v)} /> : null}
+      {fx === 'ascii' ? <SliderRow label="Contrast" value={c.effectAmount} min={0} max={1} step={0.01} format={pct} onChange={v => set('effectAmount', v)} /> : null}
+      {fx === 'dither' ? (
+        <>
+          <InspectorRow label="Style">
+            <Selector label="Dither style" isLabelHidden size="sm" width="100%" value={c.ditherStyle} options={STYLE_OPTIONS} onChange={v => set('ditherStyle', v)} />
+          </InspectorRow>
+          <SegmentedControl label="Dither colors" size="sm" layout="fill" value={c.ditherColors} onChange={v => set('ditherColors', v)}>
+            <SegmentedControlItem value="gradient" label="Its colors" />
+            <SegmentedControlItem value="two" label="Two tones" />
+            <SegmentedControlItem value="cmyk" label="CMYK" />
+          </SegmentedControl>
+          {c.ditherColors !== 'cmyk' ? (
+            <InspectorRow label="Colors">
+              {(c.ditherColors === 'two' ? [gradientColors()[0], gradientColors().slice(-1)[0]] : gradientColors()).map((col, i) => (
+                <PresetChip key={i} label="Dither color" color={col} isOn={false} />
+              ))}
+            </InspectorRow>
+          ) : null}
+        </>
+      ) : null}
+      <Text type="supporting">
+        {fx === 'none'
+          ? 'Pixelate, ASCII and glass are drawn here; Dither runs the frame through DURANDAL’s engine.'
+          : fx === 'pixelate'
+            ? 'One color per cell. Sizes are set for a 1080-pixel frame and scale with the export.'
+            : fx === 'ascii'
+              ? 'Characters whose density follows how far each cell stands out from the backdrop. Contrast thickens faint ones.'
+              : fx === 'glass'
+                ? 'Vertical ribs, each a small lens that flips what lies behind it.'
+                : c.ditherColors === 'gradient'
+                  ? 'Dithers to the gradient’s own colors: the ramp (or mesh points) and the backdrop. Pattern styles run on the GPU, diffusion styles on the CPU.'
+                  : c.ditherColors === 'two'
+                    ? 'Dithers to the darkest and lightest of the gradient’s colors.'
+                    : 'Splits into cyan, magenta, yellow and black ink, each dithered on its own, on white.'}
+      </Text>
+    </InspectorSection>
+  );
+}
+
+function ExportSection() {
+  const s = useStore();
+  const o = s.out, {w, h} = outSize(), plan = videoPlan();
+  const num = (v: string, d: number) => { const n = parseInt(v, 10); return isFinite(n) ? Math.min(MAX_SIDE, Math.max(16, n)) : d; };
+  const moving = s.config.motion !== 'none';
+  return (
+    <InspectorSection title="Export">
+      <InspectorRow label="Size">
+        <Selector label="Export size" isLabelHidden size="sm" width="100%" value={o.size} options={SIZES.map(z => ({value: z.id, label: z.label}))} onChange={v => setOut({size: v})} />
+      </InspectorRow>
+      {o.size === 'custom' ? (
+        <InspectorRow label="Pixels">
+          <StackItem size="fill">
+            <TextInput label="Width in pixels" isLabelHidden size="sm" width="100%" value={String(o.w)} onChange={v => setOut({w: num(v, o.w)})} />
+          </StackItem>
+          <Text type="supporting">×</Text>
+          <StackItem size="fill">
+            <TextInput label="Height in pixels" isLabelHidden size="sm" width="100%" value={String(o.h)} onChange={v => setOut({h: num(v, o.h)})} />
+          </StackItem>
+        </InspectorRow>
+      ) : null}
+      <HStack gap={1} wrap="wrap">
+        <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} isDisabled={s.exporting} onClick={exportPNG} />
+      </HStack>
+      <Text type="supporting" hasTabularNumbers>{`${w} × ${h} px, the frame on screen now. Up to ${MAX_SIDE} px on a side.`}</Text>
+
+      {moving ? (
+        <>
+          <InspectorRow label="Frame rate">
+            <SegmentedControl label="Frame rate" size="sm" layout="fill" value={String(o.fps)} onChange={v => setOut({fps: Number(v)})}>
+              {['24', '30', '60'].map(f => (
+                <SegmentedControlItem key={f} value={f} label={f} />
+              ))}
+            </SegmentedControl>
+          </InspectorRow>
+          {plan.loop ? (
+            <SliderRow label="Loops" value={o.loops} min={1} max={10} step={1} format={v => `${v} × ${plan.loop} s`} onChange={v => setOut({loops: v})} />
+          ) : (
+            <SliderRow label="Length" value={o.seconds} min={1} max={30} step={1} format={v => `${v} s`} onChange={v => setOut({seconds: v})} />
+          )}
+          <HStack gap={1} wrap="wrap">
+            <Button
+              label={s.exporting ? 'Cancel render' : 'Render MP4'}
+              size="sm"
+              variant={s.exporting ? 'destructive' : 'primary'}
+              icon={<Icon icon={Clapperboard} size={ICON} />}
+              isDisabled={!canEncodeVideo()}
+              tooltip={canEncodeVideo() ? undefined : 'This browser cannot encode video. Use Chrome or Edge.'}
+              onClick={s.exporting ? cancelVideo : exportMP4}
+            />
+          </HStack>
+          <Text type="supporting" hasTabularNumbers>
+            {s.progress ||
+              `${plan.seconds} s at ${o.fps} fps: ${plan.frames} frames at ${Math.floor(w / 2) * 2} × ${Math.floor(h / 2) * 2}. ` +
+                (plan.loop
+                  ? 'It starts at the beginning of the loop and ends where it began, so it repeats with no seam.'
+                  : 'Turn on Seamless loop under Motion for a video that repeats with no seam.')}
+          </Text>
+        </>
+      ) : null}
+
+      <InspectorRow label="Send to">
+        <Button label="Frame" size="sm" variant="ghost" icon={<Icon icon={ImageIcon} size={ICON} />} isDisabled={s.exporting} onClick={() => sendToDurandal('image')} />
+        {moving ? (
+          <Button label="Animation" size="sm" variant="ghost" icon={<Icon icon={Send} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={() => sendToDurandal('video')} />
+        ) : null}
+      </InspectorRow>
+      <Text type="supporting">Sends this frame or animation to DURANDAL, which opens in a new tab with it as the source, ready to dither.</Text>
+    </InspectorSection>
   );
 }
 
