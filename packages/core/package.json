@@ -2,7 +2,7 @@
   "name": "@studio/core",
   "version": "0.1.0",
   "private": true,
-  "description": "Shared building blocks: image/video/webcam sources, MP4 render and canvas recording, file save/pick, storage, and the dither engine.",
+  "description": "Shared building blocks: image/video/webcam sources, MP4 render and canvas recording, file save/pick, storage, and the dither engine, and the gradient engine.",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
@@ -11,7 +11,8 @@
     "./storage": "./src/storage.js",
     "./media": "./src/media.js",
     "./video-export": "./src/video-export.js",
-    "./dither": "./src/dither/index.js"
+    "./dither": "./src/dither/index.js",
+    "./gradient": "./src/gradient/index.js"
   },
   "dependencies": {
     "mp4-muxer": "5.2.1"

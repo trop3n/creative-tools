@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+  <defs>
+    <radialGradient id="a" cx="0.38" cy="0.42" r="0.62">
+      <stop offset="0" stop-color="#dfdfdf"/>
+      <stop offset="0.28" stop-color="#c99530"/>
+      <stop offset="0.62" stop-color="#4c3046"/>
+      <stop offset="1" stop-color="#00304e"/>
+    </radialGradient>
+    <radialGradient id="b" cx="0.78" cy="0.72" r="0.45">
+      <stop offset="0" stop-color="#90a344" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#90a344" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0"/></filter>
+  </defs>
+  <rect width="400" height="240" fill="#242222"/>
+  <ellipse cx="170" cy="118" rx="210" ry="150" fill="url(#a)"/>
+  <rect width="400" height="240" fill="url(#b)"/>
+  <rect width="400" height="240" filter="url(#grain)"/>
+</svg>

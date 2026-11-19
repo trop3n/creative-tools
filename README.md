@@ -8,7 +8,8 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | `apps/launcher` | Home page: one card per tool, read from `suite.json` |
 | `apps/glyf` | GLYF: draw glyphs, then use them as the characters of a dithered image, video or webcam feed |
 | `apps/durandal` | DURANDAL: dither images, video or a webcam feed into 1-bit or palette pixel art (error diffusion, Bayer and pattern styles; up to 16 colors from presets, the image or a custom set; CMYK print with four angled ink screens; pattern styles run on the GPU via WebGL2 at full resolution; cells as squares, round dots, diamonds or lines with gaps for dot-matrix and LED looks); exports PNG, SVG and MP4, with keyframed settings over a video; saved looks and .durandal.json project files |
-| `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, and the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles, tested with `npm test`) |
+| `apps/leela` | LEELA: animated grainy gradients and mesh gradients on the GPU (WebGL2), blended in Oklab, with noise-warped shapes, drift, breathe and flow motion, seamless loops and film grain; presets and a seeded randomizer |
+| `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles) and the gradient engine (`@studio/core/gradient`); both tested with `npm test` |
 | `packages/theme` (`@studio/theme`) | The suite's Astryx theme and self-hosted fonts (Montserrat, JetBrains Mono) |
 | `packages/build` (`@studio/build`) | Shared Vite config and the `studio-inline` single-file step |
 | `suite.json` | The tool registry: name, folder, URL path, category, description, preview |
@@ -22,6 +23,7 @@ npm install
 npm run dev            # GLYF dev server, http://localhost:5180
 npm run dev:launcher   # launcher dev server, http://localhost:5170
 npm run dev:durandal   # DURANDAL dev server, http://localhost:5181
+npm run dev:leela      # LEELA dev server, http://localhost:5182
 npm test               # dither engine tests
 npm run build          # builds every app into dist/ (launcher at /, tools at /<path>/)
 npm run serve          # serves dist/ at http://localhost:5100

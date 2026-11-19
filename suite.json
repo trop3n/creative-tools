@@ -17,8 +17,17 @@
       "app": "apps/durandal",
       "path": "durandal/",
       "category": "Image effects",
-      "description": "Turn images, video or a webcam feed into 1-bit pixel art with error-diffusion and pattern dithering, in your own ink and paper colors. Exports PNG and MP4.",
+      "description": "Turn images, video or a webcam feed into pixel art: error-diffusion and pattern dithering in two tones, a palette or CMYK, with cell shapes and keyframes. Exports PNG, SVG and MP4.",
       "preview": "durandal.svg"
+    },
+    {
+      "id": "leela",
+      "name": "LEELA",
+      "app": "apps/leela",
+      "path": "leela/",
+      "category": "Generators",
+      "description": "Animated grainy gradients and mesh gradients, blended in Oklab, with seamless loops.",
+      "preview": "leela.svg"
     }
   ]
 }
