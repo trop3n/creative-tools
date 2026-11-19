@@ -3,7 +3,10 @@
 Project-specific guidance for AI coding agents.
 
 ## This repo
-- npm workspaces suite: apps in `apps/*` (launcher, glyf), shared code in `packages/*`. Tool registry: `suite.json`. See README.md.
+- npm workspaces suite: apps in `apps/*` (launcher, glyf, durandal, leela, bloom), shared code in `packages/*`. Tool registry: `suite.json`. See README.md. Each app has `dev:<id>` and `build:<id>` root scripts; `npm run build` builds the whole suite.
+- `packages/core` holds the dither engine (`@studio/core/dither`, used by DURANDAL and LEELA's Dither effect), the gradient engine (`src/gradient/`, LEELA), the shared `encodeFramesToMp4` (LEELA, BLOOM) and the cross-tool hand-off store (`src/handoff.js`, LEELA → DURANDAL; works only in the built suite, not between dev servers).
+- If another agent is working in this repo at the same time, work in a separate git worktree on a branch and merge into `main` only when the other session is idle.
+- `packages/build/inline.js` can show as modified with no content change (CRLF). Leave it out of commits.
 - Apps DO have a StyleX compiler: every app's Vite config comes from `studioApp()` in `packages/build/vite.js` (@stylexjs/unplugin + a Windows dev-URL fix), so `stylex.create` + `xstyle` are fine inside `apps/*`. (The Astryx block below was generated at the repo root, which has no bundler, so it says otherwise.)
 - Reusable, framework-free logic (sources, exporters, files, storage) belongs in `packages/core`; the theme is `packages/theme` (slug `studio`).
 - Astryx CLI needs Node ≥ 22. Verify UI with `npm run build && npm run serve` and a headless Edge screenshot; `astryx experimental theme editor show --png` fails on this machine.
