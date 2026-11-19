@@ -128,6 +128,7 @@ float evolving(vec2 q, float z0, float rate) {
 // A repeating motion's angle. In a loop it runs a whole number of cycles, so it
 // ends where it began.
 float cycle(float rate) {
+  if (rate <= 0.0) return 0.0; // Speed 0 holds still, loop or not
   if (uLoop > 0.0) return TAU * max(1.0, floor(rate * uLoop + 0.5)) * uTime / uLoop;
   return TAU * rate * uTime;
 }

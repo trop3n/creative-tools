@@ -96,6 +96,7 @@ let readback = null, painted = null;
  */
 function ditherFrame(src, w, h, cfg) {
   const cell = effectCell(cfg, w, h), st = ditherSettings(cfg, cell);
+  if (dgpu && dgpu.lost) dgpu = undefined; // lost (GPU reset): make it again
   if (dgpu === undefined) { try { dgpu = createGpuDither(); } catch (e) { dgpu = null; } }
   if (dgpu && dgpu.supports(st, w, h)) {
     dgpu.setSource(src, false);
@@ -177,14 +178,29 @@ function tick(now) {
 }
 
 /** Hand the stage canvas over (null to let go). */
+let rendererCanvas = null; // the canvas `renderer` draws on
+
+function makeRenderer(c) {
+  try { renderer = createGradientRenderer(c); }
+  catch (e) { console.error(e); renderer = null; }
+  rendererCanvas = c;
+  S.supported = !!renderer;
+}
+
 export function attachCanvas(c) {
   resize?.disconnect();
   cancelAnimationFrame(raf);
   canvas = c;
-  if (!c) { renderer?.dispose(); renderer = null; return; }
-  try { renderer = createGradientRenderer(c); }
-  catch (e) { console.error(e); renderer = null; }
-  S.supported = !!renderer;
+  // Letting go keeps the renderer: React's StrictMode lets go and takes the same
+  // canvas back, and disposing would have lost its WebGL context for good.
+  if (!c) return;
+  if (rendererCanvas !== c) {
+    if (renderer) renderer.dispose();
+    makeRenderer(c);
+    // If the GPU resets, ask for the context back and rebuild when it returns.
+    c.addEventListener('webglcontextlost', e => e.preventDefault());
+    c.addEventListener('webglcontextrestored', () => { makeRenderer(c); draw(); emit(); });
+  }
   resize = new ResizeObserver(fit);
   resize.observe(c);
   fit(); draw();
@@ -197,7 +213,8 @@ export function attachCanvas(c) {
 function setConfig(cfg, preset = '') {
   S.config = cleanConfig(cfg);
   S.preset = preset;
-  persist(); draw(); emit();
+  if (!S.playing) draw(); // while playing, the next frame shows it (drawing here too would double the work)
+  persist(); emit();
 }
 /** Change one field (e.g. set('warp', 0.4)). */
 export const set = (key, value) => setConfig({...S.config, [key]: value});
@@ -264,7 +281,7 @@ function local(ev) {
 const clamp01 = v => Math.min(1, Math.max(0, v));
 
 export function pointerDown(ev) {
-  if (!canvas) return;
+  if (!canvas || !S.handles) return; // hidden handles can't be grabbed
   const p = local(ev);
   let pick = -1, best = HIT;
   if (S.config.shape === 'mesh') {
@@ -373,6 +390,7 @@ export function videoPlan() {
 // A second renderer for exports, so the stage keeps its own size.
 let off = null;
 function offscreen(w, h) {
+  if (off && off.lost) off = null; // lost (GPU reset): start a fresh one
   if (!off) off = createGradientRenderer(document.createElement('canvas'));
   if (!off) throw new Error('This browser cannot draw with WebGL2');
   off.canvas.width = w; off.canvas.height = h;
@@ -387,38 +405,46 @@ const pngBlob = c => new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(n
 
 const TILE = 2048;
 
-/**
- * The frame at w×h. Up to one tile it draws in one go; bigger frames draw tile by
- * tile into a plain 2D canvas, which keeps the GPU's buffers small (one huge WebGL
- * buffer can stall or fail without a word).
- */
-function renderStill(w, h, time) {
-  const g = renderGradient(w, h, time);
-  if (S.config.effect !== 'dither') return g;
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
-  return composeDither(g, out, w, h, S.config);
-}
+/** The renderer reset under us (GPU reset, too many contexts): stop rather than save blank frames. */
+const checkAlive = r => { if (r.lost) throw new Error('The graphics card reset during the render. Please try again.'); };
 
-function renderGradient(w, h, time) {
-  if (w <= TILE && h <= TILE) { const r = offscreen(w, h); r.render(S.config, time); return r.canvas; }
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
+/**
+ * The gradient at w×h, for a config snapshot. Up to one tile it draws in one go;
+ * bigger frames draw tile by tile into a plain 2D canvas (`into`, reused if given),
+ * which keeps the GPU's buffers small (one huge WebGL buffer can stall or fail
+ * without a word).
+ */
+function renderGradient(cfg, w, h, time, into = null) {
+  if (w <= TILE && h <= TILE) { const r = offscreen(w, h); r.render(cfg, time); checkAlive(r); return r.canvas; }
+  const out = into || document.createElement('canvas');
+  if (out.width !== w || out.height !== h) { out.width = w; out.height = h; }
   const x2 = out.getContext('2d');
   if (!x2) throw new Error(`This browser cannot hold a ${w} × ${h} image. Try a smaller size.`);
   for (let y = 0; y < h; y += TILE) {
     for (let x = 0; x < w; x += TILE) {
       const tw = Math.min(TILE, w - x), th = Math.min(TILE, h - y), r = offscreen(tw, th);
-      r.render(S.config, time, {x, y, width: w, height: h});
+      r.render(cfg, time, {x, y, width: w, height: h});
+      checkAlive(r);
       x2.drawImage(r.canvas, x, y);
     }
   }
   return out;
 }
 
+/** The finished frame (gradient, then the dither effect if it's on). */
+function renderFrame(cfg, w, h, time, bufs = {}) {
+  const g = renderGradient(cfg, w, h, time, bufs.tiles);
+  if (g !== offCanvas()) bufs.tiles = g;
+  if (cfg.effect !== 'dither') return g;
+  if (!bufs.out) bufs.out = document.createElement('canvas');
+  if (bufs.out.width !== w || bufs.out.height !== h) { bufs.out.width = w; bufs.out.height = h; }
+  return composeDither(g, bufs.out, w, h, cfg);
+}
+const offCanvas = () => off && off.canvas;
+
 async function renderPNG() {
   const {w, h} = outSize();
-  return {blob: await pngBlob(renderStill(w, h, S.time)), name: `${fileName()}-${w}x${h}.png`};
+  return {blob: await pngBlob(renderFrame(S.config, w, h, S.time)), name: `${fileName()}-${w}x${h}.png`};
 }
 
 /** Save the frame on screen as a PNG at the export size. */
@@ -438,8 +464,8 @@ export function cancelVideo() { cancelExport = true; }
 async function renderMP4() {
   const {w, h} = outSize(), {frames} = videoPlan(), fps = S.out.fps;
   const W = Math.floor(w / 2) * 2, H = Math.floor(h / 2) * 2; // video needs even sizes
-  const r = offscreen(W, H);
-  let frameOut = null; // the dithered frame, when the dither effect is on
+  // The gradient as it is now: edits made during the render don't leak into it.
+  const cfg = S.config, bufs = {}, name = `${fileName()}-${W}x${H}-${fps}fps.mp4`;
   cancelExport = false;
   S.exporting = true; S.progress = 'Starting…'; emit();
   try {
@@ -447,16 +473,11 @@ async function renderMP4() {
     const res = await encodeFramesToMp4({
       width: W, height: H, fps, frames,
       // Frame i shows time i / fps from the start, so a loop's last frame leads into its first.
-      drawFrame: i => {
-        r.render(S.config, i / fps);
-        if (S.config.effect !== 'dither') return r.canvas;
-        if (!frameOut) { frameOut = document.createElement('canvas'); frameOut.width = W; frameOut.height = H; }
-        return composeDither(r.canvas, frameOut, W, H, S.config);
-      },
+      drawFrame: i => renderFrame(cfg, W, H, i / fps, bufs),
       onProgress: p => { S.progress = p.phase; const now = performance.now(); if (now - lastEmit > 200) { lastEmit = now; emit(); } },
       isCancelled: () => cancelExport,
     });
-    return res.cancelled ? null : {blob: res.blob, name: `${fileName()}-${W}x${H}-${fps}fps.mp4`};
+    return res.cancelled ? null : {blob: res.blob, name};
   } finally {
     S.exporting = false; S.progress = ''; emit();
   }
@@ -479,6 +500,13 @@ export async function exportMP4() {
  * Open the frame (kind 'image') or the animation (kind 'video') in DURANDAL as its
  * source. Both tools share one site, so the file waits in the browser for it.
  */
+/**
+ * Whether DURANDAL sits next to LEELA (the built suite: /leela/ beside /durandal/,
+ * one origin). Dev servers and the single-file build run alone, so the hand-off
+ * has nowhere to go.
+ */
+export const canSendToDurandal = () => /\/leela\/?$/.test(location.pathname) && !import.meta.env?.DEV;
+
 export async function sendToDurandal(kind) {
   // Open the tab now, while the click still counts as the person's, then point it there.
   const tab = window.open('', '_blank');

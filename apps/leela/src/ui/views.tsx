@@ -23,7 +23,7 @@ import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, toggleHandles, set, setPair, setShape, asHex,
   setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp, pointerLeave,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
-  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal, attachFx, gradientColors,
+  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal, canSendToDurandal, attachFx, gradientColors,
 } from '../engine/live.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
@@ -302,6 +302,39 @@ function EffectSection() {
   );
 }
 
+/**
+ * A pixel count typed freely: it is checked and limited when you press Enter or
+ * stop typing for a moment, so in-between values like "1" on the way to "1200"
+ * aren't clamped as you type.
+ */
+function PixelsInput({label, value, onCommit}: {label: string; value: number; onCommit: (v: number) => void}) {
+  const [draft, setDraft] = useState(String(value));
+  const timer = useRef(0);
+  useEffect(() => setDraft(String(value)), [value]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const commit = (text: string) => {
+    clearTimeout(timer.current);
+    const n = parseInt(text, 10);
+    if (isFinite(n)) onCommit(n); else setDraft(String(value));
+  };
+  return (
+    <TextInput
+      label={label}
+      isLabelHidden
+      size="sm"
+      width="100%"
+      value={draft}
+      onChange={v => {
+        const text = v.replace(/[^0-9]/g, '');
+        setDraft(text);
+        clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => commit(text), 900);
+      }}
+      onKeyDown={e => { if (e.key === 'Enter') commit(draft); }}
+    />
+  );
+}
+
 function ExportSection() {
   const s = useStore();
   const o = s.out, {w, h} = outSize(), plan = videoPlan();
@@ -315,11 +348,11 @@ function ExportSection() {
       {o.size === 'custom' ? (
         <InspectorRow label="Pixels">
           <StackItem size="fill">
-            <TextInput label="Width in pixels" isLabelHidden size="sm" width="100%" value={String(o.w)} onChange={v => setOut({w: num(v, o.w)})} />
+            <PixelsInput label="Width in pixels" value={o.w} onCommit={v => setOut({w: num(String(v), o.w)})} />
           </StackItem>
           <Text type="supporting">×</Text>
           <StackItem size="fill">
-            <TextInput label="Height in pixels" isLabelHidden size="sm" width="100%" value={String(o.h)} onChange={v => setOut({h: num(v, o.h)})} />
+            <PixelsInput label="Height in pixels" value={o.h} onCommit={v => setOut({h: num(String(v), o.h)})} />
           </StackItem>
         </InspectorRow>
       ) : null}
@@ -363,13 +396,17 @@ function ExportSection() {
         </>
       ) : null}
 
-      <InspectorRow label="Send to">
-        <Button label="Frame" size="sm" variant="ghost" icon={<Icon icon={ImageIcon} size={ICON} />} isDisabled={s.exporting} onClick={() => sendToDurandal('image')} />
-        {moving ? (
-          <Button label="Animation" size="sm" variant="ghost" icon={<Icon icon={Send} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={() => sendToDurandal('video')} />
-        ) : null}
-      </InspectorRow>
-      <Text type="supporting">Sends this frame or animation to DURANDAL, which opens in a new tab with it as the source, ready to dither.</Text>
+      {canSendToDurandal() ? (
+        <>
+          <InspectorRow label="Send to">
+            <Button label="Frame" size="sm" variant="ghost" icon={<Icon icon={ImageIcon} size={ICON} />} isDisabled={s.exporting} onClick={() => sendToDurandal('image')} />
+            {moving ? (
+              <Button label="Animation" size="sm" variant="ghost" icon={<Icon icon={Send} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={() => sendToDurandal('video')} />
+            ) : null}
+          </InspectorRow>
+          <Text type="supporting">Sends this frame or animation to DURANDAL, which opens in a new tab with it as the source, ready to dither.</Text>
+        </>
+      ) : null}
     </InspectorSection>
   );
 }
