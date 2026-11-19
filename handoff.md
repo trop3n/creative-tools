@@ -76,5 +76,4 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 - **Two agents in one repo:** Session B used a separate worktree on a branch and held off merging until session A was idle. Reuse that pattern if you run parallel sessions again.
 - **Line endings:** `packages/build/inline.js` sometimes shows as modified with no content change (CRLF). Both sessions left it out of commits on purpose.
 - **Shell heredocs and `sed` anchors** broke several edits on Windows (CRLF, quoting). The sessions fell back to the Edit tool.
-- **Stale CLAUDE.md:** `.claude/CLAUDE.md` still lists only `launcher` and `glyf` under `apps/*`. It should add `durandal`, `leela` and `bloom`, and mention the dither and gradient engines and the hand-off store in `packages/core`.
 - **Checking the apps:** Sessions used headless Edge screenshots and scripted clicks. "Send to DURANDAL" works only in the built suite (`npm run build`, served together), not between separate dev servers.
