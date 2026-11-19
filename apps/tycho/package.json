@@ -1,0 +1,27 @@
+{
+  "name": "@studio/tycho",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && studio-inline && node scripts/artifact.mjs",
+    "preview": "vite preview",
+    "test": "node --no-warnings scripts/sanity.mjs",
+    "preview-card": "node --no-warnings scripts/preview.mjs navygold 21 11"
+  },
+  "devDependencies": {
+    "@studio/build": "*",
+    "@astryxdesign/cli": "0.7.16"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.16",
+    "@stylexjs/stylex": "^0.19.2",
+    "lucide-react": "^1.74.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@studio/core": "*",
+    "@studio/theme": "*"
+  },
+  "description": "TYCHO: a beat-synced grid of looping geometric pattern modules in flat color. Exports PNG, SVG and MP4."
+}

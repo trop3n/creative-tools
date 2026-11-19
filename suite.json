@@ -37,6 +37,15 @@
       "category": "Generators",
       "description": "Grow procedural flowers that bloom on a gradient: carnations, lilies, tulips, daisies and more, in flat color ramps, with wind, camera drift and depth of field. Exports PNG and MP4.",
       "preview": "bloom.svg"
+    },
+    {
+      "id": "tycho",
+      "name": "TYCHO",
+      "app": "apps/tycho",
+      "path": "tycho/",
+      "category": "Generators",
+      "description": "A beat-synced grid of looping geometric pattern tiles: checkers, stripes, rays, rings and dots in flat color, re-cut on the beat. Exports PNG, SVG and MP4.",
+      "preview": "tycho.svg"
     }
   ]
 }

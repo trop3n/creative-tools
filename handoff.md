@@ -66,10 +66,9 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 
 ## What's next
 
-1. **Next 1stAve spec: Geomator** (`~/creative/specs/1stave-effects/02-modular-geometric-grid.md`). It's a recursive grid split with up to three shape layers per cell, seven shapes and 10 looping motions, reshuffled on the beat. The specs rate it the easiest of the four.
-2. Then `03-rgb-halftone-sandbox.md` (Chromaniac) and `04-quadtree-shape-mosaic.md`.
-3. **Tycho** is the remaining saved tool name (Marathon theme, like DURANDAL and LEELA). It has no tool assigned yet.
-4. Optional: tune BLOOM's weaker flower kinds, do the DURANDAL polish and review listed above, and delete `origin/bloom`.
+1. ~~Geomator~~ **Done Nov. 19 as TYCHO** (`apps/tycho`, port 5184). It draws flat Canvas2D, exports PNG, SVG and MP4, and runs its engine checks with `npm test -w @studio/tycho`.
+2. **Next 1stAve spec:** `03-rgb-halftone-sandbox.md` (Chromaniac), then `04-quadtree-shape-mosaic.md`. No saved tool names are left, so these need new ones.
+3. Optional: tune BLOOM's weaker flower kinds, do the DURANDAL polish and review listed above, and delete `origin/bloom`.
 
 ## Gotchas from these sessions
 
