@@ -8,6 +8,7 @@ import {
 import {S, emit, persist, toast} from './state.js';
 import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule} from './render.js';
 import {makeKey, putKey, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
+import {isProjectFile, openProject, takePendingKeys} from './project.js';
 
 const M = () => S.media;
 /** Internal handles; S.media mirrors what the UI shows. */
@@ -86,6 +87,7 @@ export function initSource() { loadSample(S.look.sample); }
 /** Open an image or a video file. */
 export async function loadFile(file) {
   if (!file) return;
+  if (isProjectFile(file)) return openProject(file);
   if (isVideoFile(file)) return loadVideo(file);
   if (!isImageFile(file)) return toast('Choose an image or video file', 'error');
   try {
@@ -129,7 +131,11 @@ async function loadVideo(file) {
   stopLive();
   const v = src.video;
   Object.assign(live, {vid: v, file, dispose: src.dispose});
-  Object.assign(M(), {kind: 'video', label: file.name, w: v.videoWidth, h: v.videoHeight, keys: []});
+  // Keyframes from an opened project that named this video come along.
+  const waiting = takePendingKeys(file.name);
+  Object.assign(M(), {kind: 'video', label: file.name, w: v.videoWidth, h: v.videoHeight, keys: waiting ? waiting.keys : [], ease: waiting ? waiting.ease : M().ease});
+  reapplyKeys();
+  if (waiting) toast(`Using ${waiting.keys.length} keyframes from the project`);
   startLoop(v);
   v.play().then(() => syncVideoUI(true)).catch(() => {
     // Autoplay with sound can be refused; fall back to muted.

@@ -20,6 +20,7 @@ import {studioTheme} from '@studio/theme';
 import {isMediaFile} from '@studio/core';
 import {saved, setToast, toast} from './engine/state.js';
 import {initSource, loadFile} from './engine/media.js';
+import {isProjectFile} from './engine/project.js';
 import {StyleRail, Stage, StageToolbar, Inspector} from './ui/views';
 import {ICON} from './ui/parts';
 
@@ -65,8 +66,8 @@ function useDropAndPaste() {
     const over = (ev: DragEvent) => ev.preventDefault();
     const drop = (ev: DragEvent) => {
       ev.preventDefault();
-      const f = [...(ev.dataTransfer?.files || [])].find(isMediaFile);
-      f ? loadFile(f) : toast('Drop an image or video file');
+      const f = [...(ev.dataTransfer?.files || [])].find(file => isMediaFile(file) || isProjectFile(file));
+      f ? loadFile(f) : toast('Drop an image, a video or a DURANDAL project');
     };
     const paste = (ev: ClipboardEvent) => {
       const t = ev.target as HTMLElement;

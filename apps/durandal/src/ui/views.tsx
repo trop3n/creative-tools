@@ -1,5 +1,5 @@
 // DURANDAL's panels: the style list (rail), the stage, its tool bar, and the inspector.
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import * as stylex from '@stylexjs/stylex';
 import {Button} from '@astryxdesign/core/Button';
 import {Center} from '@astryxdesign/core/Center';
@@ -12,8 +12,9 @@ import {Switch} from '@astryxdesign/core/Switch';
 import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Slider} from '@astryxdesign/core/Slider';
+import {TextInput} from '@astryxdesign/core/TextInput';
 import {IconButton} from '@astryxdesign/core/IconButton';
-import {Camera, CameraOff, Circle, Clapperboard, Crosshair, Diamond, Download, Trash2, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
+import {Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
@@ -25,6 +26,7 @@ import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
   setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase,
 } from '../engine/media.js';
+import {saveProject, openProject, saveLook, applyLook, deleteLook} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
@@ -121,7 +123,8 @@ export function Stage() {
   );
 }
 
-const openMedia = async () => { const [f] = await pickFiles('image/*,video/*'); loadFile(f); };
+const openMedia = async () => { const [f] = await pickFiles('image/*,video/*,.json,application/json'); loadFile(f); };
+const openProjectFile = async () => { const [f] = await pickFiles('.json,application/json'); if (f) openProject(f); };
 const clock = (sec: number) => {
   sec = Math.max(0, sec || 0);
   return Math.floor(sec / 60) + ':' + (sec % 60).toFixed(1).padStart(4, '0');
@@ -294,6 +297,8 @@ export function Inspector() {
         ) : null}
       </InspectorSection>
 
+      <LooksSection />
+
       <InspectorSection title="Export">
         <InspectorRow label="Size">
           <Selector
@@ -414,6 +419,7 @@ function VideoSection() {
         value={m.duration ? Math.round((m.time / m.duration) * 1000) : 0}
         onChange={(v: number) => seekFraction(v / 1000)}
         valueDisplay="none"
+        marks={m.duration ? m.keys.map((k: any) => ({value: Math.round((k.t / m.duration) * 1000)})) : undefined}
         isDisabled={m.exporting}
       />
       <SliderRow label="Volume" value={m.volume} min={0} max={1} step={0.01} format={v => Math.round(v * 100) + '%'} onChange={setVolume} />
@@ -443,6 +449,56 @@ function VideoSection() {
 }
 
 /** Keyframe the settings over the video's time; they ease between keyframes as it plays and renders. */
+/** Named looks kept in this browser, and project files that hold everything. */
+function LooksSection() {
+  const {looks} = useStore() as any;
+  const [name, setName] = useState('');
+  const save = () => { if (name.trim()) { saveLook(name); setName(''); } };
+  return (
+    <InspectorSection title="Saved looks">
+      <HStack gap={1}>
+        <StackItem size="fill">
+          <TextInput
+            label="Name for this look"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            placeholder="Name this look"
+            value={name}
+            onChange={v => setName(v)}
+            onKeyDown={e => { if (e.key === 'Enter') save(); }}
+          />
+        </StackItem>
+        <Button label="Save" size="sm" variant="secondary" icon={<Icon icon={Save} size={ICON} />} isDisabled={!name.trim()} onClick={save} />
+      </HStack>
+      {looks.length ? (
+        <List density="compact">
+          {looks.map((l: any) => (
+            <ListItem
+              key={l.name}
+              label={l.name}
+              description={`${STYLE_BY_ID[l.settings.style]?.name ?? l.settings.style} · ${l.settings.mode === 'cmyk' ? 'CMYK' : l.settings.mode === 'palette' ? 'Palette' : 'Two tones'} · ${l.settings.block} px`}
+              endContent={
+                <HStack gap={0}>
+                  <IconButton label={`Use ${l.name}`} tooltip="Use this look" size="sm" variant="ghost" icon={<Icon icon={Check} size={ICON} />} onClick={() => applyLook(l.name)} />
+                  <IconButton label={`Delete ${l.name}`} tooltip="Delete" size="sm" variant="ghost" icon={<Icon icon={Trash2} size={ICON} />} onClick={() => deleteLook(l.name)} />
+                </HStack>
+              }
+            />
+          ))}
+        </List>
+      ) : (
+        <Text type="supporting">Save the style, settings and colors under a name to come back to them. Looks stay in this browser.</Text>
+      )}
+      <HStack gap={1} wrap="wrap">
+        <Button label="Save project" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={saveProject} />
+        <Button label="Open project" size="sm" variant="ghost" icon={<Icon icon={FolderOpen} size={ICON} />} onClick={openProjectFile} />
+      </HStack>
+      <Text type="supporting">A project file holds every setting, and a video’s keyframes, to share or keep. You can also drop one on the page.</Text>
+    </InspectorSection>
+  );
+}
+
 function KeyframesSection() {
   const {media: m} = useStore();
   const here = m.keys.find((k: any) => Math.abs(k.t - m.time) <= 1 / 60);
