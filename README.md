@@ -9,6 +9,7 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | `apps/glyf` | GLYF: draw glyphs, then use them as the characters of a dithered image, video or webcam feed |
 | `apps/durandal` | DURANDAL: dither images, video or a webcam feed into 1-bit or palette pixel art (error diffusion, Bayer and pattern styles; up to 16 colors from presets, the image or a custom set; CMYK print with four angled ink screens; pattern styles run on the GPU via WebGL2 at full resolution; cells as squares, round dots, diamonds or lines with gaps for dot-matrix and LED looks); exports PNG, SVG and MP4, with keyframed settings over a video; saved looks and .durandal.json project files |
 | `apps/leela` | LEELA: animated grainy gradients and mesh gradients on the GPU (WebGL2), blended in Oklab, with noise-warped shapes, drift, breathe and flow motion, seamless loops and film grain; presets and a seeded randomizer |
+| `apps/bloom` | BLOOM: procedural flowers (carnation, lily, tulip, daisy, cosmos, dahlia) that grow along wandering stems and bloom on a three-stop backdrop, in flat Oklab color ramps, on the GPU (WebGL2) with wind, camera drift and depth of field; presets, a seeded randomizer, regrow loops; exports PNG and frame-accurate MP4 |
 | `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles) and the gradient engine (`@studio/core/gradient`); both tested with `npm test` |
 | `packages/theme` (`@studio/theme`) | The suite's Astryx theme and self-hosted fonts (Montserrat, JetBrains Mono) |
 | `packages/build` (`@studio/build`) | Shared Vite config and the `studio-inline` single-file step |
@@ -24,6 +25,7 @@ npm run dev            # GLYF dev server, http://localhost:5180
 npm run dev:launcher   # launcher dev server, http://localhost:5170
 npm run dev:durandal   # DURANDAL dev server, http://localhost:5181
 npm run dev:leela      # LEELA dev server, http://localhost:5182
+npm run dev:bloom      # BLOOM dev server, http://localhost:5183
 npm test               # dither engine tests
 npm run build          # builds every app into dist/ (launcher at /, tools at /<path>/)
 npm run serve          # serves dist/ at http://localhost:5100

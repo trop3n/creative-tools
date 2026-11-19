@@ -28,6 +28,15 @@
       "category": "Generators",
       "description": "Animated grainy gradients and mesh gradients, blended in Oklab, with seamless loops.",
       "preview": "leela.svg"
+    },
+    {
+      "id": "bloom",
+      "name": "BLOOM",
+      "app": "apps/bloom",
+      "path": "bloom/",
+      "category": "Generators",
+      "description": "Grow procedural flowers that bloom on a gradient: carnations, lilies, tulips, daisies and more, in flat color ramps, with wind, camera drift and depth of field. Exports PNG and MP4.",
+      "preview": "bloom.svg"
     }
   ]
 }

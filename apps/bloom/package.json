@@ -1,0 +1,26 @@
+{
+  "name": "@studio/bloom",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && studio-inline && node scripts/artifact.mjs",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@studio/build": "*",
+    "@astryxdesign/cli": "0.7.16"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.16",
+    "@stylexjs/stylex": "^0.19.2",
+    "lucide-react": "^1.74.0",
+    "mp4-muxer": "5.2.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@studio/core": "*",
+    "@studio/theme": "*"
+  },
+  "description": "BLOOM: procedural flowers that grow and bloom on a gradient, in flat colour ramps. Exports PNG and MP4."
+}
