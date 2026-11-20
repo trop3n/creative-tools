@@ -55,6 +55,15 @@
       "category": "Image effects",
       "description": "A live halftone sandbox: animated type, shapes, gradient fields, images, video or a webcam, screened as RGB, CMYK or one-ink dots on the GPU. Exports PNG and MP4.",
       "preview": "thoth.svg"
+    },
+    {
+      "id": "pfhor",
+      "name": "PFHOR",
+      "app": "apps/pfhor",
+      "path": "pfhor/",
+      "category": "Image effects",
+      "description": "Turn a picture, video or webcam into a quadtree mosaic: big shapes where it's flat, small ones where it's busy, in a flat palette, with resolve and scatter loops. Exports PNG, SVG and MP4.",
+      "preview": "pfhor.svg"
     }
   ]
 }

@@ -68,8 +68,8 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 
 1. ~~Geomator~~ **Done Nov. 19 as TYCHO** (`apps/tycho`, port 5184). It draws flat Canvas2D, exports PNG, SVG and MP4, and runs its engine checks with `npm test -w @studio/tycho`.
 2. ~~Chromaniac~~ **Built Nov. 19 as THOTH** (`apps/thoth`, port 5185; Thoth was another Marathon AI). Canvas2D source layers (backdrop, image/video/webcam, shape, type) go through a WebGL2 halftone pass (RGB, CMYK, Mono). It exports PNG and MP4, and its engine checks run with `npm test -w @studio/thoth`.
-3. **Next 1stAve spec:** `04-quadtree-shape-mosaic.md` (Robotron). It needs a name.
-4. **Small gap in every tool:** pasting a `#c=` link into a tab that already has the tool open does nothing until a reload. THOTH now listens for `hashchange`; GLYF, DURANDAL, LEELA, BLOOM and TYCHO don't yet.
+3. ~~Robotron~~ **Built Nov. 19 as PFHOR** (`apps/pfhor`, port 5186; named after Marathon's alien race). A quadtree over summed-area tables of an image, video, webcam or built-in sample, drawn as circles or squares in a flat palette. Splits ease in only while Resolve animates the threshold. Exports PNG, SVG and MP4; engine checks run with `npm test -w @studio/pfhor`. All four 1stAve specs are now built.
+4. **Small gap in every tool:** pasting a `#c=` link into a tab that already has the tool open does nothing until a reload. THOTH and PFHOR listen for `hashchange`; GLYF, DURANDAL, LEELA, BLOOM and TYCHO don't yet.
 5. Optional: tune BLOOM's weaker flower kinds, do the DURANDAL polish and review listed above, and delete `origin/bloom`.
 
 ## Gotchas from these sessions

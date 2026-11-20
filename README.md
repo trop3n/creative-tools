@@ -12,6 +12,7 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | `apps/bloom` | BLOOM: procedural flowers (carnation, lily, tulip, daisy, cosmos, dahlia) that grow along wandering stems and bloom on a three-stop backdrop, in flat Oklab color ramps, on the GPU (WebGL2) with wind, camera drift and depth of field; presets, a seeded randomizer, regrow loops; exports PNG and frame-accurate MP4 |
 | `apps/tycho` | TYCHO: a recursive grid of rectangular cells, each a looping pattern module of 1–3 stacked layers (seven shapes as grids, checkers, stripes, sunbursts, concentric rings, single shapes or glows) with 10 motions, drawn flat with Canvas2D; cuts to a new layout or new modules on the beat, with BPM and tap tempo, so every sequence loops seamlessly; presets, palettes up to 24 colors, saved looks, share links and project files; exports PNG, SVG and MP4 |
 | `apps/thoth` | THOTH: a live halftone sandbox. Animated type, shapes, gradient fields (linear, radial, conic, bands), images, video or a webcam are drawn with Canvas2D, then screened on the GPU (WebGL2) as additive RGB, four-ink CMYK or one-ink dots in circle, square, diamond or line shapes, with merging oversized dots; hue cycling, seamless loops, presets, saved looks, share links and project files; exports PNG and MP4 |
+| `apps/pfhor` | PFHOR: a quadtree shape mosaic. An image, video or webcam (or a built-in portrait) splits into cells by tone and edge detail, using summed-area tables, and each cell becomes a circle, square or rounded square in a flat palette (lightness ramp or nearest Oklab color) with thin outlines; splits ease in as the threshold moves, for seamless resolve and scatter loops; presets, saved looks, share links and project files; exports PNG, SVG and MP4 |
 | `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles) and the gradient engine (`@studio/core/gradient`); both tested with `npm test` |
 | `packages/theme` (`@studio/theme`) | The suite's Astryx theme and self-hosted fonts (Montserrat, JetBrains Mono) |
 | `packages/build` (`@studio/build`) | Shared Vite config and the `studio-inline` single-file step |
@@ -30,6 +31,7 @@ npm run dev:leela      # LEELA dev server, http://localhost:5182
 npm run dev:bloom      # BLOOM dev server, http://localhost:5183
 npm run dev:tycho      # TYCHO dev server, http://localhost:5184
 npm run dev:thoth      # THOTH dev server, http://localhost:5185
+npm run dev:pfhor      # PFHOR dev server, http://localhost:5186
 npm test               # dither engine tests
 npm run build          # builds every app into dist/ (launcher at /, tools at /<path>/)
 npm run serve          # serves dist/ at http://localhost:5100
