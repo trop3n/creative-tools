@@ -14,7 +14,7 @@ npm run dev:durandal | dev:leela | dev:bloom   # single app
 npm run build                                  # whole suite → dist/
 ```
 
-~~The sessions didn't deploy anything.~~ **Deployed Nov. 20** (at `dab58db`) to `pve`, the Proxmox host, for now: **https://pve.tail5e1c3e.ts.net/**, tailnet only.
+~~The sessions didn't deploy anything.~~ **Deployed Nov. 20** (last at `a9d1168`) to `pve`, the Proxmox host, for now: **https://pve.tail5e1c3e.ts.net/**, tailnet only.
 
 - Files live in `/srv/creative-tools` on `pve`. `tailscale serve` shares that folder over HTTPS (the webcam and clipboard need HTTPS). Nothing was installed on the host, and Proxmox's UI on port 8006 is untouched.
 - SSH: `ssh pve` (root over Tailscale, from `~/.ssh/config`). Tailscale SSH asks for a browser approval when the last one has expired.
