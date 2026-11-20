@@ -46,6 +46,15 @@
       "category": "Generators",
       "description": "A beat-synced grid of looping geometric pattern tiles: checkers, stripes, rays, rings and dots in flat color, re-cut on the beat. Exports PNG, SVG and MP4.",
       "preview": "tycho.svg"
+    },
+    {
+      "id": "thoth",
+      "name": "THOTH",
+      "app": "apps/thoth",
+      "path": "thoth/",
+      "category": "Image effects",
+      "description": "A live halftone sandbox: animated type, shapes, gradient fields, images, video or a webcam, screened as RGB, CMYK or one-ink dots on the GPU. Exports PNG and MP4.",
+      "preview": "thoth.svg"
     }
   ]
 }

@@ -1,0 +1,27 @@
+{
+  "name": "@studio/thoth",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && studio-inline && node scripts/artifact.mjs",
+    "preview": "vite preview",
+    "test": "node --no-warnings scripts/sanity.mjs"
+  },
+  "devDependencies": {
+    "@studio/build": "*",
+    "@astryxdesign/cli": "0.7.16"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.16",
+    "@stylexjs/stylex": "^0.19.2",
+    "lucide-react": "^1.74.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "@studio/core": "*",
+    "@studio/theme": "*",
+    "@fontsource/montserrat": "^5.3.0"
+  },
+  "description": "THOTH: a real-time RGB and CMYK halftone sandbox for animated type, shapes, gradients, images and video. Exports PNG and MP4."
+}

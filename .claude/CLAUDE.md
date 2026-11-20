@@ -3,7 +3,7 @@
 Project-specific guidance for AI coding agents.
 
 ## This repo
-- npm workspaces suite: apps in `apps/*` (launcher, glyf, durandal, leela, bloom, tycho), shared code in `packages/*`. Tool registry: `suite.json`. See README.md. Each app has `dev:<id>` and `build:<id>` root scripts; `npm run build` builds the whole suite.
+- npm workspaces suite: apps in `apps/*` (launcher, glyf, durandal, leela, bloom, tycho, thoth), shared code in `packages/*`. Tool registry: `suite.json`. See README.md. Each app has `dev:<id>` and `build:<id>` root scripts; `npm run build` builds the whole suite.
 - `packages/core` holds the dither engine (`@studio/core/dither`, used by DURANDAL and LEELA's Dither effect), the gradient engine (`src/gradient/`, LEELA), the shared `encodeFramesToMp4` (LEELA, BLOOM) and the cross-tool hand-off store (`src/handoff.js`, LEELA → DURANDAL; works only in the built suite, not between dev servers).
 - If another agent is working in this repo at the same time, work in a separate git worktree on a branch and merge into `main` only when the other session is idle.
 - `packages/build/inline.js` can show as modified with no content change (CRLF). Leave it out of commits.

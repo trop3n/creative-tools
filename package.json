@@ -15,13 +15,15 @@
     "serve": "node scripts/serve.mjs",
     "dev:durandal": "node scripts/check-node.cjs && npm run dev -w @studio/durandal",
     "build:durandal": "node scripts/check-node.cjs && npm run build -w @studio/durandal",
-    "test": "node scripts/check-node.cjs && npm test -w @studio/core -w @studio/tycho",
+    "test": "node scripts/check-node.cjs && npm test -w @studio/core -w @studio/tycho -w @studio/thoth",
     "dev:leela": "node scripts/check-node.cjs && npm run dev -w @studio/leela",
     "build:leela": "node scripts/check-node.cjs && npm run build -w @studio/leela",
     "dev:bloom": "node scripts/check-node.cjs && npm run dev -w @studio/bloom",
     "build:bloom": "node scripts/check-node.cjs && npm run build -w @studio/bloom",
     "dev:tycho": "node scripts/check-node.cjs && npm run dev -w @studio/tycho",
-    "build:tycho": "node scripts/check-node.cjs && npm run build -w @studio/tycho"
+    "build:tycho": "node scripts/check-node.cjs && npm run build -w @studio/tycho",
+    "dev:thoth": "node scripts/check-node.cjs && npm run dev -w @studio/thoth",
+    "build:thoth": "node scripts/check-node.cjs && npm run build -w @studio/thoth"
   },
   "engines": {
     "node": ">=22"
