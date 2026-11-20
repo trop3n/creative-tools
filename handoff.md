@@ -30,7 +30,20 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 
 **Options the session offered next (none started):**
 - Rename keyframes, drag keyframe marks on the timeline, and keep a short list of recent projects.
-- Do a review and cleanup pass over the DURANDAL code. LEELA got one; DURANDAL hasn't.
+- ~~Do a review and cleanup pass over the DURANDAL code.~~ **Done Nov. 19.** An independent review found 11 issues (4 medium, 7 low, none severe); all 11 were verified against the code and fixed:
+  1. Scrubbing a paused video could show the frame from before the seek. The loop now waits for the seek to land.
+  2. Edits during an MP4 render changed the rest of the file. Settings are now locked while rendering (a toast says so; keyframes still apply).
+  3. A video whose picture can't be decoded (sound only, ProRes, unsupported HEVC) played blank and could switch the GPU path off. Core's `openVideoFile` now refuses it with a message, for every tool.
+  4. The GPU and CPU cut different grids for videos over 1280 px. Both engines now get the same capped frame.
+  5. Opening a project with no keyframes over a keyframed video was overwritten by the video's keyframes on the next frame.
+  6. Switching sources while recording the webcam discarded the recording. It's now saved.
+  7. "Rendering…" could stick, and an MP4 render could stall at "Starting…".
+  8. PNG export could save a blank image after a GPU loss. It now says the frame is gone, like SVG.
+  9. A slow load (a big video, a webcam prompt) could take over from a newer choice.
+  10. Values from project files, keyframes and looks are now clamped to the sliders' ranges.
+  11. Shaped-cell SVG export over 1 million cells now explains instead of running out of memory.
+  - Checked in headless Edge: same grid on GPU and CPU (320 × 180 for a 1920 px video), paused seeks show the right frame, settings stay locked through an MP4 render, a sound-only file is refused, no console errors. A comparison run against the pre-fix build hung on a seek and was stopped, so the seek check isn't confirmed to catch the old bug.
+  - Not changed (design note from the review): pattern styles in two-tone mode read Threshold 50% as about twice the brightness, so default Bayer and Dots look lighter than the diffusion styles.
 
 ## LEELA — gradients (session A)
 
@@ -70,7 +83,7 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 2. ~~Chromaniac~~ **Built Nov. 19 as THOTH** (`apps/thoth`, port 5185; Thoth was another Marathon AI). Canvas2D source layers (backdrop, image/video/webcam, shape, type) go through a WebGL2 halftone pass (RGB, CMYK, Mono). It exports PNG and MP4, and its engine checks run with `npm test -w @studio/thoth`.
 3. ~~Robotron~~ **Built Nov. 19 as PFHOR** (`apps/pfhor`, port 5186; named after Marathon's alien race). A quadtree over summed-area tables of an image, video, webcam or built-in sample, drawn as circles or squares in a flat palette. Splits ease in only while Resolve animates the threshold. Exports PNG, SVG and MP4; engine checks run with `npm test -w @studio/pfhor`. All four 1stAve specs are now built.
 4. ~~Pasted share links needed a reload~~ **Fixed Nov. 19:** LEELA, BLOOM, TYCHO, THOTH and PFHOR apply a `#c=` link pasted into an open tab (`hashchange`). GLYF and DURANDAL have no share links.
-5. ~~Tune BLOOM's weaker flower kinds~~ done Nov. 19. Still optional: the DURANDAL polish and review listed above, and deleting `origin/bloom`.
+5. ~~Tune BLOOM's weaker flower kinds~~ and ~~review DURANDAL~~ done Nov. 19. Next: the DURANDAL polish listed above (rename keyframes, drag keyframe marks, recent projects). Still optional: deleting `origin/bloom`.
 
 ## Gotchas from these sessions
 

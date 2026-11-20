@@ -73,6 +73,12 @@ export function openVideoFile(file, {muted = true, volume = 0.8, loop = true} = 
     };
     video.onloadeddata = () => {
       video.onloadeddata = null;
+      // Some files decode their sound but not their picture (ProRes, or HEVC without
+      // support): there is nothing to show, so say so instead of playing a blank frame.
+      if (!video.videoWidth || !video.videoHeight) {
+        dispose();
+        return reject(new Error("This browser can't show that video's picture. Try MP4 (H.264) or WebM."));
+      }
       resolve({video, file, dispose});
     };
     video.onerror = () => {

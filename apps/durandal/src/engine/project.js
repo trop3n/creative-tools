@@ -10,7 +10,7 @@
 import {saveFile} from '@studio/core';
 import {STYLE_BY_ID, defaultParams} from '@studio/core/dither';
 import {S, emit, persist, toast, saved, LOOK_DEFAULT} from './state.js';
-import {schedule, reapplyKeys, fileBase} from './render.js';
+import {schedule, reapplyKeys, keysApplied, currentVideoTime, fileBase} from './render.js';
 
 const APP = 'durandal', VERSION = 1;
 // Look keys a saved look carries (the rest are about the source or export).
@@ -20,7 +20,15 @@ const LOOK_KEYS = ['ink', 'paper', 'custom', 'imageCount', 'cellShape', 'gap', '
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const isHex = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 
-/** Only keys we know, with the same type as now: a hand-edited file can't break the app. */
+// The sliders' ranges: values outside them (a hand-edited file) can hang the worker's blur
+// or make the GPU loop for ever, so they're clamped on the way in.
+const SETTING_RANGE = {
+  block: [1, 32], threshold: [0, 100], blur: [0, 20], strength: [0, 100], black: [0, 100],
+  brightness: [-100, 100], contrast: [-100, 100], midtones: [-100, 100], highlights: [-100, 100], shadows: [-100, 100],
+};
+const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
+
+/** Only keys we know, with the same type as now, in range: a hand-edited file can't break the app. */
 function cleanSettings(raw) {
   const out = {};
   if (!isObj(raw)) return out;
@@ -28,7 +36,7 @@ function cleanSettings(raw) {
     if (!(k in S.settings) || k === 'colors') continue;
     if (typeof v !== typeof S.settings[k]) continue;
     if (typeof v === 'number' && !isFinite(v)) continue;
-    out[k] = v;
+    out[k] = typeof v === 'number' && SETTING_RANGE[k] ? clamp(v, SETTING_RANGE[k]) : v;
   }
   if (out.style && !STYLE_BY_ID[out.style]) delete out.style;
   if (out.mode && !['mono', 'palette', 'cmyk'].includes(out.mode)) delete out.mode;
@@ -39,7 +47,13 @@ function cleanParams(styleId, raw) {
   const style = STYLE_BY_ID[styleId];
   if (!style || !isObj(raw)) return {};
   const ok = defaultParams(style), out = {};
-  for (const [k, v] of Object.entries(raw)) if (k in ok && typeof v === typeof ok[k] && (typeof v !== 'number' || isFinite(v))) out[k] = v;
+  for (const [k, v] of Object.entries(raw)) {
+    if (!(k in ok) || typeof v !== typeof ok[k] || (typeof v === 'number' && !isFinite(v))) continue;
+    // Each slider's own range; a select only takes one of its options.
+    const def = (style.params || []).find(p => p.key === k);
+    if (def?.options) { if (def.options.includes(v)) out[k] = v; continue; }
+    out[k] = typeof v === 'number' && def && def.min !== undefined ? clamp(v, [def.min, def.max]) : v;
+  }
   return out;
 }
 
@@ -52,6 +66,8 @@ function cleanLook(raw, keys = Object.keys(LOOK_DEFAULT)) {
     if (Array.isArray(d)) { if (Array.isArray(v) && v.every(isHex)) out[k] = v.slice(0, 16); continue; }
     if (typeof v !== typeof d) continue;
     if ((k === 'ink' || k === 'paper') && !isHex(v)) continue;
+    if (k === 'gap') { out[k] = clamp(v, [0, 80]); continue; }
+    if (k === 'imageCount') { out[k] = Math.round(clamp(v, [2, 16])); continue; }
     out[k] = v;
   }
   return out;
@@ -112,7 +128,14 @@ export async function openProject(file) {
       note = ` Open ${name} to use its ${keys.length} keyframes.`;
     }
   }
-  persist(); reapplyKeys(); schedule(); emit();
+  const hasKeys = isObj(p.video) && Array.isArray(p.video.keys) && p.video.keys.length;
+  if (!hasKeys && S.media.kind === 'video' && S.media.keys.length) {
+    // The project has no keyframes, but this video does: show the project's settings now,
+    // rather than letting the video's keyframes write over them on the next frame.
+    keysApplied(currentVideoTime());
+    note += ` This video's ${S.media.keys.length} keyframes take over again when it plays or you scrub.`;
+  } else reapplyKeys();
+  persist(); schedule(); emit();
   toast('Opened ' + file.name + '.' + note);
 }
 

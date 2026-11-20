@@ -63,13 +63,19 @@ function sampleCanvas(kind) {
 /* ---------- switching sources ---------- */
 function stopLive() {
   if (M().exporting) cancelExport = true;
-  if (live.recorder) { live.recorder.discard(); live.recorder = null; endRecordingUI(); }
+  // Switching sources mid-recording saves what was recorded rather than dropping it.
+  if (live.recorder) { const rec = live.recorder; live.recorder = null; endRecordingUI(); saveRecording(rec, true); }
   if (live.dispose) live.dispose();
   Object.assign(live, {vid: null, file: null, dispose: null});
   Object.assign(M(), {playing: false, time: 0, duration: 0});
 }
 
+// Each source change takes a ticket; a slow load (a big video, a webcam prompt) that
+// finishes after a newer choice is dropped instead of taking over.
+let loadSeq = 0;
+
 function setStill(c, kind, label) {
+  loadSeq++;
   stopLive();
   Object.assign(M(), {kind, label, w: c.width, h: c.height});
   renderNow(c).catch(() => {});
@@ -102,15 +108,18 @@ export async function loadFile(file) {
   if (isProjectFile(file)) return openProject(file);
   if (isVideoFile(file)) return loadVideo(file);
   if (!isImageFile(file)) return toast('Choose an image or video file', 'error');
+  const ticket = ++loadSeq;
   try {
-    setStill(await loadImageFile(file, 2400), 'image', file.name);
+    const c = await loadImageFile(file, 2400);
+    if (ticket !== loadSeq) return;
+    setStill(c, 'image', file.name);
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
 /* ---------- video and webcam ---------- */
-/** Dither the video's current frame. The GPU takes it at native size; the worker gets a copy at most 1280 wide. */
+/** Dither the video's current frame (both engines get a copy at most 1280 on the long side). */
 const renderFrame = () => renderNow(live.vid, {mirror: M().kind === 'camera' && S.look.mirror});
 
 function syncVideoUI(force = false) {
@@ -124,9 +133,12 @@ function syncVideoUI(force = false) {
 /** Each animation frame: if the picture moved and the worker is free, dither the new frame. */
 function startLoop(v) {
   lastVT = -1;
+  // currentTime changes as soon as a seek starts, before the new frame is decoded: wait
+  // for the seek to land, then render that frame.
+  v.addEventListener('seeked', () => { if (live.vid === v) lastVT = -1; });
   const tick = () => {
     if (live.vid !== v) return;
-    if (!M().exporting && !isBusy() && v.readyState >= 2 && v.currentTime !== lastVT) {
+    if (!M().exporting && !isBusy() && !v.seeking && v.readyState >= 2 && v.currentTime !== lastVT) {
       lastVT = v.currentTime;
       renderFrame().catch(() => {});
     }
@@ -137,9 +149,11 @@ function startLoop(v) {
 }
 
 async function loadVideo(file) {
+  const ticket = ++loadSeq;
   let src;
   try { src = await openVideoFile(file, {muted: !M().sound, volume: M().volume}); }
   catch (e) { return toast(e.message, 'error'); }
+  if (ticket !== loadSeq) { src.dispose(); return; }
   stopLive();
   const v = src.video;
   Object.assign(live, {vid: v, file, dispose: src.dispose});
@@ -218,9 +232,11 @@ export function setVolume(v) {
 }
 
 export async function startWebcam(deviceId) {
+  const ticket = ++loadSeq;
   let cam;
   try { cam = await openWebcam(deviceId); }
   catch (e) { return toast(cameraErrorMessage(e), 'error'); }
+  if (ticket !== loadSeq) { cam.dispose(); return; }
   stopLive();
   Object.assign(live, {vid: cam.video, dispose: cam.dispose});
   Object.assign(M(), {kind: 'camera', label: cam.label || 'Webcam', w: cam.video.videoWidth, h: cam.video.videoHeight, cams: cam.cameras, camId: cam.deviceId});
@@ -231,6 +247,18 @@ export function stopCamera() { loadSample(S.look.sample); }
 export function setMirrorImage(on) { S.look.mirror = on; persist(); lastVT = -1; emit(); }
 
 /* ---------- MP4 render (video files) ---------- */
+// Everything that changes how a frame comes out.
+const LOOK_LOCKED = ['ink', 'paper', 'cellShape', 'gap', 'gapTone', 'custom', 'imageColors', 'imageCount', 'gpu'];
+const lockedState = () => structuredClone({settings: S.settings, params: S.paramsByStyle, look: Object.fromEntries(LOOK_LOCKED.map(k => [k, S.look[k]]))});
+function restoreState(snap) {
+  const c = structuredClone(snap);
+  for (const k of Object.keys(S.settings)) delete S.settings[k];
+  Object.assign(S.settings, c.settings);
+  S.paramsByStyle = c.params;
+  Object.assign(S.look, c.look);
+  emit();
+}
+
 export async function renderVideo() {
   const v = live.vid;
   if (!v || M().kind !== 'video') return;
@@ -241,6 +269,10 @@ export async function renderVideo() {
   emit();
   const out = {canvas: null};
   let n = 0;
+  // Settings are locked while rendering: hand edits mid-render would change the rest of
+  // the file. Keyframes still change settings frame by frame, so compare against the state
+  // the previous frame left, and if anything else moved it, put the snapshot back.
+  const snap = lockedState(), pinned = {last: JSON.stringify(lockedState()), warned: false};
   try {
     await idle();
     const res = await renderVideoToMp4({
@@ -251,7 +283,13 @@ export async function renderVideo() {
       background: S.settings.mode === 'palette' ? paletteColors()[0] : S.settings.mode === 'cmyk' ? '#ffffff' : S.look.paper,
       pixelated: true,
       renderFrame: async () => {
+        if (JSON.stringify(lockedState()) !== pinned.last) {
+          restoreState(snap);
+          reapplyKeys();
+          if (!pinned.warned) { pinned.warned = true; toast('Settings are locked while the video renders'); }
+        }
         const r = await renderFrame();
+        pinned.last = JSON.stringify(lockedState());
         // Blow each cell up by a whole number so blocks stay square and sharp.
         out.canvas = scaledOutput(fitScale(r, 1920), out.canvas, r);
         return out.canvas;
@@ -271,6 +309,9 @@ export async function renderVideo() {
   } catch (e) {
     toast('Video render failed: ' + (e.message || e), 'error');
   }
+  // An edit during the last frame, or any edit at all, shouldn't outlive the lock (or its save).
+  if (JSON.stringify(lockedState()) !== pinned.last) { restoreState(snap); reapplyKeys(); pinned.warned = true; }
+  if (pinned.warned) persist();
   Object.assign(M(), {exporting: false, progress: ''});
   lastVT = -1;
   syncVideoUI(true);
@@ -286,17 +327,20 @@ function endRecordingUI() {
   emit();
 }
 
+async function saveRecording(rec, switching = false) {
+  const base = fileBase();
+  const {blob, ext} = await rec.stop();
+  if (!blob.size) return;
+  const saved = await saveFile(base + '.' + ext, blob, blob.type);
+  toast((switching ? 'Recording stopped when the source changed. ' : '') + saved.message, saved.status === 'error' ? 'error' : 'info');
+}
+
 export async function toggleRecord() {
   if (live.recorder) {
     const rec = live.recorder;
     live.recorder = null;
     endRecordingUI();
-    const {blob, ext} = await rec.stop();
-    if (blob.size) {
-      const saved = await saveFile(fileBase() + '.' + ext, blob, blob.type);
-      toast(saved.message, saved.status === 'error' ? 'error' : 'info');
-    }
-    return;
+    return saveRecording(rec);
   }
   const r = S.result;
   if (!r) return toast('Nothing to record yet');

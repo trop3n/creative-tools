@@ -1,6 +1,6 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
-import {makeCanvas, saveFile, slug, frameCanvasFor, drawVideoFrame} from '@studio/core';
+import {makeCanvas, saveFile, slug, drawVideoFrame} from '@studio/core';
 import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
@@ -19,7 +19,7 @@ const idleWaiters = [];
 let src = null; // {el, mirror}
 let workerHasIt = false; // the worker holds this frame's pixels
 let gpuHasIt = false; // the GPU texture holds this frame
-let frame = null; // video frames for the worker, at most 1280 on the long side
+let frame = null; // the current video frame for both engines, at most 1280 on the long side
 
 /* ---------- GPU ---------- */
 let gpu = null;
@@ -39,10 +39,24 @@ export const gpuAvailable = () => !!gpu;
 
 const sourceSize = el => [el.videoWidth || el.width, el.videoHeight || el.height];
 const isVideo = el => 'videoWidth' in el;
+/** Video frames go to both engines at most 1280 on the long side, so the GPU and the worker cut the same cell grid. */
+const VIDEO_MAX = 1280;
+const cappedSize = (w, h) => { const k = Math.min(1, VIDEO_MAX / Math.max(w, h)); return [Math.max(2, Math.round(w * k)), Math.max(2, Math.round(h * k))]; };
+/** The size the engines dither: a video's capped frame, or a still at its own size. */
+const workSize = el => (isVideo(el) ? cappedSize(...sourceSize(el)) : sourceSize(el));
+/** Copy the video's current frame into the shared capped canvas. */
+function videoFrame() {
+  const [w, h] = cappedSize(...sourceSize(src.el));
+  if (!frame || frame.width !== w || frame.height !== h) frame = makeCanvas(w, h);
+  drawVideoFrame(src.el, frame, src.mirror);
+  return frame;
+}
 
 function onGpu(settings) {
   if (!gpu || S.look.gpu === false || !src) return false;
-  const [w, h] = sourceSize(src.el);
+  const [sw, sh] = sourceSize(src.el);
+  if (!sw || !sh) return false; // nothing decodable to dither (yet)
+  const [w, h] = workSize(src.el);
   return gpu.supports(settings, w, h);
 }
 
@@ -106,6 +120,8 @@ function applyKeys() {
 export const reapplyKeys = () => { keyTime = null; };
 /** The current values are what the keyframes say at `t` (a keyframe was just set there). */
 export const keysApplied = t => { keyTime = t; };
+/** The showing video's time (null for stills and the webcam). */
+export const currentVideoTime = () => (src && isVideo(src.el) && S.media.kind === 'video' ? src.el.currentTime : null);
 
 export const isBusy = () => jobs.size > 0;
 /** Resolves once the worker has nothing in flight. */
@@ -133,7 +149,7 @@ export function renderNow(el, {mirror: flip = false} = {}) {
   if (onGpu(settings)) {
     try {
       const t0 = performance.now();
-      if (!gpuHasIt) { gpu.setSource(src.el, src.mirror); gpuHasIt = true; }
+      if (!gpuHasIt) { if (isVideo(src.el)) gpu.setSource(videoFrame(), false); else gpu.setSource(src.el, src.mirror); gpuHasIt = true; }
       const {w, h} = gpu.render(settings);
       const gen = gpu.generation, colors = gpu.colors;
       let bits = null;
@@ -158,10 +174,8 @@ export function renderNow(el, {mirror: flip = false} = {}) {
     if (!workerHasIt) {
       let c = src.el;
       if (isVideo(c)) {
-        const [w, h] = sourceSize(c), want = frameCanvasFor(c, 1280);
-        if (!frame || frame.width !== want.width || frame.height !== want.height) frame = want;
-        if (w && h) drawVideoFrame(c, frame, src.mirror);
-        c = frame;
+        const [w, h] = sourceSize(c);
+        c = w && h ? videoFrame() : (frame = frame || makeCanvas(2, 2));
       }
       const rgba = c.getContext('2d', {willReadFrequently: true}).getImageData(0, 0, c.width, c.height).data;
       Object.assign(msg, {rgba, w: c.width, h: c.height});
@@ -204,7 +218,12 @@ worker.onmessage = ({data}) => {
     job?.reject(new Error(data.message));
   }
   if (jobs.size) return;
-  if (pending) return schedule();
+  if (pending) {
+    // The next job may go to the GPU (no worker job), so only wait if the worker took it.
+    pending = false;
+    schedule();
+    if (jobs.size) return;
+  }
   S.busy = false;
   idleWaiters.splice(0).forEach(r => r());
   emit();
@@ -350,7 +369,10 @@ export const fileBase = () => {
 };
 
 export function exportPNG() {
-  if (!S.result) return toast('Nothing to export yet');
+  const r = S.result;
+  if (!r) return toast('Nothing to export yet');
+  // A GPU result whose engine has gone can't be painted; the SVG export checks the same.
+  if (!isLiveGpu(r) && !(r.colors ? r.indices : r.mask)) return toast('That frame is gone. Try again.', 'error');
   // Full size: each cell becomes a block of `block` pixels. Cells: one pixel per cell.
   const k = S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block));
   scaledOutput(k).toBlob(async b => {
@@ -360,6 +382,7 @@ export function exportPNG() {
   }, 'image/png');
 }
 
+const SVG_SHAPED_MAX = 1_000_000;
 /** Vector export: one square per cell, sized like the PNG export. */
 export async function exportSVG() {
   const r = S.result;
@@ -367,6 +390,10 @@ export async function exportSVG() {
   const k = S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block));
   const opts = {width: r.w * k, height: r.h * k, title: 'DURANDAL ' + (STYLE_BY_ID[S.settings.style]?.name || ''), ...cellsOf(r)};
   // A GPU result reads its cells back here; null means a newer frame replaced it.
+  // Shaped cells are one path each; past this many the file runs to hundreds of MB.
+  if (shaped() && r.w * r.h > SVG_SHAPED_MAX) {
+    return toast(`That's ${(r.w * r.h / 1e6).toFixed(1)} million shaped cells, too many for an SVG. Raise Pixel size, use square cells, or save a PNG.`, 'error');
+  }
   const bits = r.colors ? r.indices : r.mask;
   if (!bits) return toast('That frame is gone. Try again.', 'error');
   const svg = r.colors ? indicesToSVG(bits, r.w, r.h, r.colors, opts) : maskToSVG(bits, r.w, r.h, S.look.ink, S.look.paper, opts);
