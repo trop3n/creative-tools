@@ -14,7 +14,17 @@ npm run dev:durandal | dev:leela | dev:bloom   # single app
 npm run build                                  # whole suite → dist/
 ```
 
-The sessions didn't deploy anything. The suite hasn't been published since this work.
+~~The sessions didn't deploy anything.~~ **Deployed Nov. 20** (at `dab58db`) to `pve`, the Proxmox host, for now: **https://pve.tail5e1c3e.ts.net/**, tailnet only.
+
+- Files live in `/srv/creative-tools` on `pve`. `tailscale serve` shares that folder over HTTPS (the webcam and clipboard need HTTPS). Nothing was installed on the host, and Proxmox's UI on port 8006 is untouched.
+- SSH: `ssh pve` (root over Tailscale, from `~/.ssh/config`). Tailscale SSH asks for a browser approval when the last one has expired.
+- Redeploy from Windows: `deploy/deploy.sh` needs `rsync`, which Git Bash doesn't have. Instead, run `npm run build`, then:
+  ```bash
+  tar -C dist -cf - . | ssh pve 'set -e; mkdir -p /srv/creative-tools.new && tar -C /srv/creative-tools.new -xf - && rm -rf /srv/creative-tools && mv /srv/creative-tools.new /srv/creative-tools && chmod -R a+rX /srv/creative-tools'
+  ```
+  `tailscale serve` keeps pointing at the folder, so no restart is needed.
+- Undo: on `pve`, run `tailscale serve --https=443 off`, then delete `/srv/creative-tools`.
+- Later: move it into an LXC container rather than the hypervisor itself.
 
 ---
 
