@@ -521,3 +521,15 @@ export async function sendToDurandal(kind) {
     toast(e.message, 'error');
   }
 }
+
+// A link pasted into an open tab only changes the hash, so apply it without a reload.
+if (typeof window !== 'undefined') {
+  window.addEventListener('hashchange', () => {
+    const cfg = configFromHash();
+    if (!cfg) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    setConfig(cfg);
+    restart();
+    toast('Opened the linked look');
+  });
+}
