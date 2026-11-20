@@ -77,7 +77,11 @@ function cleanKeys(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter(k => isObj(k) && typeof k.t === 'number' && isFinite(k.t) && k.t >= 0 && STYLE_BY_ID[k.style])
-    .map(k => ({t: k.t, style: k.style, values: cleanSettings(k.values), params: cleanParams(k.style, k.params)}))
+    .map(k => {
+      const key = {t: k.t, style: k.style, values: cleanSettings(k.values), params: cleanParams(k.style, k.params)};
+      const name = typeof k.name === 'string' ? k.name.trim().slice(0, 40) : '';
+      return name ? {...key, name} : key;
+    })
     .sort((a, b) => a.t - b.t);
 }
 
@@ -97,7 +101,9 @@ export function projectData() {
 
 export async function saveProject() {
   const blob = new Blob([JSON.stringify(projectData(), null, 2)], {type: 'application/json'});
-  const res = await saveFile(fileBase() + '.durandal.json', blob, 'application/json');
+  const name = fileBase() + '.durandal.json', data = projectData();
+  const res = await saveFile(name, new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}), 'application/json');
+  if (res.status === 'saved') remember(name, data);
   toast(res.message, res.status === 'error' ? 'error' : 'info');
 }
 
@@ -109,7 +115,11 @@ export async function openProject(file) {
   try { p = JSON.parse(await file.text()); }
   catch (e) { return toast('That file is not a DURANDAL project', 'error'); }
   if (!isObj(p) || p.app !== APP) return toast('That file is not a DURANDAL project', 'error');
+  remember(file.name, p);
+  applyProject(p, file.name);
+}
 
+function applyProject(p, label) {
   Object.assign(S.settings, cleanSettings(p.settings));
   if (isObj(p.params)) for (const [id, raw] of Object.entries(p.params)) {
     const clean = cleanParams(id, raw);
@@ -136,7 +146,31 @@ export async function openProject(file) {
     note += ` This video's ${S.media.keys.length} keyframes take over again when it plays or you scrub.`;
   } else reapplyKeys();
   persist(); schedule(); emit();
-  toast('Opened ' + file.name + '.' + note);
+  toast('Opened ' + label + '.' + note);
+}
+
+/* ---------- recent projects ---------- */
+// A copy of each project saved or opened, newest first, kept in this browser. Browsers
+// can't reopen a file by its path, so a recent project is this copy, not the file.
+const RECENT_MAX = 5;
+S.recents = (saved.get('recent.v1', []) || []).filter(r => isObj(r) && typeof r.name === 'string' && isObj(r.data) && r.data.app === APP);
+
+function remember(name, data) {
+  // A copy: projectData() shares objects with the live state.
+  S.recents = [{name, at: Date.now(), data: structuredClone(data)}, ...S.recents.filter(r => r.name !== name)].slice(0, RECENT_MAX);
+  saved.set('recent.v1', S.recents);
+  emit();
+}
+
+export function openRecent(name) {
+  const r = S.recents.find(x => x.name === name);
+  if (r) { remember(r.name, r.data); applyProject(r.data, r.name); }
+}
+
+export function forgetRecent(name) {
+  S.recents = S.recents.filter(r => r.name !== name);
+  saved.set('recent.v1', S.recents);
+  emit();
 }
 
 /** When a video opens: hand over keyframes from a project that was waiting for it. */

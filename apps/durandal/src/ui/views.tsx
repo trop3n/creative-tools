@@ -14,7 +14,7 @@ import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Slider} from '@astryxdesign/core/Slider';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {IconButton} from '@astryxdesign/core/IconButton';
-import {Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX} from 'lucide-react';
+import {Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Pencil, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX, X} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
 import {useStore, currentParams} from '../engine/state.js';
@@ -24,9 +24,9 @@ import {
 } from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
-  setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase,
+  setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase, renameKeyframe, moveKeyframe,
 } from '../engine/media.js';
-import {saveProject, openProject, saveLook, applyLook, deleteLook} from '../engine/project.js';
+import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
@@ -74,7 +74,31 @@ const styles = stylex.create({
   // Scale the cell-sized canvas up to fill the stage while keeping its aspect.
   fit: {width: '100%', height: '100%', objectFit: 'contain', boxShadow: 'none', borderRadius: 0},
   frame: {position: 'relative', overflow: 'hidden', minHeight: 0},
+  // The keyframe strip under the position slider. The Slider insets its thumb's travel
+  // by half its 20 px thumb at each end, so the strip does too and the diamonds line up
+  // with the slider's marks.
+  strip: {position: 'relative', height: 'var(--spacing-6)', marginInline: '10px', touchAction: 'none'},
+  stripLine: {
+    position: 'absolute', insetInline: 0, top: '50%', height: '1px',
+    backgroundColor: 'var(--color-border)',
+  },
+  diamond: {
+    position: 'absolute', top: '50%',
+    width: 'var(--spacing-3)', height: 'var(--spacing-3)',
+    padding: 0,
+    transform: 'translate(-50%, -50%) rotate(45deg)',
+    backgroundColor: 'var(--color-background)',
+    borderWidth: '2px', borderStyle: 'solid', borderColor: 'var(--color-accent)',
+    borderRadius: '2px',
+    cursor: 'grab',
+    outline: {default: 'none', ':focus-visible': '2px solid var(--color-accent)'},
+    outlineOffset: '2px',
+  },
+  diamondOn: {backgroundColor: 'var(--color-accent)'},
+  diamondDrag: {cursor: 'grabbing', zIndex: 1},
+  diamondOff: {cursor: 'default', opacity: 0.5},
 });
+const place = stylex.create({left: (f: number) => ({left: `${f * 100}%`})});
 
 /* ================= rail ================= */
 export function StyleRail() {
@@ -422,6 +446,7 @@ function VideoSection() {
         marks={m.duration ? m.keys.map((k: any) => ({value: Math.round((k.t / m.duration) * 1000)})) : undefined}
         isDisabled={m.exporting}
       />
+      {m.duration && m.keys.length ? <KeyframeStrip /> : null}
       <SliderRow label="Volume" value={m.volume} min={0} max={1} step={0.01} format={v => Math.round(v * 100) + '%'} onChange={setVolume} />
       <InspectorRow label="Frame rate">
         <SegmentedControl label="Frame rate" size="sm" layout="fill" value={look.fps} onChange={v => setLook('fps', v)}>
@@ -448,10 +473,91 @@ function VideoSection() {
   );
 }
 
-/** Keyframe the settings over the video's time; they ease between keyframes as it plays and renders. */
+/**
+ * A diamond per keyframe under the position slider. Drag one to move it in time; click
+ * one to go there. Focused, arrow keys nudge it a frame (Shift: 10 frames) and Enter goes there.
+ */
+function KeyframeStrip() {
+  const {media: m, look} = useStore();
+  const rail = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{from: number; t: number; x: number; moved: boolean} | null>(null);
+  const timeAt = (clientX: number) => {
+    const box = rail.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - box.left) / box.width)) * m.duration;
+  };
+  // A keyframe's time is its React key, so a moved diamond remounts: put focus back on it.
+  const refocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (refocus.current === null) return;
+    rail.current?.querySelector<HTMLElement>(`[data-t="${refocus.current}"]`)?.focus();
+    refocus.current = null;
+  }, [m.keys]);
+  const move = (from: number, to: number, keepFocus = false) => {
+    const at = moveKeyframe(from, to);
+    if (at === null) return;
+    if (keepFocus) refocus.current = at;
+    seekTo(at);
+  };
+  const frame = 1 / (Number(look.fps) || 30);
+  return (
+    <div ref={rail} {...stylex.props(styles.strip)}>
+      <div {...stylex.props(styles.stripLine)} />
+      {m.keys.map((k: any) => {
+        const t = drag?.from === k.t ? drag.t : k.t;
+        const name = k.name || clock(k.t);
+        const on = Math.abs(k.t - m.time) <= 1 / 60;
+        return (
+          <div
+            key={k.t}
+            data-t={k.t}
+            role="slider"
+            tabIndex={m.exporting ? -1 : 0}
+            aria-label={`Keyframe ${name}`}
+            aria-valuemin={0}
+            aria-valuemax={m.duration}
+            aria-valuenow={t}
+            aria-valuetext={clock(t)}
+            aria-disabled={m.exporting || undefined}
+            title={`${name}: drag to move, click to go there`}
+            onPointerDown={e => {
+              if (m.exporting || e.button !== 0) return;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setDrag({from: k.t, t: k.t, x: e.clientX, moved: false});
+            }}
+            onPointerMove={e => {
+              if (!drag || drag.from !== k.t) return;
+              const moved = drag.moved || Math.abs(e.clientX - drag.x) > 3;
+              setDrag({...drag, moved, t: moved ? timeAt(e.clientX) : drag.t});
+            }}
+            onPointerUp={() => {
+              if (!drag || drag.from !== k.t) return;
+              setDrag(null);
+              if (drag.moved) move(k.t, drag.t); else seekTo(k.t);
+            }}
+            onPointerCancel={() => setDrag(null)}
+            onKeyDown={e => {
+              if (m.exporting) return;
+              const sign = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+              if (sign) { e.preventDefault(); move(k.t, k.t + sign * frame * (e.shiftKey ? 10 : 1), true); }
+              else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); seekTo(k.t); }
+            }}
+            {...stylex.props(
+              styles.diamond,
+              place.left(t / m.duration),
+              on && styles.diamondOn,
+              drag?.from === k.t && styles.diamondDrag,
+              m.exporting && styles.diamondOff,
+            )}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 /** Named looks kept in this browser, and project files that hold everything. */
 function LooksSection() {
-  const {looks} = useStore() as any;
+  const {looks, recents} = useStore() as any;
   const [name, setName] = useState('');
   const save = () => { if (name.trim()) { saveLook(name); setName(''); } };
   return (
@@ -495,13 +601,33 @@ function LooksSection() {
         <Button label="Open project" size="sm" variant="ghost" icon={<Icon icon={FolderOpen} size={ICON} />} onClick={openProjectFile} />
       </HStack>
       <Text type="supporting">A project file holds every setting, and a video’s keyframes, to share or keep. You can also drop one on the page.</Text>
+      {recents.length ? (
+        <List density="compact" header={<Text type="label" weight="semibold">Recent projects</Text>}>
+          {recents.map((r: any) => (
+            <ListItem
+              key={r.name}
+              label={r.name}
+              description={`${new Date(r.at).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}${r.data.video?.keys?.length ? ` · ${r.data.video.keys.length} keyframes` : ''}`}
+              endContent={
+                <HStack gap={0}>
+                  <IconButton label={`Open ${r.name}`} tooltip="Open this project" size="sm" variant="ghost" icon={<Icon icon={FolderOpen} size={ICON} />} onClick={() => openRecent(r.name)} />
+                  <IconButton label={`Remove ${r.name} from recent projects`} tooltip="Remove from this list" size="sm" variant="ghost" icon={<Icon icon={X} size={ICON} />} onClick={() => forgetRecent(r.name)} />
+                </HStack>
+              }
+            />
+          ))}
+        </List>
+      ) : null}
     </InspectorSection>
   );
 }
 
+/** Keyframe the settings over the video's time; they ease between keyframes as it plays and renders. */
 function KeyframesSection() {
   const {media: m} = useStore();
   const here = m.keys.find((k: any) => Math.abs(k.t - m.time) <= 1 / 60);
+  const [naming, setNaming] = useState<{t: number; name: string} | null>(null);
+  const finishNaming = () => { if (naming) renameKeyframe(naming.t, naming.name); setNaming(null); };
   return (
     <InspectorSection title="Keyframes">
       <HStack gap={1} wrap="wrap">
@@ -515,16 +641,35 @@ function KeyframesSection() {
         />
         {m.keys.length ? <Button label="Clear all" size="sm" variant="ghost" isDisabled={m.exporting} onClick={clearKeyframes} /> : null}
       </HStack>
+      {naming ? (
+        <HStack gap={1}>
+          <StackItem size="fill">
+            <TextInput
+              label={`Name for the keyframe at ${clock(naming.t)}`}
+              isLabelHidden
+              size="sm"
+              width="100%"
+              placeholder={clock(naming.t)}
+              value={naming.name}
+              hasAutoFocus
+              onChange={v => setNaming({...naming, name: v})}
+              onKeyDown={e => { if (e.key === 'Enter') finishNaming(); else if (e.key === 'Escape') setNaming(null); }}
+            />
+          </StackItem>
+          <Button label="Done" size="sm" variant="secondary" icon={<Icon icon={Check} size={ICON} />} onClick={finishNaming} />
+        </HStack>
+      ) : null}
       {m.keys.length ? (
         <List density="compact">
           {m.keys.map((k: any) => (
             <ListItem
               key={k.t}
-              label={clock(k.t)}
-              description={`${STYLE_BY_ID[k.style]?.name ?? k.style} · ${k.values.block} px`}
+              label={k.name || clock(k.t)}
+              description={`${k.name ? clock(k.t) + ' · ' : ''}${STYLE_BY_ID[k.style]?.name ?? k.style} · ${k.values.block} px`}
               isSelected={k === here}
               endContent={
                 <HStack gap={0}>
+                  <IconButton label={`Rename ${k.name || 'keyframe at ' + clock(k.t)}`} tooltip="Rename" size="sm" variant="ghost" icon={<Icon icon={Pencil} size={ICON} />} isDisabled={m.exporting} onClick={() => setNaming({t: k.t, name: k.name || ''})} />
                   <IconButton label={`Go to ${clock(k.t)}`} tooltip="Go to this keyframe" size="sm" variant="ghost" icon={<Icon icon={Crosshair} size={ICON} />} isDisabled={m.exporting} onClick={() => seekTo(k.t)} />
                   <IconButton label={`Remove keyframe at ${clock(k.t)}`} tooltip="Remove" size="sm" variant="ghost" icon={<Icon icon={Trash2} size={ICON} />} isDisabled={m.exporting} onClick={() => removeKeyframe(k.t)} />
                 </HStack>

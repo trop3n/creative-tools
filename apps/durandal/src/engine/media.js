@@ -203,9 +203,39 @@ export function setKeyframe() {
   if (!v || M().exporting) return;
   const t = v.currentTime, style = STYLE_BY_ID[S.settings.style];
   const params = {...defaultParams(style), ...(S.paramsByStyle[style.id] || {})};
-  M().keys = putKey(M().keys, makeKey(t, S.settings, params));
+  const key = makeKey(t, S.settings, params);
+  // Updating a keyframe keeps its name.
+  const old = M().keys.find(k => Math.abs(k.t - t) <= 1 / 60);
+  if (old?.name) key.name = old.name;
+  M().keys = putKey(M().keys, key);
   keysApplied(t);
   emit();
+}
+/** Name a keyframe; an empty name goes back to showing its time. */
+export function renameKeyframe(t, name) {
+  name = String(name || '').trim().slice(0, 40);
+  M().keys = M().keys.map(k => {
+    if (k.t !== t) return k;
+    const {name: _, ...rest} = k;
+    return name ? {...rest, name} : rest;
+  });
+  emit();
+}
+/**
+ * Move a keyframe to another time; returns its new time. Refused (returns null) when
+ * that would land on another keyframe, so a drag can't silently replace one.
+ */
+export function moveKeyframe(t, to) {
+  const v = live.vid;
+  if (!v || M().exporting) return null;
+  to = +Math.max(0, Math.min(to, v.duration || to)).toFixed(3);
+  if (M().keys.some(k => k.t !== t && Math.abs(k.t - to) <= 1 / 60)) {
+    toast('There’s already a keyframe there');
+    return null;
+  }
+  M().keys = M().keys.map(k => (k.t === t ? {...k, t: to} : k)).sort((a, b) => a.t - b.t);
+  reapplyKeys(); schedule(); emit();
+  return to;
 }
 export function removeKeyframe(t) {
   M().keys = M().keys.filter(k => k.t !== t);
