@@ -43,6 +43,10 @@ export const DEFAULT_CONFIG = {
   lightSize: 0.3, // 0..1: soft-box size
   period: 8, // seconds for the lights to come round again (the loop length)
   background: ['#2a2d34', '#0c0d10'], // backdrop center, edge
+  glow: 0.3, // 0..1: soft light around the brightest highlights
+  blur: 0, // 0..1: depth of field
+  focus: 0.4, // 0..1: where it's sharp, from the sheet's nearest point to its farthest
+  grain: 0, // 0..1: film grain
   orbit: 0, // degrees around the sheet
   elevation: 8, // degrees above it
   zoom: 1, // 0.6..2.5
@@ -78,6 +82,10 @@ export function cleanConfig(raw = {}) {
     lightSize: num(c.lightSize, 0, 1, d.lightSize),
     period: num(c.period, 4, 20, d.period),
     background: Array.isArray(c.background) && c.background.length === 2 ? c.background.map((s, i) => color(s, d.background[i])) : d.background,
+    glow: num(c.glow, 0, 1, d.glow),
+    blur: num(c.blur, 0, 1, d.blur),
+    focus: num(c.focus, 0, 1, d.focus),
+    grain: num(c.grain, 0, 1, d.grain),
     orbit: num(c.orbit, -180, 180, d.orbit),
     elevation: num(c.elevation, -30, 70, d.elevation),
     zoom: num(c.zoom, 0.6, 2.5, d.zoom),

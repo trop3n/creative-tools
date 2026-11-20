@@ -1,12 +1,12 @@
 // JJARO's app state, the simulation loop, pointer handling and every action the UI
 // takes. Engine code mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
 import {parseColor, oklabToLinear} from '@studio/core/gradient';
 import {Cloth, QUALITY} from './cloth.js';
 import {lightDirs, PATTERN_IDS, PRINT_IDS} from './foil.js';
 import {artFromFile, artFromData, artData, sampleArt} from './art.js';
-import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane} from './renderer.js';
+import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane, focusDistance, effectReach} from './renderer.js';
 import {cleanConfig, presetConfig, randomConfig, DEFAULT_CONFIG, PRESETS, ASPECTS, REBUILD_KEYS} from './config.js';
 
 export const saved = toolStore('jjaro');
@@ -35,6 +35,12 @@ export const S = {
   time: 0, // seconds of light motion
   supported: true,
   grabbing: false,
+  exportSize: saved.get('exportSize', 2160), // PNG, long side
+  videoSize: saved.get('videoSize', 1080), // MP4, long side
+  loops: saved.get('loops', 1), // MP4 length, in light loops
+  sway: saved.get('sway', true), // MP4: turn the camera gently
+  transparent: saved.get('transparent', false), // PNG: no backdrop
+  exporting: null, // {done, total} while an MP4 renders
   art: null, // {canvas, name, custom, alpha, aspect}: what the print modes print
   toast: null, // set by the app: (message, kind) => void
 };
@@ -118,20 +124,29 @@ function fit() {
   draw();
 }
 
-function draw() {
-  if (!renderer || renderer.lost || !canvas || canvas.width < 2) return;
-  cam = frameCamera(S.config, cloth.scene, canvas.width / canvas.height);
-  cloth.normals();
-  const c = S.config;
-  renderer.render({
-    cloth, cam, background: c.background.map(toRGB),
+/**
+ * Everything the renderer needs for one frame of `sheet` (the live cloth or a frozen
+ * copy) at `time` seconds of light motion. `orbit` turns the camera from the config's.
+ */
+function sceneFrame(c, sheet, time, aspect, {orbit = 0, transparent = false, frame = 0} = {}) {
+  const camera = frameCamera(orbit ? {...c, orbit: c.orbit + orbit} : c, sheet.scene, aspect);
+  return {
+    cloth: sheet, cam: camera, background: c.background.map(toRGB),
+    post: {glow: c.glow, blur: c.blur, focus: focusDistance(camera, sheet.pos, c.focus), grain: c.grain, frame, transparent},
     foil: {
       tint: toLinear(c.tint), env: c.background.map(toLinear), rainbow: c.rainbow, spread: c.spread, spacing: c.spacing,
       scale: c.scale, angle: c.angle * Math.PI / 180, seed: (c.seed % 1000) * 0.37, pattern: PATTERN_IDS.indexOf(c.pattern),
-      lights: c.lights, lightDirs: lightDirs(c, S.time, c.period), lightSize: c.lightSize,
+      lights: c.lights, lightDirs: lightDirs(orbit ? {...c, orbit: c.orbit + orbit} : c, time, c.period), lightSize: c.lightSize,
     },
     print: {mode: PRINT_IDS.indexOf(c.print), art: S.art, size: c.artSize, invert: c.invert, paper: toLinear(c.paper), ink: c.ink},
-  });
+  };
+}
+
+function draw() {
+  if (!renderer || renderer.lost || !canvas || canvas.width < 2) return;
+  const f = sceneFrame(S.config, cloth, S.time, canvas.width / canvas.height, {frame: Math.floor(S.time * 24)});
+  cam = f.cam;
+  renderer.render(f);
 }
 
 function tick(now) {
@@ -327,3 +342,112 @@ if (typeof window !== 'undefined') {
     toast('Opened the linked look');
   });
 }
+
+/* ---------- export ---------- */
+// Exports draw with their own renderer and a frozen copy of the sheet as it is on the
+// stage, so the stage keeps running and every frame shows the same folds.
+let off = null, offCanvas = null, offAlpha = false, cancelExport = false;
+function offscreen(w, h, alpha) {
+  if (off && (off.lost || offAlpha !== alpha)) { off.dispose(); off = null; }
+  if (!off) {
+    offCanvas = document.createElement('canvas');
+    off = createRenderer(offCanvas, {preserve: true, alpha});
+    offAlpha = alpha;
+  }
+  offCanvas.width = w; offCanvas.height = h;
+  return off;
+}
+const freeze = () => ({W: cloth.W, N: cloth.N, pos: cloth.pos.slice(), scene: cloth.scene});
+const checkAlive = r => { if (r.lost) throw new Error('The graphics card reset during the render. Please try again.'); };
+
+/** Width and height for a long side, in the frame's shape (even, for video). */
+function dims(long) {
+  const a = ASPECTS[S.config.aspect];
+  return a >= 1 ? [long, Math.round(long / a / 2) * 2] : [Math.round(long * a / 2) * 2, long];
+}
+
+export function setExport(key, value) { S[key] = value; saved.set(key, value); emit(); }
+
+const TILE = 2048;
+/**
+ * The frame at W × H. Up to one tile it draws in one go; bigger frames draw in tiles
+ * into a 2D canvas, each padded by the blur and glow's reach so their edges match.
+ */
+function renderStill(W, H, sheet, transparent) {
+  const c = S.config, frame = Math.floor(S.time * 24);
+  if (W <= TILE && H <= TILE) {
+    const r = offscreen(W, H, transparent);
+    r.render(sceneFrame(c, sheet, S.time, W / H, {transparent, frame}));
+    checkAlive(r);
+    return offCanvas;
+  }
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const x2 = out.getContext('2d');
+  if (!x2) throw new Error(`This browser cannot hold a ${W} × ${H} image. Try a smaller size.`);
+  const f = sceneFrame(c, sheet, S.time, W / H, {transparent, frame});
+  const pad = effectReach(f.post, W, H) + 2;
+  for (let y = 0; y < H; y += TILE) {
+    for (let x = 0; x < W; x += TILE) {
+      const tw = Math.min(TILE, W - x), th = Math.min(TILE, H - y);
+      const r = offscreen(tw + 2 * pad, th + 2 * pad, transparent);
+      r.render({...f, view: {W, H, x: x - pad, y: y - pad}});
+      checkAlive(r);
+      x2.drawImage(offCanvas, pad, pad, tw, th, x, y, tw, th);
+    }
+  }
+  return out;
+}
+
+export async function exportPNG() {
+  try {
+    const [w, h] = dims(S.exportSize);
+    const c = renderStill(w, h, freeze(), S.transparent);
+    const blob = await new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('PNG export failed'))), 'image/png'));
+    const r = await saveFile(fileName() + '.png', blob, 'image/png');
+    toast(r.message, r.status === 'error' ? 'error' : 'info');
+  } catch (e) {
+    console.error(e);
+    toast('Could not save the image: ' + e.message, 'error');
+  }
+}
+
+export const videoSupported = canEncodeVideo;
+/** Seconds an MP4 covers: whole loops of the lights, so it loops cleanly. */
+export const videoSeconds = () => S.config.period * S.loops;
+
+export async function exportMP4() {
+  if (S.exporting) return;
+  const fps = 30, seconds = videoSeconds(), frames = Math.round(seconds * fps);
+  const [w, h] = dims(S.videoSize);
+  const sheet = freeze(), c = S.config, t0 = S.time;
+  cancelExport = false;
+  S.exporting = {done: 0, total: frames};
+  emit();
+  try {
+    const r = offscreen(w, h, false);
+    const {blob} = await encodeFramesToMp4({
+      width: w, height: h, fps, frames,
+      drawFrame: i => {
+        const t = i / fps;
+        // The camera sways 6° each way once per video; the lights loop on their own period.
+        r.render(sceneFrame(c, sheet, t0 + t, w / h, {orbit: S.sway ? 6 * Math.sin(2 * Math.PI * t / seconds) : 0, frame: Math.floor(t * 24)}));
+        checkAlive(r);
+        return offCanvas;
+      },
+      onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
+      isCancelled: () => cancelExport,
+    });
+    if (blob) {
+      const res = await saveFile(fileName() + '.mp4', blob, 'video/mp4');
+      toast(res.message, res.status === 'error' ? 'error' : 'info');
+    } else toast('Export cancelled');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'Could not make the video', 'error');
+  } finally {
+    S.exporting = null;
+    emit();
+  }
+}
+export function cancelMP4() { cancelExport = true; }

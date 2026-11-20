@@ -1,5 +1,8 @@
-// JJARO's WebGL2 renderer: a radial studio backdrop, a soft shadow on the floor when
-// there is one, then the sheet in foil (see foil.js).
+// JJARO's WebGL2 renderer. The scene (a radial studio backdrop, a soft shadow on the
+// floor when there is one, then the sheet in foil; see foil.js) is drawn with 4× MSAA
+// into its own buffers, then a last pass adds depth of field, glow and film grain.
+// A canvas can hold the whole frame or one tile of a bigger one (for large PNGs), and
+// every effect is sized and placed from the whole frame, so tiles line up.
 import {FS_FOIL} from './foil.js';
 import {Surface} from './surface.js';
 
@@ -12,15 +15,18 @@ void main() {
 }`;
 
 // Backdrop: a soft pool of light behind the sheet, dithered against banding.
+// uTile maps this canvas's 0..1 onto the whole frame's: (offset, scale).
 const FS_BG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform vec3 uInner, uOuter;
 uniform float uAspect;
+uniform vec4 uTile;
 out vec4 o;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main() {
-  vec2 p = (vUv - vec2(0.5, 0.56)) * vec2(uAspect, 1.0);
+  vec2 uv = uTile.xy + vUv * uTile.zw;
+  vec2 p = (uv - vec2(0.5, 0.56)) * vec2(uAspect, 1.0);
   float t = smoothstep(0.0, 0.85, length(p) / max(1.0, uAspect * 0.8));
   o = vec4(mix(uInner, uOuter, t) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
@@ -56,6 +62,89 @@ out vec3 vPos, vNrm, vTan;
 out vec2 vUv;
 void main() { vPos = aPos; vNrm = aNrm; vTan = aTan; vUv = aUv; gl_Position = uVP * vec4(aPos, 1.0); }`;
 
+// Glow, step 1: the highlights, at a quarter of the size (each tap averages 2×2 pixels).
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uColor;
+uniform vec2 uTexel; // one full-size pixel
+out vec4 o;
+void main() {
+  vec3 c = vec3(0.0);
+  for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) c += texture(uColor, vUv + (vec2(x, y) - 0.5) * 2.0 * uTexel).rgb;
+  c *= 0.25;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  o = vec4(c * smoothstep(0.55, 1.0, l), 1.0);
+}`;
+
+// Glow, steps 2 and 3: a Gaussian blur across, then down.
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uStep; // one tap, in uv: sigma / 2 along the blur's direction
+out vec4 o;
+void main() {
+  vec3 c = vec3(0.0); float ws = 0.0;
+  for (int i = -6; i <= 6; i++) {
+    float w = exp(-0.125 * float(i * i));
+    c += texture(uSrc, vUv + float(i) * uStep).rgb * w; ws += w;
+  }
+  o = vec4(c / ws, 1.0);
+}`;
+
+// The last pass. Depth of field by gathering (as in BLOOM): each tap counts if its own
+// blur reaches this pixel, and taps behind it only count when this pixel is blurred too,
+// so sharp folds keep their edges against a blurred background. Colour and coverage are
+// gathered together, so a transparent backdrop stays premultiplied. Then the glow, and
+// film grain from an integer hash of the whole frame's pixel and the grain frame.
+const FS_POST = `#version 300 es
+precision highp float; precision highp int;
+in vec2 vUv;
+uniform sampler2D uColor, uDepth, uGlow;
+uniform vec2 uRes, uOrigin;
+uniform float uNear, uFar, uFocus, uAmount, uMaxR, uGlowAmt, uGrain;
+uniform int uFrame;
+out vec4 o;
+float linZ(vec2 uv) {
+  float d = texture(uDepth, uv).r * 2.0 - 1.0;
+  return 2.0 * uNear * uFar / (uFar + uNear - d * (uFar - uNear));
+}
+float coc(float z) { return min(uMaxR, uAmount * abs(z - uFocus) / z); }
+float hash(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return float(v.x & 0xffffu) / 65535.0;
+}
+void main() {
+  vec4 c = texture(uColor, vUv);
+  if (uMaxR >= 0.5) {
+    float z0 = linZ(vUv), r0 = coc(z0);
+    vec4 sum = c; float wsum = 1.0;
+    const int N = 64;
+    for (int i = 0; i < N; i++) {
+      float r = uMaxR * sqrt((float(i) + 0.5) / float(N));
+      float a = float(i) * 2.39996323;
+      vec2 uv = vUv + vec2(cos(a), sin(a)) * r / uRes;
+      float z = linZ(uv), rs = coc(z);
+      float w = clamp(rs - r + 1.0, 0.0, 1.0);
+      if (z > z0) w *= clamp(r0 - r + 1.0, 0.0, 1.0);
+      sum += texture(uColor, uv) * w; wsum += w;
+    }
+    c = sum / wsum;
+  }
+  vec3 g = texture(uGlow, vUv).rgb * uGlowAmt;
+  c.rgb += g;
+  c.a = max(c.a, min(1.0, max(g.r, max(g.g, g.b))));
+  if (uGrain > 0.0) {
+    uvec2 px = uvec2(gl_FragCoord.xy + uOrigin);
+    float n = 0.6 * (hash(uvec3(px, uint(uFrame))) + hash(uvec3(px + 7919u, uint(uFrame)))) - 0.6;
+    c.rgb += n * 0.1 * uGrain * c.a;
+  }
+  o = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
+}`;
 
 function compile(gl, vs, fs) {
   const prog = gl.createProgram();
@@ -74,11 +163,27 @@ function compile(gl, vs, fs) {
   return {prog, u};
 }
 
+/** The view-projection for one part of the frame: pixels [x, x+w) × [y, y+h) of W × H, y down. */
+function tileVP(vp, W, H, x, y, w, h) {
+  const x0 = 2 * x / W - 1, x1 = 2 * (x + w) / W - 1, y1 = 1 - 2 * y / H, y0 = 1 - 2 * (y + h) / H;
+  const sx = 2 / (x1 - x0), tx = -(x1 + x0) / (x1 - x0), sy = 2 / (y1 - y0), ty = -(y1 + y0) / (y1 - y0);
+  const m = Float32Array.from(vp);
+  for (let c = 0; c < 4; c++) {
+    m[c * 4] = sx * vp[c * 4] + tx * vp[c * 4 + 3];
+    m[c * 4 + 1] = sy * vp[c * 4 + 1] + ty * vp[c * 4 + 3];
+  }
+  return m;
+}
+
+/** Glow and blur sizes, in pixels of the whole frame (so a tile pads by enough). */
+export const effectReach = (post, W, H) => Math.ceil(post.blur * 0.035 * Math.min(W, H * 1.4) + (post.glow > 0 ? 0.03 * H : 0));
+
 /** A renderer bound to one canvas. Throws when WebGL2 isn't there. */
-export function createRenderer(canvas, {preserve = false} = {}) {
-  const gl = canvas.getContext('webgl2', {antialias: true, alpha: false, preserveDrawingBuffer: preserve});
+export function createRenderer(canvas, {preserve = false, alpha = false} = {}) {
+  const gl = canvas.getContext('webgl2', {antialias: false, depth: false, alpha, premultipliedAlpha: true, preserveDrawingBuffer: preserve});
   if (!gl) throw new Error('WebGL2 unavailable');
   const bg = compile(gl, VS_FULL, FS_BG), floor = compile(gl, VS_FLOOR, FS_FLOOR), sheet = compile(gl, VS_SHEET, FS_FOIL);
+  const bright = compile(gl, VS_FULL, FS_BRIGHT), blur = compile(gl, VS_FULL, FS_BLUR), post = compile(gl, VS_FULL, FS_POST);
   const empty = gl.createVertexArray();
   const vao = gl.createVertexArray(), dyn = gl.createBuffer(), uvs = gl.createBuffer(), ibo = gl.createBuffer();
   let cloth = null, surf = null, interleaved = null;
@@ -118,41 +223,94 @@ export function createRenderer(canvas, {preserve = false} = {}) {
     gl.bindVertexArray(null);
   }
 
+  // Buffers: the MSAA scene, its resolved colour and depth, and two quarter-size glow buffers.
+  const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0);
+  let w = 0, h = 0, msFbo, msColor, msDepth, rFbo, rColor, rDepth, q = [];
+  const tex = (tw, th, internal, format, type, filter) => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internal, tw, th, 0, format, type, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, filter], [gl.TEXTURE_MAG_FILTER, filter], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    return t;
+  };
+  const fbo = (color, depth) => {
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0);
+    if (depth) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth, 0);
+    return f;
+  };
+  function targets() {
+    if (w === canvas.width && h === canvas.height) return;
+    w = canvas.width; h = canvas.height;
+    [msFbo, rFbo, ...q.map(x => x.fbo)].forEach(f => f && gl.deleteFramebuffer(f));
+    [msColor, msDepth].forEach(r => r && gl.deleteRenderbuffer(r));
+    [rColor, rDepth, ...q.map(x => x.tex)].forEach(t => t && gl.deleteTexture(t));
+    msFbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, msFbo);
+    msColor = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, msColor);
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, msColor);
+    msDepth = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, msDepth);
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, msDepth);
+    rColor = tex(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+    rDepth = tex(w, h, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.NEAREST);
+    rFbo = fbo(rColor, rDepth);
+    const qw = Math.max(1, Math.ceil(w / 4)), qh = Math.max(1, Math.ceil(h / 4));
+    q = [0, 1].map(() => { const t = tex(qw, qh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR); return {tex: t, fbo: fbo(t), w: qw, h: qh}; });
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  const fullscreen = () => { gl.bindVertexArray(empty); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+
   const r = {
     lost: false,
     /**
      * f: {cloth, cam (from frameCamera), background [[sRGB] center, [sRGB] edge],
      *     foil: {tint (linear), env [[linear] top, [linear] bottom], rainbow, spread, spacing (µm), scale, angle (rad), seed,
      *            pattern (index), lights, lightDirs (Float32Array), lightSize},
-     *     print: {mode (index; 0 none), art {canvas, alpha, aspect}, size, invert, paper (linear), ink}}
+     *     print: {mode (index; 0 none), art {canvas, alpha, aspect}, size, invert, paper (linear), ink},
+     *     post: {glow 0..1, blur 0..1, focus (distance from the eye), grain 0..1, frame (grain frame), transparent},
+     *     view: {W, H, x, y}: the part of a W × H frame this canvas holds (default: all of it)}
      */
     render(f) {
       if (gl.isContextLost()) { r.lost = true; return; }
-      const w = canvas.width, h = canvas.height, c = f.cloth;
+      targets();
+      const c = f.cloth, P = f.post, V = f.view || {W: w, H: h, x: 0, y: 0};
       if (c !== cloth) bind(c);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const vp = V.W === w && V.H === h ? f.cam.viewProj : tileVP(f.cam.viewProj, V.W, V.H, V.x, V.y, w, h);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, msFbo);
       gl.viewport(0, 0, w, h);
       gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(true);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.depthMask(false);
-      gl.useProgram(bg.prog);
-      gl.uniform3fv(bg.u.uInner, f.background[0]); gl.uniform3fv(bg.u.uOuter, f.background[1]);
-      gl.uniform1f(bg.u.uAspect, w / h);
-      gl.bindVertexArray(empty);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (!P.transparent) {
+        gl.useProgram(bg.prog);
+        gl.uniform3fv(bg.u.uInner, f.background[0]); gl.uniform3fv(bg.u.uOuter, f.background[1]);
+        gl.uniform1f(bg.u.uAspect, V.W / V.H);
+        gl.uniform4f(bg.u.uTile, V.x / V.W, (V.H - V.y - h) / V.H, w / V.W, h / V.H);
+        fullscreen();
+      }
 
       if (c.scene.floor !== null) {
-        // Centre the shadow on the sheet's footprint.
+        // Centre the shadow on the sheet's footprint. Coverage adds up too, so the shadow
+        // stays in a transparent PNG.
         let x = 0, z = 0, lo = Infinity, hi = -Infinity;
         for (let j = 0; j < c.N * 3; j += 3) { x += c.pos[j]; z += c.pos[j + 2]; lo = Math.min(lo, c.pos[j]); hi = Math.max(hi, c.pos[j]); }
         gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         gl.useProgram(floor.prog);
-        gl.uniformMatrix4fv(floor.u.uVP, false, f.cam.viewProj);
+        gl.uniformMatrix4fv(floor.u.uVP, false, vp);
         gl.uniform3f(floor.u.uCenter, x / c.N, 0, z / c.N);
         gl.uniform1f(floor.u.uY, c.scene.floor);
         gl.uniform1f(floor.u.uR, Math.max(0.6, (hi - lo) * 0.55));
         gl.uniform1f(floor.u.uStrength, 0.45);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        fullscreen();
         gl.disable(gl.BLEND);
       }
 
@@ -166,10 +324,9 @@ export function createRenderer(canvas, {preserve = false} = {}) {
         }
       }
       gl.depthMask(true);
-      gl.clear(gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST);
       gl.useProgram(sheet.prog);
-      gl.uniformMatrix4fv(sheet.u.uVP, false, f.cam.viewProj);
+      gl.uniformMatrix4fv(sheet.u.uVP, false, vp);
       gl.uniform3fv(sheet.u.uEye, f.cam.eye);
       gl.uniform3fv(sheet.u.uFront, f.cam.forward.map(v => -v));
       const m = f.foil, u = sheet.u;
@@ -194,6 +351,50 @@ export function createRenderer(canvas, {preserve = false} = {}) {
       gl.drawElements(gl.TRIANGLES, surf.index.length, gl.UNSIGNED_INT, 0);
       gl.bindVertexArray(null);
       gl.disable(gl.DEPTH_TEST);
+
+      // Resolve the MSAA colour and depth.
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, msFbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rFbo);
+      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
+
+      // Glow: highlights at quarter size, blurred across then down (sigma: 1% of the frame's height).
+      gl.activeTexture(gl.TEXTURE0);
+      if (P.glow > 0) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, q[0].fbo);
+        gl.viewport(0, 0, q[0].w, q[0].h);
+        gl.useProgram(bright.prog);
+        gl.bindTexture(gl.TEXTURE_2D, rColor);
+        gl.uniform1i(bright.u.uColor, 0);
+        gl.uniform2f(bright.u.uTexel, 1 / w, 1 / h);
+        fullscreen();
+        const sigma = 0.01 * V.H / 4; // in quarter-size pixels
+        gl.useProgram(blur.prog);
+        gl.uniform1i(blur.u.uSrc, 0);
+        for (const [from, to, dx, dy] of [[0, 1, 1, 0], [1, 0, 0, 1]]) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, q[to].fbo);
+          gl.bindTexture(gl.TEXTURE_2D, q[from].tex);
+          gl.uniform2f(blur.u.uStep, dx * sigma * 0.5 / q[0].w, dy * sigma * 0.5 / q[0].h);
+          fullscreen();
+        }
+      }
+
+      // Last pass, to the canvas.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, w, h);
+      gl.useProgram(post.prog);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rDepth);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, q[0].tex);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, rColor);
+      const U = post.u, maxR = P.blur * 0.035 * Math.min(V.W, V.H * 1.4);
+      gl.uniform1i(U.uColor, 0); gl.uniform1i(U.uDepth, 1); gl.uniform1i(U.uGlow, 2);
+      gl.uniform2f(U.uRes, w, h);
+      gl.uniform2f(U.uOrigin, V.x, V.H - V.y - h);
+      gl.uniform1f(U.uNear, f.cam.near); gl.uniform1f(U.uFar, f.cam.far);
+      gl.uniform1f(U.uFocus, P.focus); gl.uniform1f(U.uAmount, maxR * 3); gl.uniform1f(U.uMaxR, maxR);
+      gl.uniform1f(U.uGlowAmt, P.glow > 0 ? P.glow * 1.5 : 0);
+      gl.uniform1f(U.uGrain, P.grain); gl.uniform1i(U.uFrame, P.frame | 0);
+      fullscreen();
     },
     dispose() { gl.getExtension('WEBGL_lose_context')?.loseContext(); },
   };
@@ -226,7 +427,7 @@ export function frameCamera(cfg, scene, aspect) {
   const view = [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1];
   const near = 0.05, far = 60, f = 1 / tanH, nf = 1 / (near - far);
   const proj = [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0];
-  return {eye, right: x, up: y, forward: [-z[0], -z[1], -z[2]], viewProj: mat4mul(proj, view), tanH, aspect};
+  return {eye, right: x, up: y, forward: [-z[0], -z[1], -z[2]], viewProj: mat4mul(proj, view), tanH, aspect, near, far};
 }
 
 /** The ray through a point on screen, x and y in -1..1 (y up). */
@@ -259,4 +460,16 @@ export function onViewPlane(cam, ray, p) {
   const f = cam.forward;
   const t = dot([p[0] - ray.o[0], p[1] - ray.o[1], p[2] - ray.o[2]], f) / (dot(ray.d, f) || 1e-6);
   return [ray.o[0] + ray.d[0] * t, ray.o[1] + ray.d[1] * t, ray.o[2] + ray.d[2] * t];
+}
+
+/** The distance from the eye to focus at: 0 the sheet's nearest point, 1 its farthest. */
+export function focusDistance(cam, pos, t) {
+  const f = cam.forward, e = cam.eye;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < pos.length; i += 3) {
+    const d = (pos[i] - e[0]) * f[0] + (pos[i + 1] - e[1]) * f[1] + (pos[i + 2] - e[2]) * f[2];
+    if (d < lo) lo = d;
+    if (d > hi) hi = d;
+  }
+  return Math.max(cam.near * 2, lo + (hi - lo) * t);
 }

@@ -7,18 +7,19 @@ import {Icon} from '@astryxdesign/core/Icon';
 import {IconButton} from '@astryxdesign/core/IconButton';
 import {HStack, StackItem} from '@astryxdesign/core/Layout';
 import {List, ListItem} from '@astryxdesign/core/List';
+import {ProgressBar} from '@astryxdesign/core/ProgressBar';
 import {Selector} from '@astryxdesign/core/Selector';
 import {Switch} from '@astryxdesign/core/Switch';
 import {Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
-import {Check, Dices, Download, FolderOpen, ImageUp, Link, Pause, Play, RotateCcw, Save, Scan, Shuffle, Trash2, Wind} from 'lucide-react';
+import {Check, Dices, Download, Film, ImageDown, X, FolderOpen, ImageUp, Link, Pause, Play, RotateCcw, Save, Scan, Shuffle, Trash2, Wind} from 'lucide-react';
 import {pickFiles} from '@studio/core';
 import {SETUPS} from '../engine/cloth.js';
 import {ASPECTS, METALS, PAPERS, PRESETS} from '../engine/config.js';
 import {PATTERNS, PRINTS, MAX_LIGHTS} from '../engine/foil.js';
 import {
-  useStore, loadArt, clearArt, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
+  useStore, loadArt, clearArt, exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExport, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
 } from '../engine/live.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
@@ -249,6 +250,18 @@ export function Inspector() {
         <Text type="supporting">On a touch screen, pinch to zoom. With a mouse, scroll.</Text>
       </InspectorSection>
 
+      <InspectorSection title="Finish">
+        <SliderRow label="Glow" value={c.glow} min={0} max={1} step={0.01} format={v => (v < 0.005 ? 'Off' : pct(v))} onChange={v => set('glow', v)} />
+        <SliderRow label="Blur" value={c.blur} min={0} max={1} step={0.01} format={v => (v < 0.005 ? 'Off' : pct(v))} onChange={v => set('blur', v)} />
+        {c.blur > 0 ? (
+          <SliderRow label="Focus" value={c.focus} min={0} max={1} step={0.01} format={v => (v < 0.15 ? 'Near' : v > 0.85 ? 'Far' : pct(v))} onChange={v => set('focus', v)} />
+        ) : null}
+        <SliderRow label="Grain" value={c.grain} min={0} max={1} step={0.01} format={v => (v < 0.005 ? 'Off' : pct(v))} onChange={v => set('grain', v)} />
+        <Text type="supporting">Glow softens the brightest flashes. Blur is a camera's depth of field: Focus picks the part of the sheet that stays sharp.</Text>
+      </InspectorSection>
+
+      <ExportSection />
+
       <LooksSection />
     </>
   );
@@ -302,6 +315,58 @@ function LooksSection() {
         <Button label="Open project" size="sm" variant="ghost" icon={<Icon icon={FolderOpen} size={ICON} />} onClick={openProjectFile} />
       </HStack>
       <Text type="supporting">A link holds every setting but not your image. A project file holds both. You can also drop a project file on the page.</Text>
+    </InspectorSection>
+  );
+}
+
+function ExportSection() {
+  const s = useStore();
+  const canVideo = videoSupported();
+  return (
+    <InspectorSection title="Export">
+      <InspectorRow label="Image">
+        <Selector
+          label="Image size"
+          isLabelHidden
+          size="sm"
+          width="100%"
+          value={String(s.exportSize)}
+          options={[1080, 2160, 4096, 8192].map(v => ({value: String(v), label: `${v} px long side`}))}
+          onChange={v => setExport('exportSize', Number(v))}
+        />
+      </InspectorRow>
+      <Switch label="Transparent background" size="sm" value={s.transparent} onChange={on => setExport('transparent', on)} />
+      <InspectorRow label="Video">
+        <Selector
+          label="Video size"
+          isLabelHidden
+          size="sm"
+          width="100%"
+          value={String(s.videoSize)}
+          options={[1080, 1440, 2160].map(v => ({value: String(v), label: `${v} px long side`}))}
+          onChange={v => setExport('videoSize', Number(v))}
+        />
+      </InspectorRow>
+      <SliderRow label="Loops" value={s.loops} min={1} max={4} step={1} format={v => `${v} × ${s.config.period} s`} onChange={v => setExport('loops', v)} />
+      <Switch label="Turn the camera gently" size="sm" value={s.sway} onChange={on => setExport('sway', on)} />
+      {s.exporting ? (
+        <HStack gap={2} vAlign="center">
+          <StackItem size="fill">
+            <ProgressBar label="Rendering video" value={s.exporting.done} max={s.exporting.total} hasValueLabel formatValueLabel={(v, m) => `${v} / ${m} frames`} />
+          </StackItem>
+          <IconButton label="Cancel the video" tooltip="Cancel" size="sm" variant="ghost" icon={<Icon icon={X} size={ICON} />} onClick={cancelMP4} />
+        </HStack>
+      ) : (
+        <HStack gap={1} wrap="wrap">
+          <Button label="Save PNG" size="sm" variant="secondary" icon={<Icon icon={ImageDown} size={ICON} />} onClick={exportPNG} />
+          <Button label="Render MP4" size="sm" variant="secondary" icon={<Icon icon={Film} size={ICON} />} isDisabled={!canVideo} onClick={exportMP4} />
+        </HStack>
+      )}
+      <Text type="supporting">
+        {canVideo
+          ? `Both keep the folds as they are now. The MP4 is ${videoSeconds()} s at 30 fps: the lights come round ${s.loops === 1 ? 'once' : s.loops + ' times'}, so it loops without a jump.`
+          : 'Both keep the folds as they are now. Video export needs Chrome or Edge.'}
+      </Text>
     </InspectorSection>
   );
 }
