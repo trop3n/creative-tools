@@ -16,7 +16,7 @@ import {Theme} from '@astryxdesign/core/theme';
 import {useToast} from '@astryxdesign/core/Toast';
 import {Settings2} from 'lucide-react';
 import {studioTheme} from '@studio/theme';
-import {S, saved, loadArt} from './engine/live.js';
+import {S, saved, loadArt, openProject} from './engine/live.js';
 import {Stage, StageToolbar, Inspector} from './ui/views';
 import {ICON} from './ui/parts';
 
@@ -50,15 +50,18 @@ function ToastBridge() {
   return null;
 }
 
-/** Drop or paste an image anywhere to print it on the foil. */
+/** Drop or paste an image anywhere to print it on the foil; drop a project file to open it. */
 function useDropAndPaste() {
   useEffect(() => {
     const over = (ev: DragEvent) => ev.preventDefault();
     const drop = (ev: DragEvent) => {
       ev.preventDefault();
-      const f = [...(ev.dataTransfer?.files || [])].find(file => file.type.startsWith('image/'));
-      if (f) loadArt(f);
-      else S.toast?.('Drop an image to print it on the foil', 'info');
+      const files = [...(ev.dataTransfer?.files || [])];
+      const img = files.find(file => file.type.startsWith('image/'));
+      const project = files.find(file => /\.json$/i.test(file.name) || file.type === 'application/json');
+      if (img) loadArt(img);
+      else if (project) openProject(project);
+      else S.toast?.('Drop an image to print it, or a JJARO project file', 'info');
     };
     const paste = (ev: ClipboardEvent) => {
       const t = ev.target as HTMLElement;

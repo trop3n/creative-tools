@@ -1,20 +1,36 @@
 // JJARO's app state, the simulation loop, pointer handling and every action the UI
 // takes. Engine code mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore} from '@studio/core';
+import {toolStore, saveFile, copyText} from '@studio/core';
 import {parseColor, oklabToLinear} from '@studio/core/gradient';
 import {Cloth, QUALITY} from './cloth.js';
 import {lightDirs, PATTERN_IDS, PRINT_IDS} from './foil.js';
 import {artFromFile, artFromData, artData, sampleArt} from './art.js';
 import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane} from './renderer.js';
-import {cleanConfig, DEFAULT_CONFIG, ASPECTS, REBUILD_KEYS} from './config.js';
+import {cleanConfig, presetConfig, randomConfig, DEFAULT_CONFIG, PRESETS, ASPECTS, REBUILD_KEYS} from './config.js';
 
 export const saved = toolStore('jjaro');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/* ---------- links ---------- */
+// A link holds the settings (not the artwork, which is too big for a URL) as base64url JSON.
+function configFromHash() {
+  const m = /[#&]c=([A-Za-z0-9_-]+)/.exec(location.hash || '');
+  if (!m) return null;
+  try {
+    const json = new TextDecoder().decode(Uint8Array.from(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+    return cleanConfig(JSON.parse(json));
+  } catch (e) {
+    return null;
+  }
+}
+const fromLink = typeof location === 'undefined' ? null : configFromHash();
 const stored = saved.get('config.v1', null);
+
 export const S = {
-  config: stored ? cleanConfig(stored) : cleanConfig(DEFAULT_CONFIG),
+  config: fromLink || (stored ? cleanConfig(stored) : presetConfig(PRESETS[0].id)),
+  preset: fromLink ? '' : saved.get('preset', stored ? '' : PRESETS[0].id) || '',
+  looks: (saved.get('looks.v1', []) || []).filter(l => l && typeof l.name === 'string' && l.config),
   playing: !reduceMotion,
   time: 0, // seconds of light motion
   supported: true,
@@ -22,6 +38,11 @@ export const S = {
   art: null, // {canvas, name, custom, alpha, aspect}: what the print modes print
   toast: null, // set by the app: (message, kind) => void
 };
+
+if (fromLink) {
+  saved.set('config.v1', S.config); saved.set('preset', '');
+  history.replaceState(null, '', location.pathname + location.search);
+}
 
 let version = 0;
 const subs = new Set();
@@ -34,7 +55,7 @@ export function useStore() {
 let saveTimer = 0;
 function persist() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saved.set('config.v1', S.config), 250);
+  saveTimer = setTimeout(() => { saved.set('config.v1', S.config); saved.set('preset', S.preset); }, 250);
 }
 
 const encode = v => { v = Math.min(1, Math.max(0, v)); return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; };
@@ -214,9 +235,10 @@ function setView(patch) {
 }
 
 /* ---------- editing ---------- */
-function setConfig(cfg) {
+function setConfig(cfg, preset = '') {
   const prev = S.config;
   S.config = cleanConfig(cfg);
+  S.preset = preset;
   persist();
   if (REBUILD_KEYS.some(k => prev[k] !== S.config[k])) build(); else tune();
   if (prev.aspect !== S.config.aspect) fit(); else draw();
@@ -225,6 +247,10 @@ function setConfig(cfg) {
 /** Change one field (e.g. set('wind', 0.5)). */
 export const set = (key, value) => setConfig({...S.config, [key]: value});
 export const setBackground = (i, c) => { const background = S.config.background.slice(); background[i] = c; setConfig({...S.config, background}); };
+
+/** A preset or a whole new look: always a fresh sheet. */
+export const applyPreset = id => { setConfig(presetConfig(id, S.config), id); reset(); };
+export const randomize = () => { setConfig(randomConfig(S.config)); reset(); };
 
 export function togglePlay() { S.playing = !S.playing; last = 0; emit(); }
 /** Start the sheet over from its setup. */
@@ -236,3 +262,68 @@ export function gust() {
   cloth.gust();
 }
 export function resetView() { setView({orbit: DEFAULT_CONFIG.orbit, elevation: DEFAULT_CONFIG.elevation, zoom: DEFAULT_CONFIG.zoom}); }
+
+/* ---------- saved looks, project files and links ---------- */
+const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+const storeLooks = () => saved.set('looks.v1', S.looks);
+
+export function saveLook(name) {
+  name = String(name || '').trim().slice(0, 60);
+  if (!name) return;
+  const i = S.looks.findIndex(l => l.name.toLowerCase() === name.toLowerCase());
+  const look = {name, config: S.config};
+  if (i >= 0) S.looks[i] = look; else S.looks.push(look);
+  storeLooks(); emit();
+  toast(i >= 0 ? `Updated “${name}”` : `Saved “${name}”`);
+}
+export function applyLook(name) {
+  const l = S.looks.find(x => x.name === name);
+  if (l) { setConfig(l.config); reset(); }
+}
+export function deleteLook(name) { S.looks = S.looks.filter(l => l.name !== name); storeLooks(); emit(); }
+
+const fileName = () => 'jjaro-' + (S.preset || S.config.setup) + '-' + S.config.seed;
+
+/** A project file: the settings, plus the artwork when it's a loaded image. */
+export async function saveProject() {
+  const art = S.art?.custom ? {name: S.art.name, data: artData(S.art)} : null;
+  const blob = new Blob([JSON.stringify({app: 'jjaro', version: 1, config: S.config, art}, null, 2)], {type: 'application/json'});
+  const r = await saveFile(fileName() + '.jjaro.json', blob, 'application/json');
+  toast(r.message, r.status === 'error' ? 'error' : 'info');
+}
+
+export async function openProject(file) {
+  if (!file) return;
+  let p;
+  try { p = JSON.parse(await file.text()); } catch (e) { p = null; }
+  if (!p || p.app !== 'jjaro' || typeof p.config !== 'object') return toast('That file is not a JJARO project', 'error');
+  if (typeof p.art?.data === 'string') {
+    try {
+      const art = await artFromData(p.art.data, String(p.art.name || 'Artwork'));
+      saved.set('art.v1', {data: p.art.data, name: art.name});
+      S.art = art;
+    } catch (e) { toast('The artwork in that project could not be read', 'error'); }
+  }
+  setConfig(p.config);
+  reset();
+  toast('Opened ' + file.name);
+}
+
+export async function copyLink() {
+  const bytes = new TextEncoder().encode(JSON.stringify(S.config));
+  const b64 = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const url = location.origin + location.pathname + '#c=' + b64;
+  toast((await copyText(url)) ? 'Link copied' : 'Could not copy the link', 'info');
+}
+
+// A link pasted into an open tab only changes the hash, so apply it without a reload.
+if (typeof window !== 'undefined') {
+  window.addEventListener('hashchange', () => {
+    const cfg = configFromHash();
+    if (!cfg) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    setConfig(cfg);
+    reset();
+    toast('Opened the linked look');
+  });
+}

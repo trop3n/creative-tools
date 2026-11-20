@@ -1,22 +1,24 @@
 // JJARO's panels: the stage, its tool bar, and the inspector.
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import * as stylex from '@stylexjs/stylex';
 import {Button} from '@astryxdesign/core/Button';
 import {Center} from '@astryxdesign/core/Center';
 import {Icon} from '@astryxdesign/core/Icon';
 import {IconButton} from '@astryxdesign/core/IconButton';
-import {HStack} from '@astryxdesign/core/Layout';
+import {HStack, StackItem} from '@astryxdesign/core/Layout';
+import {List, ListItem} from '@astryxdesign/core/List';
 import {Selector} from '@astryxdesign/core/Selector';
 import {Switch} from '@astryxdesign/core/Switch';
 import {Text} from '@astryxdesign/core/Text';
+import {TextInput} from '@astryxdesign/core/TextInput';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
-import {Dices, ImageUp, Pause, Play, RotateCcw, Scan, Wind} from 'lucide-react';
+import {Check, Dices, Download, FolderOpen, ImageUp, Link, Pause, Play, RotateCcw, Save, Scan, Shuffle, Trash2, Wind} from 'lucide-react';
 import {pickFiles} from '@studio/core';
 import {SETUPS} from '../engine/cloth.js';
-import {ASPECTS} from '../engine/config.js';
+import {ASPECTS, METALS, PAPERS, PRESETS} from '../engine/config.js';
 import {PATTERNS, PRINTS, MAX_LIGHTS} from '../engine/foil.js';
 import {
-  useStore, loadArt, clearArt, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
+  useStore, loadArt, clearArt, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
 } from '../engine/live.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
@@ -25,20 +27,6 @@ const styles = stylex.create({
   canvas: {display: 'block', borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-med)', touchAction: 'none', cursor: 'grab'},
   grabbing: {cursor: 'grabbing'},
 });
-
-const METALS = [
-  {name: 'Silver', color: '#dfe3ea'},
-  {name: 'Gold', color: '#e8c27a'},
-  {name: 'Rose gold', color: '#e8b0a0'},
-  {name: 'Gunmetal', color: '#7d838c'},
-];
-
-const PAPERS = [
-  {name: 'Cream', color: '#ece6da'},
-  {name: 'White', color: '#f4f4f2'},
-  {name: 'Black', color: '#1d1d1f'},
-  {name: 'Navy', color: '#00304e'},
-];
 
 const openArt = async () => { const [f] = await pickFiles('image/*'); if (f) loadArt(f); };
 
@@ -105,6 +93,23 @@ export function Inspector() {
   const c = s.config;
   return (
     <>
+      <InspectorSection title="Start from">
+        <Selector
+          label="Preset"
+          isLabelHidden
+          size="sm"
+          width="100%"
+          placeholder="Choose a preset"
+          value={s.preset}
+          options={PRESETS.map(p => ({value: p.id, label: p.name}))}
+          onChange={v => applyPreset(v)}
+        />
+        <HStack gap={1} wrap="wrap">
+          <Button label="Randomize" size="sm" variant="primary" icon={<Icon icon={Shuffle} size={ICON} />} onClick={randomize} />
+        </HStack>
+        <Text type="supporting">Presets and Randomize change the whole look but keep your detail and frame shape.</Text>
+      </InspectorSection>
+
       <InspectorSection title="Sheet">
         <InspectorRow label="Setup">
           <Selector
@@ -243,6 +248,60 @@ export function Inspector() {
         </InspectorRow>
         <Text type="supporting">On a touch screen, pinch to zoom. With a mouse, scroll.</Text>
       </InspectorSection>
+
+      <LooksSection />
     </>
+  );
+}
+
+const openProjectFile = async () => { const [f] = await pickFiles('.json,application/json'); openProject(f); };
+
+function LooksSection() {
+  const {looks} = useStore();
+  const [name, setName] = useState('');
+  const save = () => { if (name.trim()) { saveLook(name); setName(''); } };
+  return (
+    <InspectorSection title="Saved looks">
+      <HStack gap={1}>
+        <StackItem size="fill">
+          <TextInput
+            label="Name for this look"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            placeholder="Name this look"
+            value={name}
+            onChange={v => setName(v)}
+            onKeyDown={e => { if (e.key === 'Enter') save(); }}
+          />
+        </StackItem>
+        <Button label="Save" size="sm" variant="secondary" icon={<Icon icon={Save} size={ICON} />} isDisabled={!name.trim()} onClick={save} />
+      </HStack>
+      {looks.length ? (
+        <List density="compact">
+          {looks.map(l => (
+            <ListItem
+              key={l.name}
+              label={l.name}
+              description={`${SETUPS.find(x => x.id === l.config.setup)?.name ?? ''} · ${PATTERNS.find(x => x.id === l.config.pattern)?.name ?? ''}`}
+              endContent={
+                <HStack gap={0}>
+                  <IconButton label={`Use ${l.name}`} tooltip="Use this look" size="sm" variant="ghost" icon={<Icon icon={Check} size={ICON} />} onClick={() => applyLook(l.name)} />
+                  <IconButton label={`Delete ${l.name}`} tooltip="Delete" size="sm" variant="ghost" icon={<Icon icon={Trash2} size={ICON} />} onClick={() => deleteLook(l.name)} />
+                </HStack>
+              }
+            />
+          ))}
+        </List>
+      ) : (
+        <Text type="supporting">Save a look under a name to come back to it. Looks stay in this browser and use whatever artwork is loaded.</Text>
+      )}
+      <HStack gap={1} wrap="wrap">
+        <Button label="Copy link" size="sm" variant="ghost" icon={<Icon icon={Link} size={ICON} />} onClick={copyLink} />
+        <Button label="Save project" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={saveProject} />
+        <Button label="Open project" size="sm" variant="ghost" icon={<Icon icon={FolderOpen} size={ICON} />} onClick={openProjectFile} />
+      </HStack>
+      <Text type="supporting">A link holds every setting but not your image. A project file holds both. You can also drop a project file on the page.</Text>
+    </InspectorSection>
   );
 }
