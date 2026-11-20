@@ -437,8 +437,8 @@ export function meshPlant(plant, t, cfg, cam, mesh) {
     // The bud rides up the growing stem, then opens once the stem is done.
     const at = sample(c.pts, g), behind = sample(c.pts, Math.max(0, g - 0.08));
     const O = windAt(at.p, t, plant, sway), B = windAt(behind.p, t, plant, sway);
-    // Heads turn partly toward the camera, as a florist would arrange them.
-    const A = norm(add(norm(sub(O, B)), mul(norm(sub(cam.eye, O)), 0.55)));
+    // Heads follow their stem's direction, so they stay put as the camera drifts.
+    const A = norm(sub(O, B));
     const bud = 0.35 + 0.65 * g;
     const open = clamp01((t - H.openAt) / H.bloom);
     head(mesh, plant, H, add(O, mul(A, H.S * 0.15)), A, bud, open, cam);

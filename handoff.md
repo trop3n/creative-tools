@@ -43,7 +43,7 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
   10. Values from project files, keyframes and looks are now clamped to the sliders' ranges.
   11. Shaped-cell SVG export over 1 million cells now explains instead of running out of memory.
   - Checked in headless Edge: same grid on GPU and CPU (320 × 180 for a 1920 px video), paused seeks show the right frame, settings stay locked through an MP4 render, a sound-only file is refused, no console errors. A comparison run against the pre-fix build hung on a seek and was stopped, so the seek check isn't confirmed to catch the old bug.
-  - Not changed (design note from the review): pattern styles in two-tone mode read Threshold 50% as about twice the brightness, so default Bayer and Dots look lighter than the diffusion styles.
+  - ~~Pattern styles in two-tone mode read Threshold 50% as about twice the brightness.~~ **Fixed Nov. 20** in core (`applyField` and `fieldCutoffs` scale by `threshold / 127.5`): 50% now keeps a flat gray's tone, as CMYK already did, so Bayer, Dots and the rest match the diffusion styles. Saved looks, projects and LEELA's Dither effect that use a pattern style come out darker than before. The Bayer, wave and rings test baselines no longer follow the Python reference.
 
 ## LEELA — gradients (session A)
 
@@ -71,10 +71,10 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 **Where it falls short of the reference:**
 - No SVG export, because the scene is 3D.
 - ~~Tulips, daisies and dahlias are simpler.~~ Tuned Nov. 19: tulips are closed, rounded cups (petals curve across their width); daisies have strap rays with round tips and a domed yellow centre; dahlias are about 80 rolled petals on a golden-angle spiral. Carnation, lily and cosmos are unchanged.
-- Flower heads turn partly toward the camera instead of strictly following the stem.
+- ~~Flower heads turn partly toward the camera instead of strictly following the stem.~~ **Changed Nov. 20:** heads follow their stem's direction, as the spec's `HeadSlot` asks, and no longer swivel as the camera drifts. Upright heads now show more of their sides.
 
 **Loose ends:**
-- `origin/bloom` still exists on GitHub. Everything on it is already in `main`, so it can be deleted.
+- ~~`origin/bloom` still exists on GitHub.~~ Deleted Nov. 20.
 - "BLOOM" is a working name. Renaming it means a find-and-replace across `apps/bloom`, `suite.json`, `package.json` and the README.
 
 ## What's next
@@ -83,7 +83,7 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 2. ~~Chromaniac~~ **Built Nov. 19 as THOTH** (`apps/thoth`, port 5185; Thoth was another Marathon AI). Canvas2D source layers (backdrop, image/video/webcam, shape, type) go through a WebGL2 halftone pass (RGB, CMYK, Mono). It exports PNG and MP4, and its engine checks run with `npm test -w @studio/thoth`.
 3. ~~Robotron~~ **Built Nov. 19 as PFHOR** (`apps/pfhor`, port 5186; named after Marathon's alien race). A quadtree over summed-area tables of an image, video, webcam or built-in sample, drawn as circles or squares in a flat palette. Splits ease in only while Resolve animates the threshold. Exports PNG, SVG and MP4; engine checks run with `npm test -w @studio/pfhor`. All four 1stAve specs are now built.
 4. ~~Pasted share links needed a reload~~ **Fixed Nov. 19:** LEELA, BLOOM, TYCHO, THOTH and PFHOR apply a `#c=` link pasted into an open tab (`hashchange`). GLYF and DURANDAL have no share links.
-5. ~~Tune BLOOM's weaker flower kinds~~ and ~~review DURANDAL~~ done Nov. 19. ~~DURANDAL polish~~ **Done Nov. 20:** keyframes take an optional name (kept when a keyframe is updated, saved in project files); a strip of diamonds under the Video position slider moves keyframes by drag or arrow keys (Shift: 10 frames) and refuses a drop onto another keyframe; "Recent projects" keeps a copy of the last five projects saved or opened, in this browser. Still optional: deleting `origin/bloom`.
+5. ~~Tune BLOOM's weaker flower kinds~~ and ~~review DURANDAL~~ done Nov. 19. ~~DURANDAL polish~~ **Done Nov. 20:** keyframes take an optional name (kept when a keyframe is updated, saved in project files); a strip of diamonds under the Video position slider moves keyframes by drag or arrow keys (Shift: 10 frames) and refuses a drop onto another keyframe; "Recent projects" keeps a copy of the last five projects saved or opened, in this browser. ~~Deleting `origin/bloom`~~ done Nov. 20.
 
 ## Gotchas from these sessions
 

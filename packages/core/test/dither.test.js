@@ -1,6 +1,8 @@
 // Engine checks for DURANDAL. Run with `npm test -w @studio/core` (Node 22+).
 // Baseline numbers come from the Python reference engine in the dither research,
-// which the JS engine matched pixel for pixel when it was ported.
+// which the JS engine matched pixel for pixel when it was ported. Exception: pattern
+// styles in two tones now treat 50% threshold as true coverage (the reference read it
+// as about twice as light), so the Bayer, wave and rings numbers are this engine's own.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -38,7 +40,7 @@ test('matches the reference engine coverage', () => {
   const baseline = {
     'floyd-steinberg': 0.4497, atkinson: 0.4407, 'jarvis-judice-ninke': 0.45, stucki: 0.4502,
     burkes: 0.4512, sierra: 0.451, 'two-row-sierra': 0.4507, 'sierra-lite': 0.4497,
-    wave: 0.7498, rings: 0.6733, scanline: 0.4545,
+    wave: 0.47, rings: 0.5175, scanline: 0.4545,
   };
   for (const [id, want] of Object.entries(baseline)) {
     assert.ok(Math.abs(whiteFraction(run(id)) - want) < 0.002, `${id}: ${whiteFraction(run(id))} vs ${want}`);
@@ -67,7 +69,8 @@ test('Bayer matrices are correct and coverage does not depend on size', () => {
   const m = bayerMatrix(16).flat().sort((a, b) => a - b);
   assert.deepEqual(m, [...Array(256).keys()]);
   const cover = [2, 4, 8, 16].map(size => whiteFraction(run('bayer', {size})));
-  for (const c of cover) assert.ok(Math.abs(c - 0.6745) < 0.002, `Bayer coverage ${c}`);
+  // Close to the diffusion styles' 0.45; a 2×2 matrix has only five levels, hence the slack.
+  for (const c of cover) assert.ok(Math.abs(c - 0.45) < 0.01, `Bayer coverage ${c}`);
 });
 
 test('serpentine scan still keeps tone', () => {
@@ -125,7 +128,7 @@ test('field cutoffs give the same answer as the CPU compare, in float32', () => 
     for (const thr of [0, 37.4, 127.5, 255]) {
       const field = s.field(w, h, params), cut = fieldCutoffs(field, w, h, thr);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const c = field(x, y) * (thr / 255), k = cut[y * w + x];
+        const c = field(x, y) * (thr / 127.5), k = cut[y * w + x];
         // Pixel values right at and around the cutoff, plus every whole level.
         for (const raw of [c, k, Math.floor(c), Math.ceil(c), c + 1e-6, c - 1e-6]) {
           v32[0] = raw; const v = v32[0];
@@ -326,9 +329,18 @@ test('new pattern fields stay in 0..255 and track tone', () => {
   }
 });
 
+test('two tones: pattern styles at the default 50% threshold keep a flat gray’s tone', () => {
+  // At 50% the field itself is the cutoff, as in CMYK (it used to read as about twice as light).
+  for (const id of ['bayer', 'bittone', 'stipple', 'noise', 'dots', 'lines']) {
+    const {mask} = ditherGray(new Float32Array(240 * 160).fill(128), 240, 160, {style: id, params: {}, block: 1, threshold: 50});
+    const white = mask.reduce((a, v) => a + (v ? 1 : 0), 0) / mask.length;
+    assert.ok(Math.abs(white - 0.5) < 0.03, `${id}: mid gray gave ${white.toFixed(3)} white`);
+  }
+});
+
 test('crosshatch keeps the tone of a flat gray', () => {
   for (const g of [64, 128, 192]) {
-    const {mask} = ditherGray(new Float32Array(300 * 200).fill(g), 300, 200, {style: 'crosshatch', params: {}, block: 1, threshold: 100});
+    const {mask} = ditherGray(new Float32Array(300 * 200).fill(g), 300, 200, {style: 'crosshatch', params: {}, block: 1, threshold: 50});
     const white = mask.reduce((a, v) => a + (v ? 1 : 0), 0) / mask.length;
     assert.ok(Math.abs(white - g / 255) < 0.06, `${g} gray: ${white.toFixed(3)} white`);
   }

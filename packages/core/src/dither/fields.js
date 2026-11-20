@@ -2,7 +2,10 @@
 // spatial pattern (the "field", 0..255), so pixels never depend on each other.
 // That makes these styles cheap and a good fit for a GPU shader later.
 //
-//   white  if  pixel > field(x, y) * threshold / 255
+//   white  if  pixel > field(x, y) * threshold / 127.5
+//
+// so the default threshold (50%, 127.5) compares against the field itself and a flat
+// gray keeps its tone, as in CMYK. Higher thresholds darken, lower ones lighten.
 //
 // New looks come from new field functions; the rule stays the same.
 
@@ -200,11 +203,11 @@ const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
 /**
  * Per-pixel cutoffs for a field, as float32 values `c` chosen so that, for any
  * float32 pixel value v, `v > c` gives exactly the same answer as applyField's
- * `v > field(x, y) * threshold / 255` (worked out in doubles). A GPU shader can
+ * `v > field(x, y) * threshold / 127.5` (worked out in doubles). A GPU shader can
  * then threshold with one float32 compare and match the CPU bit for bit.
  */
 export function fieldCutoffs(field, w, h, threshold) {
-  const scale = threshold / 255, out = new Float32Array(w * h);
+  const scale = threshold / 127.5, out = new Float32Array(w * h);
   for (let y = 0, p = 0; y < h; y++) {
     for (let x = 0; x < w; x++, p++) {
       const c = field(x, y) * scale;
@@ -219,7 +222,7 @@ export function fieldCutoffs(field, w, h, threshold) {
 
 /** Threshold `buf` in place against a field. */
 export function applyField(buf, w, h, field, threshold) {
-  const scale = threshold / 255;
+  const scale = threshold / 127.5;
   for (let y = 0, p = 0; y < h; y++) {
     for (let x = 0; x < w; x++, p++) buf[p] = buf[p] > field(x, y) * scale ? 255 : 0;
   }
