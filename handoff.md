@@ -57,7 +57,7 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 
 **Where it falls short of the reference:**
 - No SVG export, because the scene is 3D.
-- Carnations and lilies match best. Tulips, daisies and dahlias are simpler.
+- ~~Tulips, daisies and dahlias are simpler.~~ Tuned Nov. 19: tulips are closed, rounded cups (petals curve across their width); daisies have strap rays with round tips and a domed yellow centre; dahlias are about 80 rolled petals on a golden-angle spiral. Carnation, lily and cosmos are unchanged.
 - Flower heads turn partly toward the camera instead of strictly following the stem.
 
 **Loose ends:**
@@ -70,7 +70,7 @@ The sessions didn't deploy anything. The suite hasn't been published since this 
 2. ~~Chromaniac~~ **Built Nov. 19 as THOTH** (`apps/thoth`, port 5185; Thoth was another Marathon AI). Canvas2D source layers (backdrop, image/video/webcam, shape, type) go through a WebGL2 halftone pass (RGB, CMYK, Mono). It exports PNG and MP4, and its engine checks run with `npm test -w @studio/thoth`.
 3. ~~Robotron~~ **Built Nov. 19 as PFHOR** (`apps/pfhor`, port 5186; named after Marathon's alien race). A quadtree over summed-area tables of an image, video, webcam or built-in sample, drawn as circles or squares in a flat palette. Splits ease in only while Resolve animates the threshold. Exports PNG, SVG and MP4; engine checks run with `npm test -w @studio/pfhor`. All four 1stAve specs are now built.
 4. ~~Pasted share links needed a reload~~ **Fixed Nov. 19:** LEELA, BLOOM, TYCHO, THOTH and PFHOR apply a `#c=` link pasted into an open tab (`hashchange`). GLYF and DURANDAL have no share links.
-5. Optional: tune BLOOM's weaker flower kinds, do the DURANDAL polish and review listed above, and delete `origin/bloom`.
+5. ~~Tune BLOOM's weaker flower kinds~~ done Nov. 19. Still optional: the DURANDAL polish and review listed above, and deleting `origin/bloom`.
 
 ## Gotchas from these sessions
 

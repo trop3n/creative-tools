@@ -38,15 +38,23 @@ function basis(a) {
 /* ---------- species ---------- */
 // Each recipe returns its petal rings for head size S. A ring: count, petal length and
 // half-width, opening angle from the head's axis, curl (extra bend toward the tip),
-// cup (edges lifted toward the axis), outline profile, and tip teeth.
+// cup (edges bent away from the head's axis; negative wraps them toward it), outline
+// profile, and tip teeth. Optional: cols
+// (columns each side of the midrib, for petals that curve smoothly across), phase (the
+// ring's turn offset, as a fraction) and jitter (random turn per petal, default 0.12).
 const PROFILES = {
   fan: s => 0.18 + 0.82 * s ** 0.55, // carnation: narrow claw, wide frilled tip
   lance: s => Math.sin(Math.PI * s) ** 0.7, // lily, daisy: pointed both ends
-  oval: s => Math.sqrt(Math.max(0, Math.sin(Math.PI * (0.1 + 0.9 * s)))), // tulip: rounded tip
   obovate: s => 0.2 + 0.8 * Math.sin(Math.PI * 0.5 * Math.min(1, s * 1.25)), // cosmos: widest near the tip
-  spike: s => Math.sin(Math.PI * s) ** 1.1, // dahlia: folded points
+  // tulip: narrow at the base, widest past the middle, a rounded cap at the tip
+  tulip: s => (s < 0.58 ? 0.62 + 0.38 * Math.sin((Math.PI / 2) * (s / 0.58)) : Math.sqrt(Math.max(0, 1 - ((s - 0.58) / 0.42) ** 2))),
+  // daisy: a strap with parallel sides and a round end
+  strap: s => (s < 0.12 ? 0.35 + 0.65 * (s / 0.12) : s < 0.8 ? 1 : Math.sqrt(Math.max(0, 1 - ((s - 0.8) / 0.2) ** 2))),
+  // dahlia: a broad, blunt-pointed quill
+  quill: s => Math.sin(Math.PI * Math.min(1, 0.04 + s * 0.96)) ** 0.5,
   leaf: s => Math.sin(Math.PI * s ** 0.75) ** 0.85,
 };
+const GOLDEN = 0.3819660112501051; // the golden angle, as a fraction of a turn
 
 export const SPECIES = {
   carnation: {
@@ -69,17 +77,20 @@ export const SPECIES = {
   tulip: {
     name: 'Tulip',
     calyx: false,
+    // Six broad petals in two rings, their edges wrapping toward the centre (negative cup)
+    // so together they make a closed, rounded cup with the tips turned slightly in.
     rings: S => [
-      {count: 3, len: S * 1.15, width: S * 0.46, theta: 16, curl: -0.3, cup: 0.6, profile: 'oval', base: S * 0.04, vBase: 0, vSpan: 1, segs: 7},
-      {count: 3, len: S * 1.1, width: S * 0.42, theta: 10, curl: -0.25, cup: 0.6, profile: 'oval', base: S * 0.02, vBase: 0.05, vSpan: 0.95, segs: 7, phase: 0.5},
+      {count: 3, len: S * 1.25, width: S * 0.56, theta: 20, curl: -0.32, cup: -0.95, profile: 'tulip', base: S * 0.03, vBase: 0, vSpan: 1, segs: 12, cols: 3},
+      {count: 3, len: S * 1.18, width: S * 0.5, theta: 13, curl: -0.28, cup: -0.95, profile: 'tulip', base: S * 0.01, vBase: 0.05, vSpan: 0.95, segs: 12, cols: 3, phase: 0.5},
     ],
   },
   daisy: {
     name: 'Daisy',
-    disc: {radius: 0.3, dots: 46},
+    // A domed yellow centre, ringed by flat strap-shaped rays with round ends.
+    disc: {radius: 0.32, dots: 70, dome: 0.4, color: [1, 0.8, 0.16], dot: [0.86, 0.52, 0.05]},
     rings: S => [
-      {count: 21, len: S * 1.15, width: S * 0.1, theta: 84, curl: 0.25, cup: 0.2, profile: 'lance', base: S * 0.22, vBase: 0, vSpan: 1, segs: 5},
-      {count: 21, len: S * 1.05, width: S * 0.09, theta: 76, curl: 0.2, cup: 0.2, profile: 'lance', base: S * 0.2, vBase: 0.06, vSpan: 0.9, segs: 5, phase: 0.5},
+      {count: 22, len: S * 1.22, width: S * 0.14, theta: 86, curl: 0.12, cup: 0.12, profile: 'strap', base: S * 0.26, vBase: 0, vSpan: 1, segs: 11},
+      {count: 22, len: S * 1.1, width: S * 0.13, theta: 80, curl: 0.1, cup: 0.12, profile: 'strap', base: S * 0.24, vBase: 0.06, vSpan: 0.9, segs: 11, phase: 0.5},
     ],
   },
   cosmos: {
@@ -92,10 +103,13 @@ export const SPECIES = {
   dahlia: {
     name: 'Dahlia',
     calyx: true,
-    rings: S => Array.from({length: 8}, (_, r) => {
-      const f = r / 7;
-      return {count: 8 + Math.round(f * 14), len: S * (0.32 + 0.78 * f), width: S * (0.11 + 0.13 * f), theta: 8 + f * 96,
-        curl: 0.15, cup: 0.9, profile: 'spike', base: S * 0.04 * f, vBase: (1 - f) * 0.1, vSpan: 0.9, segs: 5};
+    // About eighty petals on a golden-angle spiral, each rolled toward the flower's face
+    // into a quill: tight and curled in at the centre, opening out toward the rim.
+    rings: S => Array.from({length: 84}, (_, i) => {
+      const f = i / 83;
+      return {count: 1, phase: i * GOLDEN, jitter: 0.004, len: S * (0.26 + 0.82 * f ** 0.8), width: S * (0.14 + 0.16 * f), theta: 6 + 104 * f ** 1.15,
+        curl: f < 0.35 ? -0.7 * (1 - f / 0.35) : 0.22 * (f - 0.35), cup: -1.1, profile: 'quill', base: S * 0.05 * f,
+        vBase: (1 - f) * 0.25, vSpan: 0.8, segs: 7, cols: 2};
     }),
   },
 };
@@ -132,10 +146,10 @@ function makeHead(R, cfg, species, rampCount, S) {
     for (let k = 0; k < ring.count; k++) {
       petals.push({
         ring: r, ringFrac: ringDefs.length > 1 ? r / (ringDefs.length - 1) : 1,
-        az: (k / ring.count + phase + (R() - 0.5) * 0.12 / ring.count) * TAU,
+        az: (k / ring.count + phase + (R() - 0.5) * (ring.jitter ?? 0.12) / ring.count) * TAU,
         len: ring.len * (0.86 + 0.28 * R()), width: ring.width * (0.85 + 0.3 * R()),
         theta: (ring.theta + (R() - 0.5) * 10) * RAD, curl: ring.curl * (0.8 + 0.4 * R()), cup: ring.cup,
-        profile: PROFILES[ring.profile], segs: ring.segs, base: ring.base,
+        profile: PROFILES[ring.profile], segs: ring.segs, cols: ring.cols || 1, base: ring.base,
         vBase: ring.vBase, vSpan: ring.vSpan, jit: (R() - 0.5) * 0.18,
         teeth: ring.teeth ? Array.from({length: ring.teeth}, () => ({len: ring.toothLen * (0.4 + R()), off: (R() - 0.5) * 0.4})) : null,
       });
@@ -278,40 +292,46 @@ function petal(mesh, O, A, U, V, P, open, scale, lut) {
   const curl = P.curl * open;
   const L = P.len * scale, HW = P.width * scale;
   let p = add(O, mul(r, P.base * scale));
-  let prev = null, d = A;
+  let prev = null, prevIdx = null, d = A;
   const vOf = s => P.vBase + s * P.vSpan + P.jit;
+  // Each row runs across the petal: 2·C + 1 points from edge to edge. Edges lift toward the
+  // axis by cup·x², and the midrib is a shade lighter. With C = 1 this is the original
+  // three-point petal: edges lifted, a flat V.
+  const C = P.cols;
   for (let i = 0; i <= P.segs; i++) {
     const s = i / P.segs;
     const th = theta + curl * s * s;
     d = add(mul(A, Math.cos(th)), mul(r, Math.sin(th)));
     const hw = HW * P.profile(s);
     const n = cross(w, d);
-    const lift = mul(n, hw * P.cup * 0.6);
-    const row = [add(sub(p, mul(w, hw)), lift), p, add(add(p, mul(w, hw)), lift), lutIndex(vOf(s)), lutIndex(vOf(s) + 0.05)];
-    if (prev) {
-      mesh.quad(prev[0], prev[1], row[1], row[0], lut, prev[3], prev[4], row[4], row[3]);
-      mesh.quad(prev[1], prev[2], row[2], row[1], lut, prev[4], prev[3], row[3], row[4]);
+    const row = [], idx = [];
+    for (let j = -C; j <= C; j++) {
+      const x = j / C;
+      row.push(add(add(p, mul(w, x * hw)), mul(n, hw * P.cup * 0.6 * x * x)));
+      idx.push(lutIndex(vOf(s) + 0.05 * (1 - Math.abs(x))));
     }
-    prev = row;
+    if (prev) for (let j = 0; j < 2 * C; j++) mesh.quad(prev[j], prev[j + 1], row[j + 1], row[j], lut, prevIdx[j], prevIdx[j + 1], idx[j + 1], idx[j]);
+    prev = row; prevIdx = idx;
     if (i < P.segs) p = add(p, mul(d, L / P.segs));
   }
   if (P.teeth && prev) {
-    const n = P.teeth.length, tip = lutIndex(vOf(1) + 0.04);
+    const n = P.teeth.length, tip = lutIndex(vOf(1) + 0.04), edge = prevIdx[0];
+    const a0 = prev[0], a1 = prev[2 * C];
     for (let k = 0; k < n; k++) {
-      const a = lerp3(prev[0], prev[2], k / n), b = lerp3(prev[0], prev[2], (k + 1) / n);
+      const a = lerp3(a0, a1, k / n), b = lerp3(a0, a1, (k + 1) / n);
       const apex = add(lerp3(a, b, 0.5 + P.teeth[k].off * 0.5), mul(d, L * P.teeth[k].len));
-      mesh.tri(a, b, apex, lut, prev[3], prev[3], tip);
+      mesh.tri(a, b, apex, lut, edge, edge, tip);
     }
   }
 }
 
-/** A flat disc in the plane spanned by U and V. */
-function disc(mesh, c, U, V, rad, lut, idx, sides = 10) {
+/** A disc in the plane spanned by U and V; with `apex`, its centre rises to that point (a low cone). */
+function disc(mesh, c, U, V, rad, lut, idx, sides = 10, apex = c) {
   for (let i = 0; i < sides; i++) {
     const a0 = (i / sides) * TAU, a1 = ((i + 1) / sides) * TAU;
     const p0 = add(c, mul(add(mul(U, Math.cos(a0)), mul(V, Math.sin(a0))), rad));
     const p1 = add(c, mul(add(mul(U, Math.cos(a1)), mul(V, Math.sin(a1))), rad));
-    mesh.tri(c, p0, p1, lut, idx, idx, idx);
+    mesh.tri(apex, p0, p1, lut, idx, idx, idx);
   }
 }
 
@@ -334,14 +354,21 @@ function head(mesh, plant, H, O, A, bud, open, cam) {
   }
   const eo = easeOut(open);
   if (H.disc && eo > 0) {
-    const rad = H.S * H.disc.radius * bud * (0.4 + 0.6 * eo);
+    const D = H.disc;
+    const rad = H.S * D.radius * bud * (0.4 + 0.6 * eo);
     const c = add(O, mul(A, rad * 0.25));
-    disc(mesh, c, U, V, rad, lut, lutIndex(0.92), 14);
-    const dots = H.disc.dots, dot = lutIndex(0.02);
+    // A domed centre (daisy) rises toward its middle; its florets follow the dome.
+    const dome = (D.dome || 0) * rad;
+    // A disc with its own colours (daisy yellow) ignores the petal ramp.
+    const discLut = D.color ? new Float32Array([...D.color, ...(D.dot || D.color)]) : lut;
+    const face = D.color ? 0 : lutIndex(0.92), dot = D.color ? 3 : lutIndex(0.02);
+    disc(mesh, c, U, V, rad, discLut, face, 18, add(c, mul(A, dome)));
+    const dots = D.dots;
     for (let i = 0; i < dots; i++) {
-      const rr = rad * 0.9 * Math.sqrt((i + 0.5) / dots), a = i * 2.39996 + H.discSeed * TAU;
-      const pc = add(add(c, mul(add(mul(U, Math.cos(a)), mul(V, Math.sin(a))), rr)), mul(A, rad * 0.05 + 0.002));
-      disc(mesh, pc, U, V, rad * 0.085, lut, dot, 6);
+      const q = (i + 0.5) / dots, rr = rad * 0.9 * Math.sqrt(q), a = i * 2.39996 + H.discSeed * TAU;
+      const h = dome * (1 - rr / rad) + rad * 0.05 + 0.002;
+      const pc = add(add(c, mul(add(mul(U, Math.cos(a)), mul(V, Math.sin(a))), rr)), mul(A, h));
+      disc(mesh, pc, U, V, rad * (D.color ? 0.07 : 0.085), discLut, dot, 6);
     }
   }
   if (H.stamens && eo > 0) {
