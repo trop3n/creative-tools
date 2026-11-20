@@ -64,6 +64,15 @@
       "category": "Image effects",
       "description": "Turn a picture, video or webcam into a quadtree mosaic: big shapes where it's flat, small ones where it's busy, in a flat palette, with resolve and scatter loops. Exports PNG, SVG and MP4.",
       "preview": "pfhor.svg"
+    },
+    {
+      "id": "jjaro",
+      "name": "JJARO",
+      "app": "apps/jjaro",
+      "path": "jjaro/",
+      "category": "Generators",
+      "description": "A sheet of holographic foil you can hang, drape, drop and drag. Grooves split moving studio lights into rainbows; print kinegrams, foil stamps or ink from your own artwork. Exports PNG and looping MP4.",
+      "preview": "jjaro.svg"
     }
   ]
 }

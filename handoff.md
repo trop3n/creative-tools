@@ -87,6 +87,23 @@ npm run build                                  # whole suite → dist/
 - ~~`origin/bloom` still exists on GitHub.~~ Deleted Nov. 20.
 - "BLOOM" is a working name. Renaming it means a find-and-replace across `apps/bloom`, `suite.json`, `package.json` and the README.
 
+## JJARO — holographic-foil cloth (Nov. 20)
+
+**Status:** Built from `holocloth-research` on kaizen, as an original take rather than a copy of that app. In the suite at `apps/jjaro` (port 5187), with a `suite.json` entry, a launcher preview, root `dev:jjaro`/`build:jjaro` scripts and its checks in the root `npm test`. Commits: `45f7f9e` (cloth, foil, printing), `d5b0fd3` (presets, looks, links, projects), `a29719a` (effects and export), then the suite wiring. Deployed to `pve` Nov. 20: https://pve.tail5e1c3e.ts.net/jjaro/
+
+**What it has:**
+- **Cloth:** Verlet with structural, shear and bend constraints, a fixed 120 Hz step, long-range tethers to the pins (so hung sheets don't sag to twice their length), grip friction and self-repulsion. Five setups: hung by two corners, hung along one edge, draped over a hidden ball, dropped in a heap, floating. Drag with a mouse or touch (a soft patch follows; a pinned corner moves its pin); dragging the backdrop orbits; scroll or pinch zooms; wind with gusts.
+- **Foil:** a diffraction grating (Stam 1999) with Wyman's CIE fit, orders 1–3, four groove patterns (lines, rings, mosaic, swirl), metal tints, and 1–3 soft boxes sweeping on a loop. The drawn surface is a Catmull–Rom refinement three times finer than the simulation, which removed the triangle jaggies.
+- **Printing:** kinegram (grooves turned a quarter turn inside the artwork), foil stamp on matte paper, and ink on foil, from a dropped or pasted image or a sample star. The image is kept in localStorage (capped at 1024 px).
+- **Suite features:** eight presets, Randomize (both keep Detail and Frame), saved looks, `#c=` share links with `hashchange`, `.jjaro.json` project files (these carry the image; links and looks don't).
+- **Export:** glow, depth of field (BLOOM's gather) and grain. PNG up to 8192 px in padded tiles, optionally transparent. MP4 at 1080/1440/2160 freezes the folds and loops whole rounds of the lights, with an optional 6° camera sway.
+
+**Left open:**
+- Touch dragging hasn't been tried on a real phone or tablet.
+- The heap can show small spots where folds pass through each other.
+- The research's pour-liquid feature was left out of v1 on purpose; it could come back later as a small "droplets" feature.
+- Spectrum order was checked by eye, not numerically.
+
 ## What's next
 
 1. ~~Geomator~~ **Done Nov. 19 as TYCHO** (`apps/tycho`, port 5184). It draws flat Canvas2D, exports PNG, SVG and MP4, and runs its engine checks with `npm test -w @studio/tycho`.
@@ -94,6 +111,7 @@ npm run build                                  # whole suite → dist/
 3. ~~Robotron~~ **Built Nov. 19 as PFHOR** (`apps/pfhor`, port 5186; named after Marathon's alien race). A quadtree over summed-area tables of an image, video, webcam or built-in sample, drawn as circles or squares in a flat palette. Splits ease in only while Resolve animates the threshold. Exports PNG, SVG and MP4; engine checks run with `npm test -w @studio/pfhor`. All four 1stAve specs are now built.
 4. ~~Pasted share links needed a reload~~ **Fixed Nov. 19:** LEELA, BLOOM, TYCHO, THOTH and PFHOR apply a `#c=` link pasted into an open tab (`hashchange`). GLYF and DURANDAL have no share links.
 5. ~~Tune BLOOM's weaker flower kinds~~ and ~~review DURANDAL~~ done Nov. 19. ~~DURANDAL polish~~ **Done Nov. 20:** keyframes take an optional name (kept when a keyframe is updated, saved in project files); a strip of diamonds under the Video position slider moves keyframes by drag or arrow keys (Shift: 10 frames) and refuses a drop onto another keyframe; "Recent projects" keeps a copy of the last five projects saved or opened, in this browser. ~~Deleting `origin/bloom`~~ done Nov. 20.
+6. ~~Holographic foil (`holocloth-research`)~~ **Built Nov. 20 as JJARO** (see above) and deployed to `pve`.
 
 ## Gotchas from these sessions
 

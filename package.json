@@ -15,7 +15,7 @@
     "serve": "node scripts/serve.mjs",
     "dev:durandal": "node scripts/check-node.cjs && npm run dev -w @studio/durandal",
     "build:durandal": "node scripts/check-node.cjs && npm run build -w @studio/durandal",
-    "test": "node scripts/check-node.cjs && npm test -w @studio/core -w @studio/tycho -w @studio/thoth -w @studio/pfhor",
+    "test": "node scripts/check-node.cjs && npm test -w @studio/core -w @studio/tycho -w @studio/thoth -w @studio/pfhor -w @studio/jjaro",
     "dev:leela": "node scripts/check-node.cjs && npm run dev -w @studio/leela",
     "build:leela": "node scripts/check-node.cjs && npm run build -w @studio/leela",
     "dev:bloom": "node scripts/check-node.cjs && npm run dev -w @studio/bloom",
@@ -25,7 +25,9 @@
     "dev:thoth": "node scripts/check-node.cjs && npm run dev -w @studio/thoth",
     "build:thoth": "node scripts/check-node.cjs && npm run build -w @studio/thoth",
     "dev:pfhor": "node scripts/check-node.cjs && npm run dev -w @studio/pfhor",
-    "build:pfhor": "node scripts/check-node.cjs && npm run build -w @studio/pfhor"
+    "build:pfhor": "node scripts/check-node.cjs && npm run build -w @studio/pfhor",
+    "dev:jjaro": "node scripts/check-node.cjs && npm run dev -w @studio/jjaro",
+    "build:jjaro": "node scripts/check-node.cjs && npm run build -w @studio/jjaro"
   },
   "engines": {
     "node": ">=22"

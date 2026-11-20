@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.45" r="0.75">
+      <stop offset="0" stop-color="#2a2d34"/>
+      <stop offset="1" stop-color="#0c0d10"/>
+    </radialGradient>
+    <linearGradient id="foil" x1="0" y1="0" x2="1" y2="0.35">
+      <stop offset="0" stop-color="#8e949c"/>
+      <stop offset="0.12" stop-color="#e9ecf0"/>
+      <stop offset="0.2" stop-color="#e98bb0"/>
+      <stop offset="0.26" stop-color="#f1d36b"/>
+      <stop offset="0.32" stop-color="#90d39a"/>
+      <stop offset="0.38" stop-color="#7fb2e6"/>
+      <stop offset="0.46" stop-color="#b9a2e8"/>
+      <stop offset="0.56" stop-color="#f4f5f7"/>
+      <stop offset="0.7" stop-color="#9aa0a8"/>
+      <stop offset="0.8" stop-color="#7fb2e6"/>
+      <stop offset="0.86" stop-color="#90d39a"/>
+      <stop offset="0.92" stop-color="#f1d36b"/>
+      <stop offset="1" stop-color="#d9dde2"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0d10" stop-opacity="0.75"/>
+      <stop offset="0.6" stop-color="#0c0d10" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#0c0d10" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="sheet">
+      <path d="M128 34 Q200 92 272 34 L281 196 Q262 206 244 199 Q222 208 200 200 Q178 208 156 199 Q138 206 120 196 Z"/>
+    </clipPath>
+  </defs>
+  <rect width="400" height="240" fill="url(#bg)"/>
+  <g transform="translate(200 122) scale(1.32) translate(-200 -120)">
+  <g clip-path="url(#sheet)">
+    <rect x="110" y="30" width="180" height="180" fill="url(#foil)"/>
+    <!-- The sag under the pins: two U-shaped folds, dark inside, bright on their rims. -->
+    <path d="M124 52 Q200 128 276 52 L276 84 Q200 152 124 84 Z" fill="url(#fold)"/>
+    <path d="M124 104 Q200 170 276 104 L276 128 Q200 188 124 128 Z" fill="url(#fold)" opacity="0.8"/>
+    <path d="M124 46 Q200 116 276 46" fill="none" stroke="url(#shine)" stroke-width="7" opacity="0.9"/>
+    <path d="M124 98 Q200 160 276 98" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.55"/>
+    <path d="M124 150 Q200 194 276 150" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.35"/>
+  </g>
+  <circle cx="128" cy="34" r="3" fill="#dfdfdf"/>
+  <circle cx="272" cy="34" r="3" fill="#dfdfdf"/>
+  </g>
+</svg>
