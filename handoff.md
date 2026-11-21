@@ -1,18 +1,22 @@
-# Handoff — creative-tools, Nov. 18–19, 2026
+# Handoff — creative-tools, Nov. 18–20, 2026
 
-Two Claude Code sessions worked in this repo on the evening of Nov. 18. Both finished and pushed their work. `main` is clean and matches `origin/main` at `d25349b` ("Merge main into bloom").
+**Current state (Nov. 20):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). `pve` runs the build from `a9d1168`.
+
+The suite holds nine apps: `launcher`, `glyf`, `durandal`, `leela`, `bloom`, `tycho`, `thoth`, `pfhor` and `jjaro`. All are registered in `suite.json` and have `dev:` and `build:` scripts in the root `package.json`. Shared code lives in `packages/core` (dither engine, gradient engine, `encodeFramesToMp4`, hand-off store). `npm test` runs the engine checks for core, TYCHO, THOTH, PFHOR and JJARO; all pass.
+
+```
+npm run dev:<app>      # single app (ports 5170–5187; see README)
+npm test               # engine checks
+npm run build          # whole suite → dist/
+```
+
+**History:** Two Claude Code sessions started the work on the evening of Nov. 18. Later sessions (Nov. 19–20) built TYCHO, THOTH, PFHOR and JJARO, polished DURANDAL and deployed the suite.
 
 | Session | Tools | Started from |
 |---|---|---|
 | A (run in `~/dev/creative-tools`) | DURANDAL, then LEELA | `~/dither-research`, then `~/hazeglow-research/ALGORITHMS.md` |
 | B (run in `~`, used a temporary worktree) | BLOOM | `~/creative/specs/1stave-effects/01-procedural-botanical.md` |
-
-The suite now holds five apps: `launcher`, `glyf`, `durandal`, `leela` and `bloom`. All are registered in `suite.json` and have `dev:` and `build:` scripts in the root `package.json`. Shared code lives in `packages/core` (dither engine, gradient engine, `encodeFramesToMp4`, hand-off store).
-
-```
-npm run dev:durandal | dev:leela | dev:bloom   # single app
-npm run build                                  # whole suite → dist/
-```
+| Nov. 19–20 | TYCHO, THOTH, PFHOR, DURANDAL polish, deploy, JJARO | the 1stAve specs, then `holocloth-research` on kaizen |
 
 ~~The sessions didn't deploy anything.~~ **Deployed Nov. 20** (last at `a9d1168`) to `pve`, the Proxmox host, for now: **https://pve.tail5e1c3e.ts.net/**, tailnet only.
 
@@ -89,7 +93,7 @@ npm run build                                  # whole suite → dist/
 
 ## JJARO — holographic-foil cloth (Nov. 20)
 
-**Status:** Built from `holocloth-research` on kaizen, as an original take rather than a copy of that app. In the suite at `apps/jjaro` (port 5187), with a `suite.json` entry, a launcher preview, root `dev:jjaro`/`build:jjaro` scripts and its checks in the root `npm test`. Commits: `45f7f9e` (cloth, foil, printing), `d5b0fd3` (presets, looks, links, projects), `a29719a` (effects and export), then the suite wiring. Deployed to `pve` Nov. 20: https://pve.tail5e1c3e.ts.net/jjaro/
+**Status:** Built from `holocloth-research` on kaizen, as an original take rather than a copy of that app. In the suite at `apps/jjaro` (port 5187), with a `suite.json` entry, a launcher preview, root `dev:jjaro`/`build:jjaro` scripts and its checks in the root `npm test`. Commits: `45f7f9e` (cloth, foil, printing), `d5b0fd3` (presets, looks, links, projects), `a29719a` (effects and export), `a9d1168` (suite wiring). Deployed to `pve` Nov. 20: https://pve.tail5e1c3e.ts.net/jjaro/
 
 **What it has:**
 - **Cloth:** Verlet with structural, shear and bend constraints, a fixed 120 Hz step, long-range tethers to the pins (so hung sheets don't sag to twice their length), grip friction and self-repulsion. Five setups: hung by two corners, hung along one edge, draped over a hidden ball, dropped in a heap, floating. Drag with a mouse or touch (a soft patch follows; a pinned corner moves its pin); dragging the backdrop orbits; scroll or pinch zooms; wind with gusts.
@@ -113,9 +117,12 @@ npm run build                                  # whole suite → dist/
 5. ~~Tune BLOOM's weaker flower kinds~~ and ~~review DURANDAL~~ done Nov. 19. ~~DURANDAL polish~~ **Done Nov. 20:** keyframes take an optional name (kept when a keyframe is updated, saved in project files); a strip of diamonds under the Video position slider moves keyframes by drag or arrow keys (Shift: 10 frames) and refuses a drop onto another keyframe; "Recent projects" keeps a copy of the last five projects saved or opened, in this browser. ~~Deleting `origin/bloom`~~ done Nov. 20.
 6. ~~Holographic foil (`holocloth-research`)~~ **Built Nov. 20 as JJARO** (see above) and deployed to `pve`.
 
+Nothing from this list is open. Remaining ideas: try JJARO's touch dragging on a real phone or tablet, move the `pve` deploy into an LXC container, and the open items under each tool above.
+
 ## Gotchas from these sessions
 
 - **Two agents in one repo:** Session B used a separate worktree on a branch and held off merging until session A was idle. Reuse that pattern if you run parallel sessions again.
 - **Line endings:** `packages/build/inline.js` sometimes shows as modified with no content change (CRLF). Both sessions left it out of commits on purpose.
 - **Shell heredocs and `sed` anchors** broke several edits on Windows (CRLF, quoting). The sessions fell back to the Edit tool.
 - **Checking the apps:** Sessions used headless Edge screenshots and scripted clicks. "Send to DURANDAL" works only in the built suite (`npm run build`, served together), not between separate dev servers.
+- **Checking exports headlessly:** The JJARO session drove Edge over CDP (port 9335) and caught exports with a stand-in `window.claude.use('downloads')`, then checked MP4 loops with ffmpeg. A real browser download wasn't tested.
