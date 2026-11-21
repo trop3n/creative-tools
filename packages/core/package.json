@@ -11,6 +11,7 @@
     "./storage": "./src/storage.js",
     "./media": "./src/media.js",
     "./video-export": "./src/video-export.js",
+    "./frames": "./src/frames.js",
     "./dither": "./src/dither/index.js",
     "./gradient": "./src/gradient/index.js"
   },

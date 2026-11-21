@@ -17,9 +17,10 @@ import {IconButton} from '@astryxdesign/core/IconButton';
 import {Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Pencil, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX, X} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
+import {FRAME_RATIOS, fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
 import {useStore, currentParams} from '../engine/state.js';
 import {
-  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, gpuAvailable,
+  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, exportDims, gpuAvailable,
   paletteColors, setImageCount, repickImageColors, editCustom,
 } from '../engine/render.js';
 import {
@@ -324,35 +325,49 @@ export function Inspector() {
       <LooksSection />
 
       <InspectorSection title="Export">
-        <InspectorRow label="Size">
+        <InspectorRow label="Frame">
           <Selector
-            label="Export size"
+            label="Frame shape"
             isLabelHidden
             size="sm"
             width="100%"
-            value={look.exportScale}
-            options={[
-              {value: 'full', label: 'Full size (pixel blocks)'},
-              {value: 'cells', label: 'One pixel per cell'},
-            ]}
-            onChange={v => setLook('exportScale', v)}
+            value={look.frame || 'source'}
+            options={FRAME_OPTIONS}
+            onChange={v => setLook('frame', v)}
           />
+        </InspectorRow>
+        <InspectorRow label="Size">
+          {fixedSize(look.frame) ? (
+            <Text type="body">{fixedSizeLabel(look.frame)}</Text>
+          ) : (
+            <Selector
+              label="Export size"
+              isLabelHidden
+              size="sm"
+              width="100%"
+              value={look.exportScale}
+              options={[
+                {value: 'full', label: 'Full size (pixel blocks)'},
+                {value: 'cells', label: 'One pixel per cell'},
+              ]}
+              onChange={v => setLook('exportScale', v)}
+            />
+          )}
         </InspectorRow>
         <HStack gap={1} wrap="wrap">
           <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
           <Button label="Save SVG" size="sm" variant="secondary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
         </HStack>
         <Text type="supporting">
-          {s.result
-            ? look.exportScale === 'cells'
-              ? `${s.result.w} × ${s.result.h} px`
-              : `${s.result.w * st.block} × ${s.result.h * st.block} px`
-            : ' '}
+          {s.result && !fixedSize(look.frame) ? `${exportDims(s.result).join(' × ')} px` : ' '}
         </Text>
       </InspectorSection>
     </>
   );
 }
+
+// Frame cuts the middle of the source to a shape; the LED wall also fixes the export size.
+const FRAME_OPTIONS = [{value: 'source', label: 'Same as the source'}, ...Object.keys(FRAME_RATIOS).map(k => ({value: k, label: frameLabel(k)}))];
 
 const PALETTE_OPTIONS = [
   ...PALETTES.map(p => ({value: p.id, label: p.name})),

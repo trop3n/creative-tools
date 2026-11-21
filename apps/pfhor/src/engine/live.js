@@ -7,6 +7,7 @@ import {
 } from '@studio/core';
 import {analyze, buildCells, drawCells, thresholdAt, canvasPainter, svgPainter} from './mosaic.js';
 import {sampleCanvas} from './samples.js';
+import {frameDims} from '@studio/core/frames';
 import {cleanConfig, presetConfig, paletteColors, PRESETS, ASPECTS, MAX_COLORS} from './config.js';
 
 export const saved = toolStore('pfhor');
@@ -254,8 +255,7 @@ export async function startCamera() {
 /* ---------- export ---------- */
 let exportCanvas = null, exportPainter = null, cancelExport = false;
 function exportDims() {
-  const a = ASPECTS[S.config.aspect], long = S.exportSize;
-  return a >= 1 ? [long, Math.round(long / a / 2) * 2] : [Math.round(long * a / 2) * 2, long];
+  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
 }
 function exportTarget(w, h) {
   if (!exportCanvas) { exportCanvas = document.createElement('canvas'); exportPainter = canvasPainter(exportCanvas.getContext('2d')); }

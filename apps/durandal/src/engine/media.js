@@ -6,8 +6,9 @@ import {
   cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
-import {renderNow, idle, isBusy, scaledOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule} from './render.js';
+import {renderNow, idle, isBusy, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule} from './render.js';
 import {makeKey, putKey, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
+import {fixedSize} from '@studio/core/frames';
 import {isProjectFile, openProject, takePendingKeys} from './project.js';
 
 const M = () => S.media;
@@ -320,8 +321,10 @@ export async function renderVideo() {
         }
         const r = await renderFrame();
         pinned.last = JSON.stringify(lockedState());
-        // Blow each cell up by a whole number so blocks stay square and sharp.
-        out.canvas = scaledOutput(fitScale(r, 1920), out.canvas, r);
+        // Blow each cell up by a whole number so blocks stay square and sharp; a fixed frame
+        // (the LED wall) comes out at exactly its size.
+        const fixed = fixedSize(S.look.frame);
+        out.canvas = fixed ? fixedOutput(r, fixed, out.canvas) : scaledOutput(fitScale(r, 1920), out.canvas, r);
         return out.canvas;
       },
       onProgress: p => {

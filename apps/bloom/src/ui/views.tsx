@@ -27,6 +27,7 @@ import {
   exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLength, localTime, doneAt,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
 } from '../engine/live.js';
+import {fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
 
 const styles = stylex.create({
@@ -140,7 +141,7 @@ export function Inspector() {
             size="sm"
             width="100%"
             value={c.aspect}
-            options={Object.keys(ASPECTS).map(k => ({value: k, label: k}))}
+            options={Object.keys(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))}
             onChange={v => set('aspect', v)}
           />
         </InspectorRow>
@@ -209,15 +210,19 @@ function ExportSection() {
   return (
     <InspectorSection title="Export">
       <InspectorRow label="Size">
-        <Selector
-          label="Export size"
-          isLabelHidden
-          size="sm"
-          width="100%"
-          value={String(s.exportSize)}
-          options={[1080, 1440, 2160].map(v => ({value: String(v), label: `${v} px long side`}))}
-          onChange={v => setExportSize(Number(v))}
-        />
+        {fixedSize(s.config.aspect) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        ) : (
+          <Selector
+            label="Export size"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            value={String(s.exportSize)}
+            options={[1080, 1440, 2160].map(v => ({value: String(v), label: `${v} px long side`}))}
+            onChange={v => setExportSize(Number(v))}
+          />
+        )}
       </InspectorRow>
       {s.config.cycle > 0 ? null : (
         <SliderRow label="Length" value={s.exportLength} min={2} max={30} step={1} format={v => `${v} s`} onChange={setExportLength} />

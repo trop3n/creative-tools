@@ -1,6 +1,7 @@
 // JJARO's settings: defaults and cleanConfig, which turns anything (old saves, links,
 // files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
+import {LED_RATIO} from '@studio/core/frames';
 import {SETUP_IDS, QUALITY, rng} from './cloth.js';
 import {PATTERN_IDS, PRINT_IDS, MAX_LIGHTS} from './foil.js';
 
@@ -17,7 +18,7 @@ export const PAPERS = [
   {name: 'Navy', color: '#00304e'},
 ];
 
-export const ASPECTS = {'4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16, '16:9': 16 / 9, '3:4': 3 / 4};
+export const ASPECTS = {'4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16, '16:9': 16 / 9, '3:4': 3 / 4, '4:3': 4 / 3, led: LED_RATIO};
 
 export const DEFAULT_CONFIG = {
   setup: 'corners',

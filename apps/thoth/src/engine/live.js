@@ -7,6 +7,7 @@ import {
 } from '@studio/core';
 import {drawSource} from './source.js';
 import {createHalftone} from './halftone.js';
+import {frameDims} from '@studio/core/frames';
 import {cleanConfig, presetConfig, PRESETS, ASPECTS, baseFor, DEFAULT_CONFIG} from './config.js';
 
 export const saved = toolStore('thoth');
@@ -241,8 +242,7 @@ export function removeMedia() { setMedia(null); }
 let exportCanvas = null, exportRenderer = null, cancelExport = false;
 const exportSource = makeCanvas(2, 2);
 function exportDims() {
-  const a = ASPECTS[S.config.aspect], long = S.exportSize;
-  return a >= 1 ? [long, Math.round(long / a / 2) * 2] : [Math.round(long * a / 2) * 2, long];
+  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
 }
 function exportTarget(w, h) {
   if (!exportCanvas || exportRenderer?.lost) {

@@ -1,11 +1,12 @@
 // BLOOM's settings: defaults, colour palettes, scene presets, and cleanConfig, which
 // turns anything (old saves, links, files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
+import {LED_RATIO} from '@studio/core/frames';
 import {SPECIES_IDS, rng} from './plant.js';
 
 export const MAX_RAMPS = 6;
 export const MAX_RAMP_STOPS = 5;
-export const ASPECTS = {'3:4': 3 / 4, '4:5': 4 / 5, '9:16': 9 / 16, '1:1': 1, '16:9': 16 / 9};
+export const ASPECTS = {'3:4': 3 / 4, '4:5': 4 / 5, '9:16': 9 / 16, '1:1': 1, '16:9': 16 / 9, '4:3': 4 / 3, led: LED_RATIO};
 
 /** Palettes: petal ramps (base → tip), stem greens (shadow, light) and a backdrop (top, middle, bottom). */
 export const PALETTES = [

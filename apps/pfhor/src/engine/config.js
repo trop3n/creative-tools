@@ -1,9 +1,10 @@
 // PFHOR's settings: defaults, palettes, presets, and cleanConfig, which turns anything
 // (old saves, links, files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
+import {LED_RATIO} from '@studio/core/frames';
 import {SHAPES, METRICS, MAPPINGS} from './mosaic.js';
 
-export const ASPECTS = {'3:4': 3 / 4, '4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16, '16:9': 16 / 9, '4:3': 4 / 3};
+export const ASPECTS = {'3:4': 3 / 4, '4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16, '16:9': 16 / 9, '4:3': 4 / 3, led: LED_RATIO};
 export const SAMPLE_IDS = ['portrait', 'spheres', 'type'];
 export const MAX_COLORS = 16;
 

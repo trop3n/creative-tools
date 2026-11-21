@@ -21,6 +21,7 @@ import {PATTERNS, PRINTS, MAX_LIGHTS} from '../engine/foil.js';
 import {
   useStore, loadArt, clearArt, exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExport, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
 } from '../engine/live.js';
+import {fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 
 const styles = stylex.create({
@@ -236,7 +237,7 @@ export function Inspector() {
             size="sm"
             width="100%"
             value={c.aspect}
-            options={Object.keys(ASPECTS).map(k => ({value: k, label: k}))}
+            options={Object.keys(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))}
             onChange={v => set('aspect', v)}
           />
         </InspectorRow>
@@ -325,27 +326,35 @@ function ExportSection() {
   return (
     <InspectorSection title="Export">
       <InspectorRow label="Image">
-        <Selector
-          label="Image size"
-          isLabelHidden
-          size="sm"
-          width="100%"
-          value={String(s.exportSize)}
-          options={[1080, 2160, 4096, 8192].map(v => ({value: String(v), label: `${v} px long side`}))}
-          onChange={v => setExport('exportSize', Number(v))}
-        />
+        {fixedSize(s.config.aspect) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        ) : (
+          <Selector
+            label="Image size"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            value={String(s.exportSize)}
+            options={[1080, 2160, 4096, 8192].map(v => ({value: String(v), label: `${v} px long side`}))}
+            onChange={v => setExport('exportSize', Number(v))}
+          />
+        )}
       </InspectorRow>
       <Switch label="Transparent background" size="sm" value={s.transparent} onChange={on => setExport('transparent', on)} />
       <InspectorRow label="Video">
-        <Selector
-          label="Video size"
-          isLabelHidden
-          size="sm"
-          width="100%"
-          value={String(s.videoSize)}
-          options={[1080, 1440, 2160].map(v => ({value: String(v), label: `${v} px long side`}))}
-          onChange={v => setExport('videoSize', Number(v))}
-        />
+        {fixedSize(s.config.aspect) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        ) : (
+          <Selector
+            label="Video size"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            value={String(s.videoSize)}
+            options={[1080, 1440, 2160].map(v => ({value: String(v), label: `${v} px long side`}))}
+            onChange={v => setExport('videoSize', Number(v))}
+          />
+        )}
       </InspectorRow>
       <SliderRow label="Loops" value={s.loops} min={1} max={4} step={1} format={v => `${v} × ${s.config.period} s`} onChange={v => setExport('loops', v)} />
       <Switch label="Turn the camera gently" size="sm" value={s.sway} onChange={on => setExport('sway', on)} />

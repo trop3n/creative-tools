@@ -14,7 +14,7 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | `apps/thoth` | THOTH: a live halftone sandbox. Animated type, shapes, gradient fields (linear, radial, conic, bands), images, video or a webcam are drawn with Canvas2D, then screened on the GPU (WebGL2) as additive RGB, four-ink CMYK or one-ink dots in circle, square, diamond or line shapes, with merging oversized dots; hue cycling, seamless loops, presets, saved looks, share links and project files; exports PNG and MP4 |
 | `apps/pfhor` | PFHOR: a quadtree shape mosaic. An image, video or webcam (or a built-in portrait) splits into cells by tone and edge detail, using summed-area tables, and each cell becomes a circle, square or rounded square in a flat palette (lightness ramp or nearest Oklab color) with thin outlines; splits ease in as the threshold moves, for seamless resolve and scatter loops; presets, saved looks, share links and project files; exports PNG, SVG and MP4 |
 | `apps/jjaro` | JJARO: a sheet of holographic foil. Verlet cloth (hung by two corners or one edge, draped over a ball, dropped in a heap, or floating) that you can drag with a mouse or touch; the foil is shaded as a diffraction grating (lines, rings, mosaic or swirl grooves) under soft-box lights that sweep on a loop, on the GPU (WebGL2); kinegram, foil-stamp and ink-on-foil printing from a dropped image; glow, depth of field and grain; presets, a seeded randomizer, saved looks, share links and project files; PNG up to 8192 px (optionally transparent) and looping MP4 |
-| `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles) and the gradient engine (`@studio/core/gradient`); both tested with `npm test` |
+| `packages/core` (`@studio/core`) | Image/video/webcam sources, MP4 render with audio, canvas recording, saving and opening files, storage, the dither engine (`@studio/core/dither`, CPU plus a WebGL2 path for pattern styles), the gradient engine (`@studio/core/gradient`) and the shared frame shapes (`@studio/core/frames`, including the 3072 × 1408 LED wall); all tested with `npm test` |
 | `packages/theme` (`@studio/theme`) | The suite's Astryx theme and self-hosted fonts (Montserrat, JetBrains Mono) |
 | `packages/build` (`@studio/build`) | Shared Vite config and the `studio-inline` single-file step |
 | `suite.json` | The tool registry: name, folder, URL path, category, description, preview |
@@ -41,6 +41,10 @@ npm run serve          # serves dist/ at http://localhost:5100
 
 Every app builds to a single self-contained `index.html` (JS, CSS and fonts inlined),
 so a tool also works opened straight from disk.
+
+Every tool can export for the LED wall at exactly 3072 × 1408: choose **LED wall** in
+the Frame menu (LEELA: the export size list). DURANDAL and GLYF cut the middle of the
+source to the chosen frame.
 
 ## Adding a tool
 

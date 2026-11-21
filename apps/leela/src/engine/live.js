@@ -7,6 +7,7 @@ import {
   PRESETS, MAX_STOPS, MAX_POINTS, effectCell,
 } from '@studio/core/gradient';
 import {createGpuDither, ditherRGBA, paintIndices, paintMask, STYLE_BY_ID, defaultParams, MAX_COLORS} from '@studio/core/dither';
+import {LED_WALL} from '@studio/core/frames';
 
 export const saved = toolStore('leela');
 
@@ -362,6 +363,7 @@ export const SIZES = [
   {id: '4k', label: '3840 × 2160 (4K)', w: 3840, h: 2160},
   {id: 'square', label: '1080 × 1080', w: 1080, h: 1080},
   {id: 'portrait', label: '1080 × 1920 (portrait)', w: 1080, h: 1920},
+  {id: LED_WALL.id, label: `${LED_WALL.w} × ${LED_WALL.h} (LED wall)`, w: LED_WALL.w, h: LED_WALL.h},
   {id: 'custom', label: 'Custom'},
 ];
 export const MAX_SIDE = 8192;

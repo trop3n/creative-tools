@@ -1,11 +1,12 @@
 // TYCHO's settings: defaults, palettes, presets, and cleanConfig, which turns anything
 // (old saves, links, files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
+import {LED_RATIO} from '@studio/core/frames';
 import {SHAPE_IDS, MOTION_IDS} from './modules.js';
 import {rng} from './layout.js';
 
 export const MAX_COLORS = 24;
-export const ASPECTS = {'16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '4:5': 4 / 5, '3:4': 3 / 4, '9:16': 9 / 16};
+export const ASPECTS = {'16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '4:5': 4 / 5, '3:4': 3 / 4, '9:16': 9 / 16, led: LED_RATIO};
 export const SHUFFLE_MODES = {mixed: 'Mixed', all: 'New layout each cut', modules: 'Same layout, new modules'};
 export const BEAT_CHOICES = [1, 2, 4, 8, 16];
 

@@ -25,6 +25,7 @@ import {
   pickSample, openMedia, startCamera, exportPNG, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
   setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink,
 } from '../engine/live.js';
+import {fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
 
 const styles = stylex.create({
@@ -188,7 +189,7 @@ function MotionSection() {
       <SliderRow label="Scatter" value={c.scatter} min={0} max={1} step={0.01} format={v => (v < 0.005 ? 'Off' : pct(v))} onChange={v => set('scatter', v)} />
       {c.resolve > 0 || c.scatter > 0 ? <SliderRow label="Loop" value={c.loop} min={2} max={30} step={0.5} format={secs} onChange={v => set('loop', v)} /> : null}
       <InspectorRow label="Frame">
-        <Selector label="Frame shape" isLabelHidden size="sm" width="100%" value={c.aspect} options={Object.keys(ASPECTS).map(k => ({value: k, label: k}))} onChange={v => set('aspect', v)} />
+        <Selector label="Frame shape" isLabelHidden size="sm" width="100%" value={c.aspect} options={Object.keys(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))} onChange={v => set('aspect', v)} />
       </InspectorRow>
       <Text type="supporting">Resolve coarsens the mosaic toward mid-loop and sharpens it again. Scatter flings the cells apart mid-loop and lands them back home. Both loop seamlessly.</Text>
     </InspectorSection>
@@ -203,7 +204,11 @@ function ExportSection() {
   return (
     <InspectorSection title="Export">
       <InspectorRow label="Size">
-        <Selector label="Export size" isLabelHidden size="sm" width="100%" value={String(s.exportSize)} options={[1080, 1440, 2160, 3840].map(v => ({value: String(v), label: `${v} px long side`}))} onChange={v => setExportSize(Number(v))} />
+        {fixedSize(s.config.aspect) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        ) : (
+          <Selector label="Export size" isLabelHidden size="sm" width="100%" value={String(s.exportSize)} options={[1080, 1440, 2160, 3840].map(v => ({value: String(v), label: `${v} px long side`}))} onChange={v => setExportSize(Number(v))} />
+        )}
       </InspectorRow>
       {isVideo ? <Switch label="Match the video's length" size="sm" value={s.matchVideo} onChange={setMatchVideo} /> : null}
       {!isVideo || !s.matchVideo ? <SliderRow label="Video" value={s.exportLoops} min={1} max={8} step={1} format={v => `${v} × ${secs(s.config.loop)}`} onChange={setExportLoops} /> : null}

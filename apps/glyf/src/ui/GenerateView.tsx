@@ -21,9 +21,11 @@ import {
 } from '../engine/media.js';
 import {GlyphArt, ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 import {pickFiles} from '@studio/core';
+import {FRAME_RATIOS, frameLabel} from '@studio/core/frames';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344', '#ffffff'];
 const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#4c3046', '#c99530'];
+const FRAME_OPTIONS = [{value: 'source', label: 'Same as the source'}, ...Object.keys(FRAME_RATIOS).map(k => ({value: k, label: frameLabel(k)}))];
 const tfmt = (s: number) => { s = Math.max(0, s || 0); const m = Math.floor(s / 60); return m + ':' + (s % 60).toFixed(1).padStart(4, '0'); };
 const fixed = (d: number) => (v: number) => v.toFixed(d);
 
@@ -333,6 +335,19 @@ export function GenerateInspector() {
       </InspectorSection>
 
       <InspectorSection title="Export">
+        <InspectorRow label="Frame">
+          <Selector
+            label="Frame shape"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            isDisabled={m.recording}
+            value={g.frame || 'source'}
+            options={FRAME_OPTIONS}
+            onChange={v => setGen('frame', v)}
+          />
+        </InspectorRow>
+        <Text type="supporting">Frame cuts the middle of the source to that shape. The LED wall saves PNG, MP4 and recordings at exactly 3072 × 1408.</Text>
         <HStack gap={1} wrap="wrap">
           <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
           <Button label="Save SVG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />

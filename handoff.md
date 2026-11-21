@@ -109,6 +109,15 @@ npm run build          # whole suite → dist/
 - The research's pour-liquid feature was left out of v1 on purpose; it could come back later as a small "droplets" feature.
 - Spectrum order was checked by eye, not numerically.
 
+## LED wall sizing (Nov. 21)
+
+Every tool exports at exactly 3072 × 1408, the LED wall's default size. Shared code: `packages/core/src/frames.js` (`@studio/core/frames`: frame shapes, centered crop, fixed size), tested in core.
+
+- **BLOOM, TYCHO, THOTH, PFHOR, JJARO:** "LED wall" in the Frame menu frames the view at 24:11 and fixes PNG and MP4 at 3072 × 1408 (the size menus give way to "3072 × 1408 px"). BLOOM and JJARO also gained 4:3, so all five offer 16:9, 9:16, 1:1, 4:5, 4:3, 3:4.
+- **LEELA:** a "3072 × 1408 (LED wall)" export size.
+- **DURANDAL and GLYF:** a new Frame menu in Export (Same as the source, the six shapes, LED wall) that cuts the middle of the source. DURANDAL's LED wall dithers stills at the wall's size (videos at half), so pixel sizes 1, 2, 4, 8, 16 and 32 (up to 16 for video) put every cell on whole wall pixels; other sizes stretch with hard edges. DURANDAL's webcam recordings keep their usual size; GLYF's follow the frame.
+- **Checked:** headless Edge saved 3072 × 1408 PNGs in all eight tools and 3072 × 1408 H.264 MP4s in LEELA, TYCHO and JJARO; normal crops and DURANDAL's unchanged default checked too. Not tried: real video files in DURANDAL and GLYF.
+
 ## What's next
 
 1. ~~Geomator~~ **Done Nov. 19 as TYCHO** (`apps/tycho`, port 5184). It draws flat Canvas2D, exports PNG, SVG and MP4, and runs its engine checks with `npm test -w @studio/tycho`.

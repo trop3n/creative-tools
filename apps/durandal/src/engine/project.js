@@ -9,8 +9,9 @@
 // style's sliders and the color and cell-shape choices, without the source.
 import {saveFile} from '@studio/core';
 import {STYLE_BY_ID, defaultParams} from '@studio/core/dither';
+import {FRAME_RATIOS} from '@studio/core/frames';
 import {S, emit, persist, toast, saved, LOOK_DEFAULT} from './state.js';
-import {schedule, reapplyKeys, keysApplied, currentVideoTime, fileBase} from './render.js';
+import {schedule, reframe, reapplyKeys, keysApplied, currentVideoTime, fileBase} from './render.js';
 
 const APP = 'durandal', VERSION = 1;
 // Look keys a saved look carries (the rest are about the source or export).
@@ -67,6 +68,7 @@ function cleanLook(raw, keys = Object.keys(LOOK_DEFAULT)) {
     if (typeof v !== typeof d) continue;
     if ((k === 'ink' || k === 'paper') && !isHex(v)) continue;
     if (k === 'gap') { out[k] = clamp(v, [0, 80]); continue; }
+    if (k === 'frame' && v !== 'source' && !FRAME_RATIOS[v]) continue;
     if (k === 'imageCount') { out[k] = Math.round(clamp(v, [2, 16])); continue; }
     out[k] = v;
   }
@@ -145,7 +147,7 @@ function applyProject(p, label) {
     keysApplied(currentVideoTime());
     note += ` This video's ${S.media.keys.length} keyframes take over again when it plays or you scrub.`;
   } else reapplyKeys();
-  persist(); schedule(); emit();
+  persist(); reframe(); emit(); // reframe: the project may bring a different Frame; it re-dithers either way
   toast('Opened ' + label + '.' + note);
 }
 

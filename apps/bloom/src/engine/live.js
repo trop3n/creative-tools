@@ -5,6 +5,7 @@ import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '
 import {buildPlant, meshPlant, Mesh} from './plant.js';
 import {createBloomRenderer, frameCamera} from './renderer.js';
 import {toRGB} from './color.js';
+import {frameDims} from '@studio/core/frames';
 import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, ASPECTS, MAX_RAMPS, MAX_RAMP_STOPS} from './config.js';
 
 export const saved = toolStore('bloom');
@@ -195,8 +196,7 @@ export function shuffleColors() {
 /* ---------- export ---------- */
 let exportCanvas = null, exportRenderer = null, cancelExport = false;
 function exportDims() {
-  const a = ASPECTS[S.config.aspect], long = S.exportSize;
-  return a >= 1 ? [long, Math.round(long / a / 2) * 2] : [Math.round(long * a / 2) * 2, long];
+  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
 }
 function exportTarget(w, h) {
   if (!exportCanvas) {

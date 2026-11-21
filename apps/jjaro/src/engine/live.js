@@ -7,6 +7,7 @@ import {Cloth, QUALITY} from './cloth.js';
 import {lightDirs, PATTERN_IDS, PRINT_IDS} from './foil.js';
 import {artFromFile, artFromData, artData, sampleArt} from './art.js';
 import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane, focusDistance, effectReach} from './renderer.js';
+import {frameDims} from '@studio/core/frames';
 import {cleanConfig, presetConfig, randomConfig, DEFAULT_CONFIG, PRESETS, ASPECTS, REBUILD_KEYS} from './config.js';
 
 export const saved = toolStore('jjaro');
@@ -362,8 +363,7 @@ const checkAlive = r => { if (r.lost) throw new Error('The graphics card reset d
 
 /** Width and height for a long side, in the frame's shape (even, for video). */
 function dims(long) {
-  const a = ASPECTS[S.config.aspect];
-  return a >= 1 ? [long, Math.round(long / a / 2) * 2] : [Math.round(long * a / 2) * 2, long];
+  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], long);
 }
 
 export function setExport(key, value) { S[key] = value; saved.set(key, value); emit(); }

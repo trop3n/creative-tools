@@ -13,7 +13,7 @@ export function store(key, val) {
 export const GEN_DEFAULT = {
   cols: 56, bright: 0, contrast: 1.15, gamma: 1, invert: false, mode: 'density', dither: 'fs',
   steps: 'measured', blank: true, rot: 'none', gap: 0.06, seed: 7, color: 'mono', ink: '#00304e',
-  paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true,
+  paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true, frame: 'source',
 };
 
 let lib = store('glyf.lib.v1');

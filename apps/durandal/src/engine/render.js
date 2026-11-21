@@ -1,6 +1,7 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
-import {makeCanvas, saveFile, slug, drawVideoFrame} from '@studio/core';
+import {makeCanvas, saveFile, slug} from '@studio/core';
+import {FRAME_RATIOS, cropRect, fixedSize} from '@studio/core/frames';
 import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
@@ -16,7 +17,8 @@ let mirrorBuf = null; // shaped cells drawn at the recording's scale
 const idleWaiters = [];
 
 // The last source frame: a canvas (images, samples) or a video element (files, webcam).
-let src = null; // {el, mirror}
+// For a still cut to a frame, `el` is the framed copy and `base` the original.
+let src = null; // {el, base, mirror}
 let workerHasIt = false; // the worker holds this frame's pixels
 let gpuHasIt = false; // the GPU texture holds this frame
 let frame = null; // the current video frame for both engines, at most 1280 on the long side
@@ -42,14 +44,42 @@ const isVideo = el => 'videoWidth' in el;
 /** Video frames go to both engines at most 1280 on the long side, so the GPU and the worker cut the same cell grid. */
 const VIDEO_MAX = 1280;
 const cappedSize = (w, h) => { const k = Math.min(1, VIDEO_MAX / Math.max(w, h)); return [Math.max(2, Math.round(w * k)), Math.max(2, Math.round(h * k))]; };
-/** The size the engines dither: a video's capped frame, or a still at its own size. */
-const workSize = el => (isVideo(el) ? cappedSize(...sourceSize(el)) : sourceSize(el));
+/** The part of the source the Frame setting keeps (all of it for Source). */
+const cropOf = el => cropRect(...sourceSize(el), FRAME_RATIOS[S.look.frame] || 0);
+/**
+ * The size the engines dither: a video's capped frame, or a still at its own size, after
+ * the frame crop. The LED wall works at its own size (half that for video, to keep
+ * playback quick), so pixel sizes that divide 128 land each cell on whole wall pixels.
+ */
+function workSize(el) {
+  const f = fixedSize(S.look.frame);
+  if (f) return isVideo(el) ? [f[0] / 2, f[1] / 2] : f;
+  const c = cropOf(el), w = Math.max(2, Math.round(c.w)), h = Math.max(2, Math.round(c.h));
+  return isVideo(el) ? cappedSize(w, h) : [w, h];
+}
+/** Draw the frame's part of `el` at the work size into `into` (made or resized as needed). */
+function drawFramed(el, into, flip = false) {
+  const [w, h] = workSize(el), c = cropOf(el);
+  const out = into && into.width === w && into.height === h ? into : makeCanvas(w, h);
+  const x = out.getContext('2d');
+  x.setTransform(flip ? -1 : 1, 0, 0, 1, flip ? w : 0, 0); // the crop is centered, so mirroring after it is the same
+  x.drawImage(el, c.x, c.y, c.w, c.h, 0, 0, w, h);
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  return out;
+}
+/** A still as the engines see it: itself for Source, else a framed copy. */
+const framedStill = el => (S.look.frame && S.look.frame !== 'source' ? drawFramed(el) : el);
 /** Copy the video's current frame into the shared capped canvas. */
 function videoFrame() {
-  const [w, h] = cappedSize(...sourceSize(src.el));
-  if (!frame || frame.width !== w || frame.height !== h) frame = makeCanvas(w, h);
-  drawVideoFrame(src.el, frame, src.mirror);
+  frame = drawFramed(src.el, frame, src.mirror);
   return frame;
+}
+/** The Frame setting changed: cut the source again and re-dither. */
+export function reframe() {
+  if (!src) return;
+  if (!isVideo(src.base)) src.el = framedStill(src.base);
+  workerHasIt = gpuHasIt = false;
+  schedule();
 }
 
 function onGpu(settings) {
@@ -141,7 +171,7 @@ function show(job, result) {
  * Resolves with that job's result after it has been painted.
  */
 export function renderNow(el, {mirror: flip = false} = {}) {
-  if (el) { src = {el, mirror: flip}; workerHasIt = gpuHasIt = false; }
+  if (el) { src = {el: isVideo(el) ? el : framedStill(el), base: el, mirror: flip}; workerHasIt = gpuHasIt = false; }
   if (!src) return Promise.reject(new Error('No image loaded yet'));
   const job = ++jobId;
   const settings = jobSettings();
@@ -322,6 +352,25 @@ export function scaledOutput(k, into, r = S.result) {
 /** Whole-number scale that brings the long side as close to `maxSide` as it can without passing it. */
 export const fitScale = (r, maxSide) => Math.max(1, Math.floor(maxSide / Math.max(r.w, r.h)));
 
+/** The last result at exactly W × H: whole pixels per cell as near as they go, then stretched with hard edges to fit. */
+export function fixedOutput(r, [W, H], into) {
+  const k = Math.max(1, Math.round(Math.min(W / r.w, H / r.h)));
+  const cells = scaledOutput(k, null, r);
+  if (cells.width === W && cells.height === H) return cells;
+  const out = into && into.width === W && into.height === H ? into : makeCanvas(W, H);
+  const x = out.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(cells, 0, 0, W, H);
+  return out;
+}
+
+/** Pixels per cell in a still export: Pixel size (Full size) or 1 (One pixel per cell). */
+const exportScale = () => (S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block)));
+/** A still export's width and height: the frame's fixed size (LED wall), else cells × scale. */
+export function exportDims(r = S.result) {
+  return fixedSize(S.look.frame) || [r.w * exportScale(), r.h * exportScale()];
+}
+
 /* ---------- settings ---------- */
 export function setSetting(key, value) {
   S.settings[key] = value;
@@ -339,6 +388,7 @@ export function setLook(key, value) {
   S.look[key] = value;
   persist();
   if (key === 'ink' || key === 'paper' || key === 'cellShape' || key === 'gap' || key === 'gapTone') paint();
+  else if (key === 'frame') { reframe(); emit(); }
   else if (key === 'gpu' || key === 'custom') { schedule(); emit(); }
   else emit();
 }
@@ -374,8 +424,9 @@ export function exportPNG() {
   // A GPU result whose engine has gone can't be painted; the SVG export checks the same.
   if (!isLiveGpu(r) && !(r.colors ? r.indices : r.mask)) return toast('That frame is gone. Try again.', 'error');
   // Full size: each cell becomes a block of `block` pixels. Cells: one pixel per cell.
-  const k = S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block));
-  scaledOutput(k).toBlob(async b => {
+  // A fixed frame (the LED wall) comes out at exactly its size.
+  const f = fixedSize(S.look.frame);
+  (f ? fixedOutput(r, f) : scaledOutput(exportScale())).toBlob(async b => {
     if (!b) return toast('PNG export failed', 'error');
     const res = await saveFile(fileBase() + '.png', b, 'image/png');
     toast(res.message, res.status === 'error' ? 'error' : 'info');
@@ -387,8 +438,8 @@ const SVG_SHAPED_MAX = 1_000_000;
 export async function exportSVG() {
   const r = S.result;
   if (!r) return toast('Nothing to export yet');
-  const k = S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block));
-  const opts = {width: r.w * k, height: r.h * k, title: 'DURANDAL ' + (STYLE_BY_ID[S.settings.style]?.name || ''), ...cellsOf(r)};
+  const [width, height] = exportDims(r);
+  const opts = {width, height, title: 'DURANDAL ' + (STYLE_BY_ID[S.settings.style]?.name || ''), ...cellsOf(r)};
   // A GPU result reads its cells back here; null means a newer frame replaced it.
   // Shaped cells are one path each; past this many the file runs to hundreds of MB.
   if (shaped() && r.w * r.h > SVG_SHAPED_MAX) {

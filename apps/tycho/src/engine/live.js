@@ -4,6 +4,7 @@ import {useSyncExternalStore} from 'react';
 import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
 import {buildScene, drawScene, timing, roundAt} from './modules.js';
 import {CanvasPainter, SvgPainter} from './paint.js';
+import {frameDims} from '@studio/core/frames';
 import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, ASPECTS, MAX_COLORS} from './config.js';
 
 export const saved = toolStore('tycho');
@@ -189,8 +190,7 @@ export function tapTempo() {
 /* ---------- export ---------- */
 let exportCanvas = null, exportPainter = null, cancelExport = false;
 function exportDims() {
-  const a = ASPECTS[S.config.aspect], long = S.exportSize;
-  return a >= 1 ? [long, Math.round(long / a / 2) * 2] : [Math.round(long * a / 2) * 2, long];
+  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
 }
 function exportTarget(w, h) {
   if (!exportCanvas) {

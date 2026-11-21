@@ -1,9 +1,10 @@
 // THOTH's settings: defaults, presets, and cleanConfig, which turns anything (old saves,
 // links, files) into a valid config.
 import {MOTIONS, BACKDROPS, FILLS, SHAPES} from './source.js';
+import {LED_RATIO} from '@studio/core/frames';
 import {DOT_SHAPES} from './halftone.js';
 
-export const ASPECTS = {'16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '4:5': 4 / 5, '3:4': 3 / 4, '9:16': 9 / 16};
+export const ASPECTS = {'16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '4:5': 4 / 5, '3:4': 3 / 4, '9:16': 9 / 16, led: LED_RATIO};
 export const MODES = {rgb: 'RGB', cmyk: 'CMYK', mono: 'Mono'};
 export const WEIGHTS = [400, 500, 600, 700, 900];
 
