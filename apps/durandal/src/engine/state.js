@@ -3,10 +3,11 @@
 import {useSyncExternalStore} from 'react';
 import {toolStore} from '@studio/core';
 import {DEFAULT_SETTINGS, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
+import {CUSTOM} from '@studio/core/frames';
 
 export const saved = toolStore('durandal');
 
-export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', frame: 'source', cellShape: 'square', gap: 0, gapTone: 'dark', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true,
+export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', frame: 'source', customW: CUSTOM.w, customH: CUSTOM.h, cellShape: 'square', gap: 0, gapTone: 'dark', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true,
   custom: ['#242222', '#00304e', '#c99530', '#dfdfdf'], // custom palette
   imageColors: [], imageCount: 6}; // palette picked from the source
 export const TONE_KEYS = ['brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];

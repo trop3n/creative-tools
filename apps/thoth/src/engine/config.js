@@ -1,10 +1,13 @@
 // THOTH's settings: defaults, presets, and cleanConfig, which turns anything (old saves,
 // links, files) into a valid config.
 import {MOTIONS, BACKDROPS, FILLS, SHAPES} from './source.js';
-import {LED_RATIO} from '@studio/core/frames';
+import {LED_RATIO, CUSTOM, cleanSide, isFrame, frameRatio} from '@studio/core/frames';
 import {DOT_SHAPES} from './halftone.js';
 
 export const ASPECTS = {'16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '4:5': 4 / 5, '3:4': 3 / 4, '9:16': 9 / 16, led: LED_RATIO};
+
+/** Width / height of the frame a config asks for (Custom size: its own width and height). */
+export const aspectOf = c => frameRatio(c.aspect, ASPECTS, [c.customW, c.customH]);
 export const MODES = {rgb: 'RGB', cmyk: 'CMYK', mono: 'Mono'};
 export const WEIGHTS = [400, 500, 600, 700, 900];
 
@@ -32,6 +35,8 @@ export const DEFAULT_CONFIG = {
   shape: {on: false, kind: 'heart', size: 0.55, count: 1, fill: fill('hue', '#ff3355'), motion: 'pulse', speed: 1, amount: 0.5},
   text: {on: true, text: 'MAKE\nYOUR OWN\nTOOLS', weight: 900, size: 0.24, tracking: 0, leading: 0.95, fill: fill('hue', '#ffffff'), motion: 'zoom', speed: 1, amount: 0.35},
   aspect: '16:9',
+  customW: CUSTOM.w,
+  customH: CUSTOM.h,
 };
 
 const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -102,7 +107,9 @@ export function cleanConfig(raw = {}) {
       fill: cleanFill(T.fill, d.text.fill),
       ...cleanMotion(T, d.text),
     },
-    aspect: oneOf(c.aspect, ASPECTS, d.aspect),
+    aspect: isFrame(c.aspect, ASPECTS) ? c.aspect : d.aspect,
+    customW: cleanSide(c.customW, d.customW),
+    customH: cleanSide(c.customH, d.customH),
   };
 }
 

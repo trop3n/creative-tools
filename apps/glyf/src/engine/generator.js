@@ -1,7 +1,7 @@
 // Generator: rasterize glyphs, measure their ink, map source tones onto them.
 import {S, emit, saveGen, setLibListener, toast, saveFile} from './store.js';
 import {copyText} from '@studio/core';
-import {FRAME_RATIOS, cropRect, fixedSize} from '@studio/core/frames';
+import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
 import {glyphSVG, shapeInner, n2, slug} from './shapes.js';
 import {media} from './media.js';
 
@@ -101,7 +101,8 @@ export async function render(quiet) {
   if (!outCv || !glyphs.length || !src) { last = null; S.stats = ''; emit(); return; }
 
   const g = S.gen, m = glyphs.length, cols = g.cols;
-  const crop = cropRect(src.width, src.height, FRAME_RATIOS[g.frame] || 0), fixed = fixedSize(g.frame);
+  const custom = [g.customW, g.customH];
+  const crop = cropRect(src.width, src.height, frameRatio(g.frame, FRAME_RATIOS, custom) || 0), fixed = fixedSize(g.frame, custom);
   const rows = Math.max(1, Math.round((cols * crop.h) / crop.w));
   const px = sampleGrid(src, cols, rows, crop), N = cols * rows, val = new Float32Array(N);
   for (let i = 0; i < N; i++) {

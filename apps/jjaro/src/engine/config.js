@@ -1,7 +1,7 @@
 // JJARO's settings: defaults and cleanConfig, which turns anything (old saves, links,
 // files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
-import {LED_RATIO} from '@studio/core/frames';
+import {LED_RATIO, CUSTOM, cleanSide, isFrame, frameRatio} from '@studio/core/frames';
 import {SETUP_IDS, QUALITY, rng} from './cloth.js';
 import {PATTERN_IDS, PRINT_IDS, MAX_LIGHTS} from './foil.js';
 
@@ -19,6 +19,9 @@ export const PAPERS = [
 ];
 
 export const ASPECTS = {'4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16, '16:9': 16 / 9, '3:4': 3 / 4, '4:3': 4 / 3, led: LED_RATIO};
+
+/** Width / height of the frame a config asks for (Custom size: its own width and height). */
+export const aspectOf = c => frameRatio(c.aspect, ASPECTS, [c.customW, c.customH]);
 
 export const DEFAULT_CONFIG = {
   setup: 'corners',
@@ -52,6 +55,8 @@ export const DEFAULT_CONFIG = {
   elevation: 8, // degrees above it
   zoom: 1, // 0.6..2.5
   aspect: '4:5',
+  customW: CUSTOM.w,
+  customH: CUSTOM.h,
 };
 
 const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -90,7 +95,9 @@ export function cleanConfig(raw = {}) {
     orbit: num(c.orbit, -180, 180, d.orbit),
     elevation: num(c.elevation, -30, 70, d.elevation),
     zoom: num(c.zoom, 0.6, 2.5, d.zoom),
-    aspect: ASPECTS[c.aspect] ? c.aspect : d.aspect,
+    aspect: isFrame(c.aspect, ASPECTS) ? c.aspect : d.aspect,
+    customW: cleanSide(c.customW, d.customW),
+    customH: cleanSide(c.customH, d.customH),
   };
 }
 
@@ -111,7 +118,7 @@ export const PRESETS = [
 /** A preset, keeping the detail and frame shape already chosen (they suit the device and the output). */
 export function presetConfig(id, keep = DEFAULT_CONFIG) {
   const p = PRESETS.find(x => x.id === id) || PRESETS[0];
-  return cleanConfig({...DEFAULT_CONFIG, quality: keep.quality, aspect: keep.aspect, ...p.config});
+  return cleanConfig({...DEFAULT_CONFIG, quality: keep.quality, aspect: keep.aspect, customW: keep.customW, customH: keep.customH, ...p.config});
 }
 
 /** A whole new look from a seed, keeping the detail and frame shape. */
@@ -125,6 +132,8 @@ export function randomConfig(keep = DEFAULT_CONFIG, seed = Math.floor(Math.rando
     ...DEFAULT_CONFIG,
     quality: keep.quality,
     aspect: keep.aspect,
+    customW: keep.customW,
+    customH: keep.customH,
     seed,
     setup: pick(SETUP_IDS),
     stiffness: 0.1 + R() * 0.6,

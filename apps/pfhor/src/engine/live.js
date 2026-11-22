@@ -8,7 +8,7 @@ import {
 import {analyze, buildCells, drawCells, thresholdAt, canvasPainter, svgPainter} from './mosaic.js';
 import {sampleCanvas} from './samples.js';
 import {frameDims} from '@studio/core/frames';
-import {cleanConfig, presetConfig, paletteColors, PRESETS, ASPECTS, MAX_COLORS} from './config.js';
+import {cleanConfig, presetConfig, paletteColors, PRESETS, aspectOf, MAX_COLORS} from './config.js';
 
 export const saved = toolStore('pfhor');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -80,7 +80,7 @@ function sourceOf() {
 }
 
 function analysisFor(cfg) {
-  const a = ASPECTS[cfg.aspect];
+  const a = aspectOf(cfg);
   const aW = a >= 1 ? cfg.detail : Math.round(cfg.detail * a), aH = a >= 1 ? Math.round(cfg.detail / a) : cfg.detail;
   const src = sourceOf();
   const frame = src.video ? src.video.currentTime + ':' + (src.video.paused ? 'p' : performance.now()) : '';
@@ -114,7 +114,7 @@ let canvas = null, painter = null, resize = null, raf = 0, last = 0, lastEmit = 
 function fit() {
   if (!canvas?.parentElement) return;
   const box = canvas.parentElement.getBoundingClientRect();
-  const a = ASPECTS[S.config.aspect];
+  const a = aspectOf(S.config);
   let w = box.width, h = w / a;
   if (h > box.height) { h = box.height; w = h * a; }
   canvas.style.width = Math.floor(w) + 'px';
@@ -169,16 +169,16 @@ function setConfig(cfg, preset = '') {
   S.preset = preset;
   S.time %= S.config.loop;
   persist();
-  if (prev.aspect !== S.config.aspect) fit(); else draw();
+  if (aspectOf(prev) !== aspectOf(S.config)) fit(); else draw();
   emit();
 }
 export const set = (key, value) => setConfig({...S.config, [key]: value});
-export const applyPreset = id => setConfig({...presetConfig(id), sample: S.config.sample, aspect: S.config.aspect}, id);
+export const applyPreset = id => setConfig({...presetConfig(id), sample: S.config.sample, aspect: S.config.aspect, customW: S.config.customW, customH: S.config.customH}, id);
 export function randomize() {
   const R = Math.random, pick = a => a[Math.floor(R() * a.length)];
   const base = presetConfig(pick(PRESETS).id);
   setConfig({
-    ...base, sample: S.config.sample, aspect: S.config.aspect,
+    ...base, sample: S.config.sample, aspect: S.config.aspect, customW: S.config.customW, customH: S.config.customH,
     ...paletteColors(pick(['robo', 'ketchup', 'blueprint', 'tealpop', 'sorbet', 'navygold'])),
     shape: pick(['circle', 'circle', 'square', 'rounded', 'mixed']),
     mapping: R() < 0.8 ? 'ramp' : 'nearest',
@@ -255,7 +255,7 @@ export async function startCamera() {
 /* ---------- export ---------- */
 let exportCanvas = null, exportPainter = null, cancelExport = false;
 function exportDims() {
-  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
+  return frameDims(S.config.aspect, aspectOf(S.config), S.exportSize, [S.config.customW, S.config.customH]);
 }
 function exportTarget(w, h) {
   if (!exportCanvas) { exportCanvas = document.createElement('canvas'); exportPainter = canvasPainter(exportCanvas.getContext('2d')); }

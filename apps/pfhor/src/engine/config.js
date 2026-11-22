@@ -1,10 +1,13 @@
 // PFHOR's settings: defaults, palettes, presets, and cleanConfig, which turns anything
 // (old saves, links, files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
-import {LED_RATIO} from '@studio/core/frames';
+import {LED_RATIO, CUSTOM, cleanSide, isFrame, frameRatio} from '@studio/core/frames';
 import {SHAPES, METRICS, MAPPINGS} from './mosaic.js';
 
 export const ASPECTS = {'3:4': 3 / 4, '4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16, '16:9': 16 / 9, '4:3': 4 / 3, led: LED_RATIO};
+
+/** Width / height of the frame a config asks for (Custom size: its own width and height). */
+export const aspectOf = c => frameRatio(c.aspect, ASPECTS, [c.customW, c.customH]);
 export const SAMPLE_IDS = ['portrait', 'spheres', 'type'];
 export const MAX_COLORS = 16;
 
@@ -42,6 +45,8 @@ export const DEFAULT_CONFIG = {
   scatter: 0, // 0..1: fling cells out mid-loop and back
   loop: 6, // seconds, 2..30
   aspect: '3:4',
+  customW: CUSTOM.w,
+  customH: CUSTOM.h,
   mirror: true, // webcam
 };
 
@@ -75,7 +80,9 @@ export function cleanConfig(raw = {}) {
     resolve: num(c.resolve, 0, 1, d.resolve),
     scatter: num(c.scatter, 0, 1, d.scatter),
     loop: num(c.loop, 2, 30, d.loop),
-    aspect: oneOf(c.aspect, Object.keys(ASPECTS), d.aspect),
+    aspect: isFrame(c.aspect, ASPECTS) ? c.aspect : d.aspect,
+    customW: cleanSide(c.customW, d.customW),
+    customH: cleanSide(c.customH, d.customH),
     mirror: typeof c.mirror === 'boolean' ? c.mirror : d.mirror,
   };
 }

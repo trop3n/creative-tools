@@ -8,7 +8,7 @@ import {
 import {drawSource} from './source.js';
 import {createHalftone} from './halftone.js';
 import {frameDims} from '@studio/core/frames';
-import {cleanConfig, presetConfig, PRESETS, ASPECTS, baseFor, DEFAULT_CONFIG} from './config.js';
+import {cleanConfig, presetConfig, PRESETS, aspectOf, baseFor, DEFAULT_CONFIG} from './config.js';
 
 export const saved = toolStore('thoth');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -89,7 +89,7 @@ const liveSource = makeCanvas(2, 2);
 function fit() {
   if (!canvas?.parentElement) return;
   const box = canvas.parentElement.getBoundingClientRect();
-  const a = ASPECTS[S.config.aspect];
+  const a = aspectOf(S.config);
   let w = box.width, h = w / a;
   if (h > box.height) { h = box.height; w = h * a; }
   canvas.style.width = Math.floor(w) + 'px';
@@ -152,7 +152,7 @@ function setConfig(cfg, preset = '') {
   S.preset = preset;
   S.time %= S.config.loop;
   persist();
-  if (prev.aspect !== S.config.aspect) fit(); else draw();
+  if (aspectOf(prev) !== aspectOf(S.config)) fit(); else draw();
   emit();
 }
 /** Change a top-level field. */
@@ -242,7 +242,7 @@ export function removeMedia() { setMedia(null); }
 let exportCanvas = null, exportRenderer = null, cancelExport = false;
 const exportSource = makeCanvas(2, 2);
 function exportDims() {
-  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
+  return frameDims(S.config.aspect, aspectOf(S.config), S.exportSize, [S.config.customW, S.config.customH]);
 }
 function exportTarget(w, h) {
   if (!exportCanvas || exportRenderer?.lost) {

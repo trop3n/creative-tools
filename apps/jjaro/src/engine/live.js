@@ -8,7 +8,7 @@ import {lightDirs, PATTERN_IDS, PRINT_IDS} from './foil.js';
 import {artFromFile, artFromData, artData, sampleArt} from './art.js';
 import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane, focusDistance, effectReach} from './renderer.js';
 import {frameDims} from '@studio/core/frames';
-import {cleanConfig, presetConfig, randomConfig, DEFAULT_CONFIG, PRESETS, ASPECTS, REBUILD_KEYS} from './config.js';
+import {cleanConfig, presetConfig, randomConfig, DEFAULT_CONFIG, PRESETS, aspectOf, REBUILD_KEYS} from './config.js';
 
 export const saved = toolStore('jjaro');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -114,7 +114,7 @@ let renderer = null, canvas = null, resize = null, raf = 0, last = 0, cam = null
 function fit() {
   if (!canvas?.parentElement) return;
   const box = canvas.parentElement.getBoundingClientRect();
-  const a = ASPECTS[S.config.aspect];
+  const a = aspectOf(S.config);
   let w = box.width, h = w / a;
   if (h > box.height) { h = box.height; w = h * a; }
   canvas.style.width = Math.floor(w) + 'px';
@@ -257,7 +257,7 @@ function setConfig(cfg, preset = '') {
   S.preset = preset;
   persist();
   if (REBUILD_KEYS.some(k => prev[k] !== S.config[k])) build(); else tune();
-  if (prev.aspect !== S.config.aspect) fit(); else draw();
+  if (aspectOf(prev) !== aspectOf(S.config)) fit(); else draw();
   emit();
 }
 /** Change one field (e.g. set('wind', 0.5)). */
@@ -363,7 +363,7 @@ const checkAlive = r => { if (r.lost) throw new Error('The graphics card reset d
 
 /** Width and height for a long side, in the frame's shape (even, for video). */
 function dims(long) {
-  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], long);
+  return frameDims(S.config.aspect, aspectOf(S.config), long, [S.config.customW, S.config.customH]);
 }
 
 export function setExport(key, value) { S[key] = value; saved.set(key, value); emit(); }

@@ -9,7 +9,7 @@
 // style's sliders and the color and cell-shape choices, without the source.
 import {saveFile} from '@studio/core';
 import {STYLE_BY_ID, defaultParams} from '@studio/core/dither';
-import {FRAME_RATIOS} from '@studio/core/frames';
+import {FRAME_RATIOS, cleanSide, isFrame} from '@studio/core/frames';
 import {S, emit, persist, toast, saved, LOOK_DEFAULT} from './state.js';
 import {schedule, reframe, reapplyKeys, keysApplied, currentVideoTime, fileBase} from './render.js';
 
@@ -68,7 +68,8 @@ function cleanLook(raw, keys = Object.keys(LOOK_DEFAULT)) {
     if (typeof v !== typeof d) continue;
     if ((k === 'ink' || k === 'paper') && !isHex(v)) continue;
     if (k === 'gap') { out[k] = clamp(v, [0, 80]); continue; }
-    if (k === 'frame' && v !== 'source' && !FRAME_RATIOS[v]) continue;
+    if (k === 'frame' && v !== 'source' && !isFrame(v, FRAME_RATIOS)) continue;
+    if (k === 'customW' || k === 'customH') { out[k] = cleanSide(v, d); continue; }
     if (k === 'imageCount') { out[k] = Math.round(clamp(v, [2, 16])); continue; }
     out[k] = v;
   }

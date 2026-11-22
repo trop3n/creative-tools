@@ -24,8 +24,8 @@ import {
   openMedia, startCamera, removeMedia, exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
   setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink,
 } from '../engine/live.js';
-import {fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
-import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
+import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
+import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -303,8 +303,9 @@ function TimingSection() {
       <SliderRow label="Hue turns" value={c.hueCycles} min={0} max={8} step={1} format={v => (v === 0 ? 'Off' : `${v} a loop`)} onChange={v => set('hueCycles', v)} />
       <SliderRow label="Hue steps" value={c.hueSteps} min={0} max={12} step={1} format={v => (v < 2 ? 'Smooth' : `${v} steps`)} onChange={v => set('hueSteps', v < 2 ? 0 : v)} />
       <InspectorRow label="Frame">
-        <Selector label="Frame shape" isLabelHidden size="sm" width="100%" value={c.aspect} options={Object.keys(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))} onChange={v => set('aspect', v)} />
+        <Selector label="Frame shape" isLabelHidden size="sm" width="100%" value={c.aspect} options={frameIds(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))} onChange={v => set('aspect', v)} />
       </InspectorRow>
+      {c.aspect === CUSTOM.id ? <CustomSizeRow w={c.customW} h={c.customH} onChange={set} /> : null}
       <Text type="supporting">Every motion and hue cycle repeats a whole number of times per loop, so exported loops have no seam. Hue steps make colors flick from one to the next instead of gliding.</Text>
     </InspectorSection>
   );
@@ -317,8 +318,8 @@ function ExportSection() {
   return (
     <InspectorSection title="Export">
       <InspectorRow label="Size">
-        {fixedSize(s.config.aspect) ? (
-          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        {fixedSize(s.config.aspect, [s.config.customW, s.config.customH]) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect, [s.config.customW, s.config.customH])}</Text>
         ) : (
           <Selector
             label="Export size"

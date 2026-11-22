@@ -1,6 +1,6 @@
-# Handoff — creative-tools, Nov. 18–21, 2026
+# Handoff — creative-tools, Nov. 18–22, 2026
 
-**Current state (Nov. 21):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). The suite runs from `231558d` in LXC container 105 on `pve` (see below).
+**Current state (Nov. 22):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). The suite runs from `231558d` in LXC container 105 on `pve` (see below).
 
 The suite holds nine apps: `launcher`, `glyf`, `durandal`, `leela`, `bloom`, `tycho`, `thoth`, `pfhor` and `jjaro`. All are registered in `suite.json` and have `dev:` and `build:` scripts in the root `package.json`. Shared code lives in `packages/core` (dither engine, gradient engine, `encodeFramesToMp4`, hand-off store). `npm test` runs the engine checks for core, TYCHO, THOTH, PFHOR and JJARO; all pass.
 
@@ -117,6 +117,12 @@ Every tool exports at exactly 3072 × 1408, the LED wall's default size. Shared 
 - **LEELA:** a "3072 × 1408 (LED wall)" export size.
 - **DURANDAL and GLYF:** a new Frame menu in Export (Same as the source, the six shapes, LED wall) that cuts the middle of the source. DURANDAL's LED wall dithers stills at the wall's size (videos at half), so pixel sizes 1, 2, 4, 8, 16 and 32 (up to 16 for video) put every cell on whole wall pixels; other sizes stretch with hard edges. DURANDAL's webcam recordings keep their usual size; GLYF's follow the frame.
 - **Checked:** headless Edge saved 3072 × 1408 PNGs in all eight tools and 3072 × 1408 H.264 MP4s in LEELA, TYCHO and JJARO; normal crops and DURANDAL's unchanged default checked too. Not tried: real video files in DURANDAL and GLYF.
+
+## Custom size (Nov. 22)
+
+"Custom size" joins the Frame menu in BLOOM, TYCHO, THOTH, PFHOR, JJARO, DURANDAL and GLYF. Width and height boxes (`CustomSizeRow` in each tool's `ui/parts.tsx`) set the exact export size; the view takes that shape, and DURANDAL and GLYF crop to it. Sizes are 16–8192 px, rounded to even numbers (`cleanSide` in `frames.js`). The size is stored as `customW`/`customH` beside the frame, so it travels in share links, project files and saved settings; JJARO and PFHOR keep it across presets and Randomize, like the frame. LEELA already had its own Custom export size and is unchanged (it doesn't round to even, so an odd size may not encode as MP4).
+
+- **Checked:** headless Edge saved PNGs at the typed size in all seven tools (BLOOM's 1001 came out 1002); TYCHO and JJARO saved 2000 × 500 and 1280 × 400 H.264 MP4s; typing in the width box changed the export in PFHOR, DURANDAL, GLYF and JJARO; the LED wall still saves 3072 × 1408. Not tried: very large sizes (8192 px MP4s will likely fail with the codec message).
 
 ## What's next
 

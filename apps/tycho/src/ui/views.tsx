@@ -26,8 +26,8 @@ import {
   exportPNG, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
 } from '../engine/live.js';
-import {fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
-import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
+import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
+import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -114,10 +114,11 @@ export function Inspector() {
             size="sm"
             width="100%"
             value={c.aspect}
-            options={Object.keys(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))}
+            options={frameIds(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))}
             onChange={v => set('aspect', v)}
           />
         </InspectorRow>
+        {c.aspect === CUSTOM.id ? <CustomSizeRow w={c.customW} h={c.customH} onChange={set} /> : null}
         <SliderRow label="Grid" value={c.grid} min={2} max={10} step={1} format={v => `${v} units`} onChange={v => set('grid', v)} />
         <SliderRow label="Splits" value={c.depth} min={1} max={8} step={1} onChange={v => set('depth', v)} />
         <SliderRow label="Big cells" value={c.hold} min={0} max={0.8} step={0.01} format={pct} onChange={v => set('hold', v)} />
@@ -253,8 +254,8 @@ function ExportSection() {
   return (
     <InspectorSection title="Export">
       <InspectorRow label="Size">
-        {fixedSize(s.config.aspect) ? (
-          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        {fixedSize(s.config.aspect, [s.config.customW, s.config.customH]) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect, [s.config.customW, s.config.customH])}</Text>
         ) : (
           <Selector
             label="Export size"

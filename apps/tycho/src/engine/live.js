@@ -5,7 +5,7 @@ import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '
 import {buildScene, drawScene, timing, roundAt} from './modules.js';
 import {CanvasPainter, SvgPainter} from './paint.js';
 import {frameDims} from '@studio/core/frames';
-import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, ASPECTS, MAX_COLORS} from './config.js';
+import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, aspectOf, MAX_COLORS} from './config.js';
 
 export const saved = toolStore('tycho');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -68,7 +68,7 @@ function sceneFor(cfg, round, aspect) {
 }
 /** Draw the frame at time t into a painter sized W × H. */
 function paintFrame(p, cfg, W, H, t) {
-  drawScene(p, sceneFor(cfg, roundAt(cfg, t), ASPECTS[cfg.aspect]), cfg, W, H, t);
+  drawScene(p, sceneFor(cfg, roundAt(cfg, t), aspectOf(cfg)), cfg, W, H, t);
 }
 export const loopSeconds = () => timing(S.config).loop;
 
@@ -79,7 +79,7 @@ let canvas = null, painter = null, resize = null, raf = 0, last = 0, lastEmit = 
 function fit() {
   if (!canvas?.parentElement) return;
   const box = canvas.parentElement.getBoundingClientRect();
-  const a = ASPECTS[S.config.aspect];
+  const a = aspectOf(S.config);
   let w = box.width, h = w / a;
   if (h > box.height) { h = box.height; w = h * a; }
   canvas.style.width = Math.floor(w) + 'px';
@@ -128,7 +128,7 @@ function setConfig(cfg, preset = '') {
   S.preset = preset;
   S.time %= loopSeconds();
   persist();
-  if (prev.aspect !== S.config.aspect) fit(); else draw();
+  if (aspectOf(prev) !== aspectOf(S.config)) fit(); else draw();
   emit();
 }
 /** Change one field (e.g. set('grid', 5)). */
@@ -190,7 +190,7 @@ export function tapTempo() {
 /* ---------- export ---------- */
 let exportCanvas = null, exportPainter = null, cancelExport = false;
 function exportDims() {
-  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
+  return frameDims(S.config.aspect, aspectOf(S.config), S.exportSize, [S.config.customW, S.config.customH]);
 }
 function exportTarget(w, h) {
   if (!exportCanvas) {

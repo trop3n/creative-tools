@@ -1,7 +1,7 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug} from '@studio/core';
-import {FRAME_RATIOS, cropRect, fixedSize} from '@studio/core/frames';
+import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
 import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
@@ -45,14 +45,17 @@ const isVideo = el => 'videoWidth' in el;
 const VIDEO_MAX = 1280;
 const cappedSize = (w, h) => { const k = Math.min(1, VIDEO_MAX / Math.max(w, h)); return [Math.max(2, Math.round(w * k)), Math.max(2, Math.round(h * k))]; };
 /** The part of the source the Frame setting keeps (all of it for Source). */
-const cropOf = el => cropRect(...sourceSize(el), FRAME_RATIOS[S.look.frame] || 0);
+const customOf = () => [S.look.customW, S.look.customH];
+/** The frame's fixed export size (LED wall or Custom size), or null. */
+export const fixedFrame = () => fixedSize(S.look.frame, customOf());
+const cropOf = el => cropRect(...sourceSize(el), frameRatio(S.look.frame, FRAME_RATIOS, customOf()) || 0);
 /**
  * The size the engines dither: a video's capped frame, or a still at its own size, after
  * the frame crop. The LED wall works at its own size (half that for video, to keep
  * playback quick), so pixel sizes that divide 128 land each cell on whole wall pixels.
  */
 function workSize(el) {
-  const f = fixedSize(S.look.frame);
+  const f = fixedFrame();
   if (f) return isVideo(el) ? [f[0] / 2, f[1] / 2] : f;
   const c = cropOf(el), w = Math.max(2, Math.round(c.w)), h = Math.max(2, Math.round(c.h));
   return isVideo(el) ? cappedSize(w, h) : [w, h];
@@ -368,7 +371,7 @@ export function fixedOutput(r, [W, H], into) {
 const exportScale = () => (S.look.exportScale === 'cells' ? 1 : Math.max(1, Math.floor(S.settings.block)));
 /** A still export's width and height: the frame's fixed size (LED wall), else cells × scale. */
 export function exportDims(r = S.result) {
-  return fixedSize(S.look.frame) || [r.w * exportScale(), r.h * exportScale()];
+  return fixedFrame() || [r.w * exportScale(), r.h * exportScale()];
 }
 
 /* ---------- settings ---------- */
@@ -388,7 +391,7 @@ export function setLook(key, value) {
   S.look[key] = value;
   persist();
   if (key === 'ink' || key === 'paper' || key === 'cellShape' || key === 'gap' || key === 'gapTone') paint();
-  else if (key === 'frame') { reframe(); emit(); }
+  else if (key === 'frame' || key === 'customW' || key === 'customH') { reframe(); emit(); }
   else if (key === 'gpu' || key === 'custom') { schedule(); emit(); }
   else emit();
 }
@@ -425,7 +428,7 @@ export function exportPNG() {
   if (!isLiveGpu(r) && !(r.colors ? r.indices : r.mask)) return toast('That frame is gone. Try again.', 'error');
   // Full size: each cell becomes a block of `block` pixels. Cells: one pixel per cell.
   // A fixed frame (the LED wall) comes out at exactly its size.
-  const f = fixedSize(S.look.frame);
+  const f = fixedFrame();
   (f ? fixedOutput(r, f) : scaledOutput(exportScale())).toBlob(async b => {
     if (!b) return toast('PNG export failed', 'error');
     const res = await saveFile(fileBase() + '.png', b, 'image/png');

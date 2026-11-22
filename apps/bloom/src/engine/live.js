@@ -6,7 +6,7 @@ import {buildPlant, meshPlant, Mesh} from './plant.js';
 import {createBloomRenderer, frameCamera} from './renderer.js';
 import {toRGB} from './color.js';
 import {frameDims} from '@studio/core/frames';
-import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, ASPECTS, MAX_RAMPS, MAX_RAMP_STOPS} from './config.js';
+import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, aspectOf, MAX_RAMPS, MAX_RAMP_STOPS} from './config.js';
 
 export const saved = toolStore('bloom');
 const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -88,7 +88,7 @@ let renderer = null, canvas = null, resize = null, raf = 0, last = 0, lastEmit =
 function fit() {
   if (!canvas?.parentElement) return;
   const box = canvas.parentElement.getBoundingClientRect();
-  const a = ASPECTS[S.config.aspect];
+  const a = aspectOf(S.config);
   let w = box.width, h = w / a;
   if (h > box.height) { h = box.height; w = h * a; }
   canvas.style.width = Math.floor(w) + 'px';
@@ -136,7 +136,7 @@ function setConfig(cfg, preset = '') {
   S.config = cleanConfig(cfg);
   S.preset = preset;
   persist();
-  if (prev.aspect !== S.config.aspect) fit(); else draw();
+  if (aspectOf(prev) !== aspectOf(S.config)) fit(); else draw();
   emit();
 }
 /** Change one field (e.g. set('stems', 4)). */
@@ -196,7 +196,7 @@ export function shuffleColors() {
 /* ---------- export ---------- */
 let exportCanvas = null, exportRenderer = null, cancelExport = false;
 function exportDims() {
-  return frameDims(S.config.aspect, ASPECTS[S.config.aspect], S.exportSize);
+  return frameDims(S.config.aspect, aspectOf(S.config), S.exportSize, [S.config.customW, S.config.customH]);
 }
 function exportTarget(w, h) {
   if (!exportCanvas) {

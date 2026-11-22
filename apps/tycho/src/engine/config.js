@@ -1,12 +1,15 @@
 // TYCHO's settings: defaults, palettes, presets, and cleanConfig, which turns anything
 // (old saves, links, files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
-import {LED_RATIO} from '@studio/core/frames';
+import {LED_RATIO, CUSTOM, cleanSide, isFrame, frameRatio} from '@studio/core/frames';
 import {SHAPE_IDS, MOTION_IDS} from './modules.js';
 import {rng} from './layout.js';
 
 export const MAX_COLORS = 24;
 export const ASPECTS = {'16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '4:5': 4 / 5, '3:4': 3 / 4, '9:16': 9 / 16, led: LED_RATIO};
+
+/** Width / height of the frame a config asks for (Custom size: its own width and height). */
+export const aspectOf = c => frameRatio(c.aspect, ASPECTS, [c.customW, c.customH]);
 export const SHUFFLE_MODES = {mixed: 'Mixed', all: 'New layout each cut', modules: 'Same layout, new modules'};
 export const BEAT_CHOICES = [1, 2, 4, 8, 16];
 
@@ -48,6 +51,8 @@ export const DEFAULT_CONFIG = {
   rounds: 8, // cuts before the whole thing repeats, 1..16
   shuffleMode: 'mixed',
   aspect: '16:9',
+  customW: CUSTOM.w,
+  customH: CUSTOM.h,
 };
 
 const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -80,7 +85,9 @@ export function cleanConfig(raw = {}) {
     shuffleBeats: oneOf(c.shuffleBeats, [0, ...BEAT_CHOICES], d.shuffleBeats),
     rounds: Math.round(num(c.rounds, 1, 16, d.rounds)),
     shuffleMode: oneOf(c.shuffleMode, Object.keys(SHUFFLE_MODES), d.shuffleMode),
-    aspect: ASPECTS[c.aspect] ? c.aspect : d.aspect,
+    aspect: isFrame(c.aspect, ASPECTS) ? c.aspect : d.aspect,
+    customW: cleanSide(c.customW, d.customW),
+    customH: cleanSide(c.customH, d.customH),
   };
 }
 

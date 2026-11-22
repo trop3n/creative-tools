@@ -6,7 +6,9 @@ import {HStack, StackItem, VStack} from '@astryxdesign/core/Layout';
 import {Popover} from '@astryxdesign/core/Popover';
 import {Section} from '@astryxdesign/core/Section';
 import {Slider} from '@astryxdesign/core/Slider';
+import {NumberInput} from '@astryxdesign/core/NumberInput';
 import {Text} from '@astryxdesign/core/Text';
+import {CUSTOM, cleanSide} from '@studio/core/frames';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Theme, defineTheme} from '@astryxdesign/core/theme';
 import {shapeInner} from '../engine/shapes.js';
@@ -250,5 +252,25 @@ export function PresetChip({color, isOn, onPick, label}: {color: string; isOn: b
       onClick={onPick}
       {...stylex.props(styles.swatch, paint.fill(color), isOn && styles.swatchOn)}
     />
+  );
+}
+
+/** Width and height boxes for the Custom size frame (whole, even pixels; video needs even sides). */
+export function CustomSizeRow({w, h, isDisabled, onChange}: {w: number; h: number; isDisabled?: boolean; onChange: (key: 'customW' | 'customH', value: number) => void}) {
+  const box = (label: string, key: 'customW' | 'customH', value: number) => (
+    <StackItem size="fill">
+      <NumberInput label={label} isLabelHidden size="sm" width="100%" isIntegerOnly isDisabled={isDisabled} min={CUSTOM.min} max={CUSTOM.max} step={2} value={value} onChange={v => onChange(key, cleanSide(v, value))} />
+    </StackItem>
+  );
+  return (
+    <InspectorRow label="Size">
+      <StackItem size="fill">
+        <HStack gap={1} vAlign="center">
+          {box('Width in pixels', 'customW', w)}
+          <Text type="body">×</Text>
+          {box('Height in pixels', 'customH', h)}
+        </HStack>
+      </StackItem>
+    </InspectorRow>
   );
 }

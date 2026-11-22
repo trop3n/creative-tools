@@ -3,6 +3,7 @@
 import {useSyncExternalStore} from 'react';
 import {readJSON, writeJSON, saveFile as coreSave} from '@studio/core';
 import {seedLib, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, slug} from './shapes.js';
+import {CUSTOM} from '@studio/core/frames';
 
 /** Read (one argument) or write (two arguments) a JSON value in localStorage. */
 export function store(key, val) {
@@ -13,7 +14,7 @@ export function store(key, val) {
 export const GEN_DEFAULT = {
   cols: 56, bright: 0, contrast: 1.15, gamma: 1, invert: false, mode: 'density', dither: 'fs',
   steps: 'measured', blank: true, rot: 'none', gap: 0.06, seed: 7, color: 'mono', ink: '#00304e',
-  paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true, frame: 'source',
+  paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true, frame: 'source', customW: CUSTOM.w, customH: CUSTOM.h,
 };
 
 let lib = store('glyf.lib.v1');

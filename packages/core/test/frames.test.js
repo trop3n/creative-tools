@@ -1,7 +1,7 @@
 // Checks for the shared frame shapes. Run with `npm test -w @studio/core` (Node 22+).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {LED_WALL, LED_RATIO, FRAME_RATIOS, cropRect, frameLabel, fixedSizeLabel, fixedSize, frameDims} from '../src/frames.js';
+import {LED_WALL, LED_RATIO, FRAME_RATIOS, CUSTOM, cleanSide, frameIds, isFrame, frameRatio, cropRect, frameLabel, fixedSizeLabel, fixedSize, frameDims} from '../src/frames.js';
 
 test('the LED wall always exports at 3072 × 1408', () => {
   for (const long of [1080, 2160, 8192]) assert.deepEqual(frameDims('led', LED_RATIO, long), [3072, 1408]);
@@ -31,4 +31,19 @@ test('menu labels', () => {
   assert.equal(fixedSizeLabel('led'), '3072 × 1408 px');
   assert.equal(fixedSizeLabel('1:1'), '');
   assert.equal(frameLabel('3:4'), '3:4');
+});
+
+test('custom size exports at the typed size, whole and even within the limits', () => {
+  assert.deepEqual(frameDims('custom', 2, 1080, [1000, 500]), [1000, 500]);
+  assert.deepEqual(fixedSize('custom', [640, 360]), [640, 360]);
+  assert.equal(fixedSizeLabel('custom', [640, 360]), '640 × 360 px');
+  assert.equal(frameLabel('custom'), 'Custom size');
+  assert.equal(frameRatio('custom', {}, [1000, 500]), 2);
+  assert.equal(frameRatio('16:9', {'16:9': 16 / 9}, [1, 1]), 16 / 9);
+  assert.equal(cleanSide(1001, 0), 1002);
+  assert.equal(cleanSide(3, 0), CUSTOM.min);
+  assert.equal(cleanSide(99999, 0), CUSTOM.max);
+  assert.equal(cleanSide('x', 7), 7);
+  assert.deepEqual(frameIds({'1:1': 1}), ['1:1', 'custom']);
+  assert.ok(isFrame('custom', {}) && isFrame('1:1', {'1:1': 1}) && !isFrame('toString', {}));
 });

@@ -27,8 +27,8 @@ import {
   exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLength, localTime, doneAt,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
 } from '../engine/live.js';
-import {fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
-import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch} from './parts';
+import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
+import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -141,10 +141,11 @@ export function Inspector() {
             size="sm"
             width="100%"
             value={c.aspect}
-            options={Object.keys(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))}
+            options={frameIds(ASPECTS).map(k => ({value: k, label: frameLabel(k)}))}
             onChange={v => set('aspect', v)}
           />
         </InspectorRow>
+        {c.aspect === CUSTOM.id ? <CustomSizeRow w={c.customW} h={c.customH} onChange={set} /> : null}
         <SliderRow label="Zoom" value={c.zoom} min={0.6} max={3} step={0.01} format={times} onChange={v => set('zoom', v)} />
         <SliderRow label="Orbit" value={c.orbit} min={-180} max={180} step={1} format={deg} onChange={v => set('orbit', v)} />
         <SliderRow label="Tilt" value={c.elevation} min={-20} max={45} step={1} format={deg} onChange={v => set('elevation', v)} />
@@ -210,8 +211,8 @@ function ExportSection() {
   return (
     <InspectorSection title="Export">
       <InspectorRow label="Size">
-        {fixedSize(s.config.aspect) ? (
-          <Text type="body">{fixedSizeLabel(s.config.aspect)}</Text>
+        {fixedSize(s.config.aspect, [s.config.customW, s.config.customH]) ? (
+          <Text type="body">{fixedSizeLabel(s.config.aspect, [s.config.customW, s.config.customH])}</Text>
         ) : (
           <Selector
             label="Export size"

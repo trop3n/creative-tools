@@ -1,12 +1,15 @@
 // BLOOM's settings: defaults, colour palettes, scene presets, and cleanConfig, which
 // turns anything (old saves, links, files) into a valid config.
 import {parseColor} from '@studio/core/gradient';
-import {LED_RATIO} from '@studio/core/frames';
+import {LED_RATIO, CUSTOM, cleanSide, isFrame, frameRatio} from '@studio/core/frames';
 import {SPECIES_IDS, rng} from './plant.js';
 
 export const MAX_RAMPS = 6;
 export const MAX_RAMP_STOPS = 5;
 export const ASPECTS = {'3:4': 3 / 4, '4:5': 4 / 5, '9:16': 9 / 16, '1:1': 1, '16:9': 16 / 9, '4:3': 4 / 3, led: LED_RATIO};
+
+/** Width / height of the frame a config asks for (Custom size: its own width and height). */
+export const aspectOf = c => frameRatio(c.aspect, ASPECTS, [c.customW, c.customH]);
 
 /** Palettes: petal ramps (base → tip), stem greens (shadow, light) and a backdrop (top, middle, bottom). */
 export const PALETTES = [
@@ -56,6 +59,8 @@ export const DEFAULT_CONFIG = {
   focus: 0.4, // 0 = nearest, 1 = furthest
   cycle: 0, // seconds between regrowths with a new seed; 0 grows once
   aspect: '3:4',
+  customW: CUSTOM.w,
+  customH: CUSTOM.h,
 };
 
 const num = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -90,7 +95,9 @@ export function cleanConfig(raw = {}) {
     blur: num(c.blur, 0, 1, d.blur),
     focus: num(c.focus, 0, 1, d.focus),
     cycle: num(c.cycle, 0, 30, d.cycle),
-    aspect: ASPECTS[c.aspect] ? c.aspect : d.aspect,
+    aspect: isFrame(c.aspect, ASPECTS) ? c.aspect : d.aspect,
+    customW: cleanSide(c.customW, d.customW),
+    customH: cleanSide(c.customH, d.customH),
   };
 }
 

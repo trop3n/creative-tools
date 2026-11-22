@@ -17,7 +17,7 @@ import {IconButton} from '@astryxdesign/core/IconButton';
 import {Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Pencil, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX, X} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
-import {FRAME_RATIOS, fixedSize, fixedSizeLabel, frameLabel} from '@studio/core/frames';
+import {CUSTOM, FRAME_RATIOS, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {useStore, currentParams} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, exportDims, gpuAvailable,
@@ -28,7 +28,7 @@ import {
   setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase, renameKeyframe, moveKeyframe,
 } from '../engine/media.js';
 import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
-import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
+import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
 const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#c99530'];
@@ -336,38 +336,42 @@ export function Inspector() {
             onChange={v => setLook('frame', v)}
           />
         </InspectorRow>
-        <InspectorRow label="Size">
-          {fixedSize(look.frame) ? (
-            <Text type="body">{fixedSizeLabel(look.frame)}</Text>
-          ) : (
-            <Selector
-              label="Export size"
-              isLabelHidden
-              size="sm"
-              width="100%"
-              value={look.exportScale}
-              options={[
-                {value: 'full', label: 'Full size (pixel blocks)'},
-                {value: 'cells', label: 'One pixel per cell'},
-              ]}
-              onChange={v => setLook('exportScale', v)}
-            />
-          )}
-        </InspectorRow>
+        {look.frame === CUSTOM.id ? (
+          <CustomSizeRow w={look.customW} h={look.customH} onChange={setLook} />
+        ) : (
+          <InspectorRow label="Size">
+            {fixedSize(look.frame) ? (
+              <Text type="body">{fixedSizeLabel(look.frame)}</Text>
+            ) : (
+              <Selector
+                label="Export size"
+                isLabelHidden
+                size="sm"
+                width="100%"
+                value={look.exportScale}
+                options={[
+                  {value: 'full', label: 'Full size (pixel blocks)'},
+                  {value: 'cells', label: 'One pixel per cell'},
+                ]}
+                onChange={v => setLook('exportScale', v)}
+              />
+            )}
+          </InspectorRow>
+        )}
         <HStack gap={1} wrap="wrap">
           <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
           <Button label="Save SVG" size="sm" variant="secondary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
         </HStack>
         <Text type="supporting">
-          {s.result && !fixedSize(look.frame) ? `${exportDims(s.result).join(' × ')} px` : ' '}
+          {s.result && !fixedSize(look.frame, [look.customW, look.customH]) ? `${exportDims(s.result).join(' × ')} px` : ' '}
         </Text>
       </InspectorSection>
     </>
   );
 }
 
-// Frame cuts the middle of the source to a shape; the LED wall also fixes the export size.
-const FRAME_OPTIONS = [{value: 'source', label: 'Same as the source'}, ...Object.keys(FRAME_RATIOS).map(k => ({value: k, label: frameLabel(k)}))];
+// Frame cuts the middle of the source to a shape; the LED wall and Custom size also fix the export size.
+const FRAME_OPTIONS = [{value: 'source', label: 'Same as the source'}, ...frameIds(FRAME_RATIOS).map(k => ({value: k, label: frameLabel(k)}))];
 
 const PALETTE_OPTIONS = [
   ...PALETTES.map(p => ({value: p.id, label: p.name})),
