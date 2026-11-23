@@ -479,7 +479,7 @@ async function renderMP4() {
       onProgress: p => { S.progress = p.phase; const now = performance.now(); if (now - lastEmit > 200) { lastEmit = now; emit(); } },
       isCancelled: () => cancelExport,
     });
-    return res.cancelled ? null : {blob: res.blob, name};
+    return res.cancelled ? null : {blob: res.blob, name, codecNote: res.codecNote};
   } finally {
     S.exporting = false; S.progress = ''; emit();
   }
@@ -492,7 +492,7 @@ export async function exportMP4() {
     const out = await renderMP4();
     if (!out) return toast('Render canceled');
     const res = await saveFile(out.name, out.blob, 'video/mp4');
-    toast(res.message, res.status === 'error' ? 'error' : 'info');
+    toast(res.message + (res.status === 'error' ? '' : out.codecNote), res.status === 'error' ? 'error' : 'info');
   } catch (e) {
     toast(e.message, 'error');
   }

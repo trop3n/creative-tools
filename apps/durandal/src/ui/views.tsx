@@ -486,7 +486,7 @@ function VideoSection() {
       />
       <Text type="supporting" hasTabularNumbers>
         {m.progress ||
-          'Renders every frame offline at full quality. Pixel blocks are scaled up by whole numbers toward 1920 px, so they stay sharp.'}
+          'Renders every frame offline at full quality. Pixel blocks are scaled up by whole numbers toward 1920 px, so they stay sharp; the LED wall and Custom size render at exactly that size.'}
       </Text>
     </InspectorSection>
   );

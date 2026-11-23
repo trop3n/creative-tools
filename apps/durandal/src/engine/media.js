@@ -312,6 +312,7 @@ export async function renderVideo() {
       audio: !!S.look.audio,
       background: S.settings.mode === 'palette' ? paletteColors()[0] : S.settings.mode === 'cmyk' ? '#ffffff' : S.look.paper,
       pixelated: true,
+      maxSide: fixedFrame() ? Math.max(...fixedFrame()) : 1920, // a fixed frame (LED wall, Custom size) keeps its exact size
       renderFrame: async () => {
         if (JSON.stringify(lockedState()) !== pinned.last) {
           restoreState(snap);
@@ -336,7 +337,7 @@ export async function renderVideo() {
     if (res.cancelled) toast('Render canceled');
     else {
       const saved = await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
-      toast(saved.message + (res.audioNote || ''), saved.status === 'error' ? 'error' : 'info');
+      toast(saved.message + (res.audioNote || '') + (saved.status === 'error' ? '' : res.codecNote), saved.status === 'error' ? 'error' : 'info');
     }
   } catch (e) {
     toast('Video render failed: ' + (e.message || e), 'error');

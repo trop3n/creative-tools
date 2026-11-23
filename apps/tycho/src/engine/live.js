@@ -246,13 +246,13 @@ export async function exportMP4() {
   emit();
   try {
     const c = exportTarget(w, h);
-    const {blob} = await encodeFramesToMp4({
+    const {blob, codecNote} = await encodeFramesToMp4({
       width: w, height: h, fps, frames,
       drawFrame: i => { paintFrame(exportPainter, cfg, w, h, i / fps); return c; },
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
       isCancelled: () => cancelExport,
     });
-    if (blob) report(await saveFile(name + '.mp4', blob, 'video/mp4'));
+    if (blob) { const r = await saveFile(name + '.mp4', blob, 'video/mp4'); report(r.status === 'error' ? r : {...r, message: r.message + codecNote}); }
     else toast('Export cancelled');
   } catch (e) {
     console.error(e);

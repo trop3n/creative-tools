@@ -426,7 +426,7 @@ export async function exportMP4() {
   emit();
   try {
     const r = offscreen(w, h, false);
-    const {blob} = await encodeFramesToMp4({
+    const {blob, codecNote} = await encodeFramesToMp4({
       width: w, height: h, fps, frames,
       drawFrame: i => {
         const t = i / fps;
@@ -440,7 +440,7 @@ export async function exportMP4() {
     });
     if (blob) {
       const res = await saveFile(fileName() + '.mp4', blob, 'video/mp4');
-      toast(res.message, res.status === 'error' ? 'error' : 'info');
+      toast(res.message + (res.status === 'error' ? '' : codecNote), res.status === 'error' ? 'error' : 'info');
     } else toast('Export cancelled');
   } catch (e) {
     console.error(e);

@@ -6,6 +6,7 @@ import {
 } from '@studio/core';
 import {S, emit, toast, saveFile, saveGen} from './store.js';
 import {render, schedule, getOutCanvas, fileBase} from './generator.js';
+import {fixedSize} from '@studio/core/frames';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /** Internal source state; S.media mirrors what the UI shows. */
@@ -133,6 +134,7 @@ export async function renderVideo() {
   try {
     const res = await renderVideoToMp4({
       video: v, file: media.file, fps: +S.gen.fps || 30, audio: !!S.gen.audio, background: S.gen.paper,
+      maxSide: Math.max(...(fixedSize(S.gen.frame, [S.gen.customW, S.gen.customH]) || [1920])), // a fixed frame keeps its exact size
       renderFrame: async () => { grabFrame(); await render(true); return getOutCanvas(); },
       onProgress: p => { M().progress = p.phase; if (p.total) M().time = (p.frame / p.total) * v.duration; if (n++ % 3 === 0) emit(); },
       isCancelled: () => exportCancel,
@@ -140,7 +142,7 @@ export async function renderVideo() {
     if (res.cancelled) toast('Render canceled');
     else {
       await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
-      if (res.audioNote) setTimeout(() => toast('Video saved' + res.audioNote), 2300);
+      if (res.audioNote || res.codecNote) setTimeout(() => toast('Video saved' + res.audioNote + res.codecNote), 2300);
     }
   } catch (e) { toast('Video render failed: ' + (e.message || e), 'error'); }
   media.exporting = false; M().exporting = false; M().progress = ''; syncVidUI(true); emit();

@@ -238,7 +238,7 @@ export async function exportMP4() {
   emit();
   try {
     const c = exportTarget(w, h);
-    const {blob} = await encodeFramesToMp4({
+    const {blob, codecNote} = await encodeFramesToMp4({
       width: w, height: h, fps, frames,
       drawFrame: i => { exportRenderer.render(sceneFrame(S.config, i / fps, w / h)); return c; },
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
@@ -246,7 +246,7 @@ export async function exportMP4() {
     });
     if (blob) {
       const r = await saveFile(fileName() + '.mp4', blob, 'video/mp4');
-      toast(r.message, r.status === 'error' ? 'error' : 'info');
+      toast(r.message + (r.status === 'error' ? '' : codecNote), r.status === 'error' ? 'error' : 'info');
     } else toast('Export cancelled');
   } catch (e) {
     console.error(e);

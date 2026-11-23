@@ -242,7 +242,7 @@ export function GenerateInspector() {
             onClick={renderVideo}
           />
           <Text type="supporting" hasTabularNumbers>
-            {m.progress || 'Renders every frame offline at full quality, up to 1920 px on the long side. Audio is re-encoded as AAC.'}
+            {m.progress || 'Renders every frame offline at full quality, up to 1920 px on the long side (the LED wall and Custom size: exactly that size). Audio is re-encoded as AAC.'}
           </Text>
         </InspectorSection>
       ) : null}
