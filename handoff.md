@@ -1,6 +1,6 @@
-# Handoff — creative-tools, Nov. 18–22, 2026
+# Handoff — creative-tools, Nov. 18–23, 2026
 
-**Current state (Nov. 22):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). The suite runs from `703ccd3` in LXC container 105 on `pve` (see below).
+**Current state (Nov. 23):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). The container still runs `703ccd3`, behind `main` (LEELA rounding, MP4 sizes and messages, JJARO droplets aren't deployed yet) in LXC container 105 on `pve` (see below).
 
 The suite holds nine apps: `launcher`, `glyf`, `durandal`, `leela`, `bloom`, `tycho`, `thoth`, `pfhor` and `jjaro`. All are registered in `suite.json` and have `dev:` and `build:` scripts in the root `package.json`. Shared code lives in `packages/core` (dither engine, gradient engine, `encodeFramesToMp4`, hand-off store). `npm test` runs the engine checks for core, TYCHO, THOTH, PFHOR and JJARO; all pass.
 
@@ -75,7 +75,7 @@ npm run build          # whole suite → dist/
 **Tests at handoff:** 44 core tests pass, and the Astryx doctor has 0 failures.
 
 **Left open:**
-- During playback the inspector re-renders about four times a second to update the time readout. It isn't causing visible slowdowns. If it ever does, split the readout into its own component.
+- During video playback the whole inspector re-renders on every dithered frame, not just four times a second: `paint()` calls `emit()` each frame, and every panel subscribes to the one store. It isn't causing visible slowdowns. A fix means selective subscriptions (a per-frame signal for the readout, position slider and stats line), which risks stale panels; left alone Nov. 23.
 
 ## BLOOM — procedural flowers (session B)
 
