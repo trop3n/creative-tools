@@ -127,6 +127,17 @@ Every tool exports at exactly 3072 × 1408, the LED wall's default size. Shared 
 
 **Large videos (Nov. 23):** H.264 in the browser stops at about 9.4 million pixels a frame (level 5.1: 4096 × 2304, or 5120 × 1440). Bigger MP4s were already falling back to VP9 without a word; the save message now says so, since much playout and media-server software can't play VP9. 8192 × 8192 has no codec at all and fails at once with "This browser cannot encode 8192 × 8192 video. Try a smaller size." Also fixed: DURANDAL and GLYF video MP4s with the LED wall or Custom size were scaled down to 1920 px on the long side; they now come out at the exact size (checked with a real video file: 3072 × 1408, 1280 × 720, 1000 × 1000; Same as the source is unchanged).
 
+## GLYF ribbons and tiles (Nov. 23)
+
+Added so GLYF can make moving grids of colored tiles (the reference was a caddis.app ad: flat-colored rounded tiles, each with a mark cut out, along thick ribbons that twist and cross).
+
+- **Ribbons source** (`engine/ribbons.js`, framework-free): Source → Ribbons. Thick bands wander, curl and cross, painted in patches of the palette's colors on black. Settings: count, width, wander, patches, loop (4–20 s), seed. Every motion turns a whole number of times per loop (checked: the strokes at t = 0 and t = one loop are identical), so Render video .mp4 renders whole loops (1–4) that repeat with no seam. The canvas takes the frame's shape (16:9 for Same as the source), so the LED wall and Custom size come out exact.
+- **Palette color mode:** each mark takes a flat palette color, the one nearest the source under it (weighted RGB) or the one at its tone. Presets: Signal, St. Andrew, Spectrum, Grays; up to eight editable colors. The palette also colors the Ribbons.
+- **Mixed glyphs** (Mapping → Glyphs → Mixed): tone only decides whether a cell is marked; the glyph is fixed per cell by a hash (Seed reshuffles).
+- **Tile glyphs:** Tile ring, Tile dot, Tile plus, Tile bars (a rounded square with a mark cut out). New libraries get them; existing ones get them added once at the end, out of the set (`lib.tiles` marks it done).
+- **Tile look** button (Ribbons section): only the tiles in the set, Mixed, no dither, invert, gamma 3 (so dark colors like navy still mark), palette nearest, near-black paper (#242222), gap 14%, up to 48 columns.
+- **Checked** in headless Edge: tile look on Ribbons, PNG 1920 × 1080 and 3072 × 1408 (LED wall), MP4s at both sizes (H.264, 120 frames for a 4 s loop); spheres, a real video file at LED wall and custom sizes, and the LED wall PNG unchanged; doctor 0 failures. The jump from an MP4's last frame back to its first is a little larger than other steps because frame 0 is a fresh keyframe, not because the motion jumps.
+
 ## What's next
 
 1. ~~Geomator~~ **Done Nov. 19 as TYCHO** (`apps/tycho`, port 5184). It draws flat Canvas2D, exports PNG, SVG and MP4, and runs its engine checks with `npm test -w @studio/tycho`.

@@ -34,9 +34,23 @@ const SEEDS = [
   ['Four dots', [E(25, 25, 15), E(75, 25, 15), E(25, 75, 15), E(75, 75, 15)], 0],
   ['Steps', [P([[0, 100], [0, 75], [25, 75], [25, 50], [50, 50], [50, 25], [75, 25], [75, 0], [100, 0], [100, 100]])], 0],
 ];
+// Tiles: rounded squares with a mark cut out of them. Mixed in one set (their ink is
+// nearly the same), they make a grid of little tiles. Not in the set until chosen.
+const TILE = () => R(0, 0, 100, 100, 22);
+const TILES = [
+  ['Tile ring', [TILE(), cut(E(50, 50, 25)), E(50, 50, 15)]],
+  ['Tile dot', [TILE(), cut(E(50, 50, 14))]],
+  ['Tile plus', [TILE(), cut(R(43, 24, 14, 52)), cut(R(24, 43, 52, 14))]],
+  ['Tile bars', [TILE(), cut(R(25, 27, 50, 10)), cut(R(25, 45, 50, 10)), cut(R(25, 63, 50, 10))]],
+];
+export const TILE_NAMES = TILES.map(t => t[0]);
+/** The tile glyphs, not in the set. */
+export const tileShapes = () => TILES.map(([name, els]) => ({id: uid(), name, els: clone(els), inSet: false}));
+
 export const seedLib = () => ({
   v: 1,
-  shapes: SEEDS.map(([name, els, s]) => ({id: uid(), name, els: clone(els), inSet: !!s})),
+  shapes: [...SEEDS.map(([name, els, s]) => ({id: uid(), name, els: clone(els), inSet: !!s})), ...tileShapes()],
+  tiles: true,
 });
 
 export const corners = e => [[e.x, e.y], [e.x + e.w, e.y], [e.x + e.w, e.y + e.h], [e.x, e.y + e.h]];

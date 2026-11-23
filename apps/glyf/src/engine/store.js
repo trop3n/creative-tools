@@ -2,7 +2,7 @@
 // emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
 import {readJSON, writeJSON, saveFile as coreSave} from '@studio/core';
-import {seedLib, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, slug} from './shapes.js';
+import {seedLib, tileShapes, TILE_NAMES, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, slug} from './shapes.js';
 import {CUSTOM} from '@studio/core/frames';
 
 /** Read (one argument) or write (two arguments) a JSON value in localStorage. */
@@ -11,14 +11,28 @@ export function store(key, val) {
   writeJSON(key, val);
 }
 
+/** Flat palettes for the Palette color mode and the Ribbons source. */
+export const PALETTES = [
+  {id: 'signal', name: 'Signal', colors: ['#4a86e8', '#4fc98a', '#f0b83c', '#ec5b4f']},
+  {id: 'standrew', name: 'St. Andrew', colors: ['#00304e', '#4c3046', '#c99530', '#90a344']},
+  {id: 'spectrum', name: 'Spectrum', colors: ['#3b5fe0', '#2fb5d0', '#58c95a', '#f2cc3a', '#f08a2c', '#e5453a']},
+  {id: 'mono', name: 'Grays', colors: ['#dfdfdf', '#a3a3a3', '#505050']},
+];
+export const MAX_PALETTE = 8;
+
 export const GEN_DEFAULT = {
   cols: 56, bright: 0, contrast: 1.15, gamma: 1, invert: false, mode: 'density', dither: 'fs',
   steps: 'measured', blank: true, rot: 'none', gap: 0.06, seed: 7, color: 'mono', ink: '#00304e',
   paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true, frame: 'source', customW: CUSTOM.w, customH: CUSTOM.h,
+  pick: 'tone', // tone: each cell's glyph by its tone; mixed: any glyph in the set, fixed per cell
+  palette: PALETTES[0].colors.slice(), match: 'nearest', // Palette color mode: nearest color, or by tone
+  ribCount: 5, ribWidth: 0.09, ribWander: 0.6, ribPatches: 3, ribLoop: 10, ribSeed: 1, ribLoops: 1, // Ribbons source
 };
 
 let lib = store('glyf.lib.v1');
 if (!lib || !Array.isArray(lib.shapes) || !lib.shapes.length) lib = seedLib();
+// Libraries from before the tiles get them once, at the end and out of the set.
+else if (!lib.tiles) { lib.shapes.push(...tileShapes()); lib.tiles = true; store('glyf.lib.v1', lib); }
 
 export const S = {
   view: location.hash === '#shapes' ? 'shapes' : 'gen',
@@ -102,6 +116,13 @@ export const A = {
   },
   rename(name) { const s = cur(); if (s) { s.name = name || 'Untitled'; changed(); } },
   setInSet(id, v) { const s = byId(id); if (s) { s.inSet = v; changed(); } },
+  /** The tile look: only the tiles in the set, mixed per cell, in flat palette colors on near-black. */
+  tileLook() {
+    if (!S.lib.shapes.some(s => TILE_NAMES.includes(s.name))) S.lib.shapes.push(...tileShapes());
+    S.lib.shapes.forEach(s => (s.inSet = TILE_NAMES.includes(s.name)));
+    Object.assign(S.gen, {mode: 'density', pick: 'mixed', dither: 'none', steps: 'measured', blank: true, invert: true, gamma: 3, contrast: 1, bright: 0, rot: 'none', gap: 0.14, cols: Math.min(S.gen.cols, 48), color: 'palette', match: 'nearest', paper: '#242222'});
+    saveGen(); changed();
+  },
   allInSet(v) { S.lib.shapes.forEach(s => (s.inSet = v)); changed(); },
   clear() { const s = cur(); if (!s || !s.els.length) return; pushHist(); s.els = []; S.ed.sel = -1; changed(); toast('Cleared. Undo brings it back.'); },
   glyphXf(k) { const s = cur(); if (!s || !s.els.length) return; pushHist(); s.els.forEach(e => xfEl(e, k)); changed(); },

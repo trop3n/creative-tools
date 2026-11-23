@@ -80,6 +80,32 @@ function quantize(val, cols, rows, lv, method) {
   return out;
 }
 
+/**
+ * Each cell's colour in the Palette mode: the palette colour nearest the source's
+ * (match 'nearest'), or the one at the cell's tone, lightest ink first ('tone').
+ * Returns RGBA, one pixel per cell.
+ */
+function paletteColors(px, val, N, g) {
+  const pal = (g.palette.length ? g.palette : ['#000000']).map(h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16) || 0)), n = pal.length;
+  const out = new Uint8ClampedArray(N * 4);
+  for (let i = 0; i < N; i++) {
+    let b = 0;
+    if (g.match === 'tone') b = Math.min(n - 1, Math.floor(val[i] * n));
+    else {
+      let bd = Infinity;
+      const r = px[i * 4], gg = px[i * 4 + 1], bl = px[i * 4 + 2];
+      for (let k = 0; k < n; k++) {
+        // Weighted RGB distance ("redmean"): close enough to how different colours look.
+        const dr = r - pal[k][0], dg = gg - pal[k][1], db = bl - pal[k][2], rm = (r + pal[k][0]) / 2;
+        const d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+        if (d < bd) { bd = d; b = k; }
+      }
+    }
+    out[i * 4] = pal[b][0]; out[i * 4 + 1] = pal[b][1]; out[i * 4 + 2] = pal[b][2]; out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
 export function schedule() {
   if (S.view !== 'gen' || queued || media.exporting) return;
   queued = true;
@@ -118,7 +144,8 @@ export async function render(quiet) {
   const size = g.mode === 'size';
   const idx = size ? null : quantize(val, cols, rows, lv.map(l => l.v), g.dither);
 
-  const cell = Math.max(4, Math.min(40, Math.floor((media.kind === 'video' || media.kind === 'camera' ? 1920 : 2400) / Math.max(cols, rows))));
+  const moving = media.kind === 'video' || media.kind === 'camera' || media.kind === 'ribbons';
+  const cell = Math.max(4, Math.min(40, Math.floor((moving ? 1920 : 2400) / Math.max(cols, rows))));
   // A fixed frame (the LED wall) draws at exactly its size; cells then aren't whole pixels.
   const W = fixed ? fixed[0] : cols * cell, H = fixed ? fixed[1] : rows * cell, cw = W / cols, ch = H / rows;
   if (outCv.width !== W || outCv.height !== H) { outCv.width = W; outCv.height = H; }
@@ -129,7 +156,11 @@ export async function render(quiet) {
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
     const i = y * cols + x; let gl, sc = 1;
     if (size) { const v = val[i]; if (v < 0.03) continue; gl = glyphs[m > 1 ? hash(x, y, g.seed) % m : 0]; sc = Math.sqrt(v); }
-    else { gl = lv[idx[i]].gl; if (!gl) continue; }
+    else {
+      gl = lv[idx[i]].gl; if (!gl) continue;
+      // Mixed: tone only decides whether a cell is marked; which glyph is fixed per cell.
+      if (g.pick === 'mixed' && m > 1) gl = glyphs[hash(x, y, g.seed + 101) % m];
+    }
     const rot = g.rot === 'random' ? hash(x, y, g.seed * 2 + 1) % 4 : g.rot === 'checker' ? (x + y) & 1 : 0;
     const s = Math.min(cw, ch) * (1 - g.gap) * sc, cx = x * cw + cw / 2, cy = y * ch + ch / 2;
     lx.setTransform(1, 0, 0, 1, cx, cy); if (rot) lx.rotate((rot * Math.PI) / 2);
@@ -137,15 +168,16 @@ export async function render(quiet) {
     marks.push([x, y, gi.get(gl), sc, rot]);
   }
   lx.setTransform(1, 0, 0, 1, 0, 0); lx.globalCompositeOperation = 'source-in';
-  if (g.color === 'source') {
+  const cellCol = g.color === 'source' ? px : g.color === 'palette' ? paletteColors(px, val, N, g) : null;
+  if (cellCol) {
     const cc = mk(cols, rows);
-    cc.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(px), cols, rows), 0, 0);
+    cc.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(cellCol), cols, rows), 0, 0);
     lx.imageSmoothingEnabled = false; lx.drawImage(cc, 0, 0, W, H); lx.imageSmoothingEnabled = true;
   } else { lx.fillStyle = g.ink; lx.fillRect(0, 0, W, H); }
   lx.globalCompositeOperation = 'source-over';
   const ox = outCv.getContext('2d');
   ox.fillStyle = g.paper; ox.fillRect(0, 0, W, H); ox.drawImage(layerCv, 0, 0);
-  last = {cols, rows, glyphs, marks, px, fixed};
+  last = {cols, rows, glyphs, marks, cellCol, fixed};
   const stats = `${cols} × ${rows} cells · ${marks.length.toLocaleString()} marks · ${m} glyph${m > 1 ? 's' : ''}`;
   if (!quiet || stats !== S.stats) { S.stats = stats; emit(); }
 }
@@ -153,12 +185,12 @@ export async function render(quiet) {
 const hex = (r, g, b) => '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 export function buildSVG() {
   if (!last) return null;
-  const {cols, rows, glyphs, marks, px, fixed} = last, g = S.gen, cs = 10, W = cols * cs, H = rows * cs, used = new Set(marks.map(m => m[2]));
+  const {cols, rows, glyphs, marks, cellCol: px, fixed} = last, g = S.gen, cs = 10, W = cols * cs, H = rows * cs, used = new Set(marks.map(m => m[2]));
   const [outW, outH] = fixed || [W, H]; // the LED wall: same drawing, sized to the wall
   const defs = glyphs.map((gl, i) => (used.has(i) ? `<symbol id="g${i}" viewBox="0 0 100 100" overflow="visible">${shapeInner(gl.s, 'g' + i)}</symbol>` : '')).join('');
   const body = marks.map(([x, y, i, sc, rot]) => {
     const s = cs * (1 - g.gap) * sc, cx = x * cs + cs / 2, cy = y * cs + cs / 2, p = (y * cols + x) * 4;
-    return `<use xlink:href="#g${i}" x="${n2(cx - s / 2)}" y="${n2(cy - s / 2)}" width="${n2(s)}" height="${n2(s)}"${rot ? ` transform="rotate(${rot * 90} ${cx} ${cy})"` : ''}${g.color === 'source' ? ` color="${hex(px[p], px[p + 1], px[p + 2])}"` : ''}/>`;
+    return `<use xlink:href="#g${i}" x="${n2(cx - s / 2)}" y="${n2(cy - s / 2)}" width="${n2(s)}" height="${n2(s)}"${rot ? ` transform="rotate(${rot * 90} ${cx} ${cy})"` : ''}${px ? ` color="${hex(px[p], px[p + 1], px[p + 2])}"` : ''}/>`;
   }).join('\n');
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${outW}" height="${outH}" color="${g.ink}">\n` +
     (g.transparent ? '' : `<rect width="${W}" height="${H}" fill="${g.paper}"/>\n`) + `<defs>${defs}</defs>\n${body}\n</svg>`;

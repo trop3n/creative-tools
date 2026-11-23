@@ -13,11 +13,12 @@ import {Slider} from '@astryxdesign/core/Slider';
 import {Switch} from '@astryxdesign/core/Switch';
 import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
-import {Camera, CameraOff, Circle, Clapperboard, ClipboardCopy, Download, ImageUp, Pause, Play, Square, Volume2, VolumeX} from 'lucide-react';
-import {S, A, useStore, byId} from '../engine/store.js';
+import {Camera, CameraOff, Circle, Clapperboard, ClipboardCopy, Download, ImageUp, LayoutGrid, Minus, Pause, Play, Plus, Square, Volume2, VolumeX} from 'lucide-react';
+import {S, A, useStore, byId, PALETTES, MAX_PALETTE} from '../engine/store.js';
 import {setGen, setOutCanvas, exportPNG, exportSVG, copySVG} from '../engine/generator.js';
 import {
   useSample, loadMediaFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, setMirror, stopCamera, toggleRecord,
+  seekRibbons, renderRibbons,
 } from '../engine/media.js';
 import {CustomSizeRow, GlyphArt, ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
 import {pickFiles} from '@studio/core';
@@ -162,6 +163,22 @@ export function GenerateToolbar() {
               </Text>
             </>
           ) : null}
+          {media.kind === 'ribbons' ? (
+            <>
+              <IconButton
+                label={media.playing ? 'Pause' : 'Play'}
+                tooltip={media.playing ? 'Pause' : 'Play'}
+                size="sm"
+                variant="ghost"
+                isDisabled={media.exporting}
+                icon={<Icon icon={media.playing ? Pause : Play} size={ICON} />}
+                onClick={playPause}
+              />
+              <Text type="supporting" hasTabularNumbers>
+                {tfmt(media.time)} / {tfmt(media.duration)}
+              </Text>
+            </>
+          ) : null}
           {media.kind === 'camera' ? (
             <Button
               label={media.recording ? `Stop ${tfmt(media.recTime)}` : 'Record'}
@@ -179,6 +196,49 @@ export function GenerateToolbar() {
   );
 }
 
+/* ================= palette ================= */
+function PaletteEditor() {
+  const {gen: g} = useStore();
+  const pal: string[] = g.palette;
+  const preset = PALETTES.find(p => p.colors.join() === pal.join());
+  const setPal = (next: string[]) => setGen('palette', next);
+  return (
+    <>
+      <InspectorRow label="Palette">
+        <Selector
+          label="Palette preset"
+          isLabelHidden
+          size="sm"
+          width="100%"
+          value={preset ? preset.id : 'custom'}
+          options={[...PALETTES.map(p => ({value: p.id, label: p.name})), ...(preset ? [] : [{value: 'custom', label: 'Custom'}])]}
+          onChange={v => { const p = PALETTES.find(x => x.id === v); if (p) setPal(p.colors.slice()); }}
+        />
+      </InspectorRow>
+      <InspectorRow label="Colors">
+        {pal.map((c, i) => (
+          <Swatch key={i} label={`Palette color ${i + 1}`} value={c} onChange={v => setPal(pal.map((x, j) => (j === i ? v : x)))} />
+        ))}
+        <IconButton label="Add a color" tooltip="Add a color" size="sm" variant="ghost" isDisabled={pal.length >= MAX_PALETTE} icon={<Icon icon={Plus} size={ICON} />} onClick={() => setPal([...pal, pal[pal.length - 1]])} />
+        <IconButton label="Remove the last color" tooltip="Remove the last color" size="sm" variant="ghost" isDisabled={pal.length <= 1} icon={<Icon icon={Minus} size={ICON} />} onClick={() => setPal(pal.slice(0, -1))} />
+      </InspectorRow>
+      {g.color === 'palette' ? (
+        <InspectorRow label="Match">
+          <SegmentedControl label="Match colors" size="sm" layout="fill" value={g.match} onChange={v => setGen('match', v)}>
+            <SegmentedControlItem value="nearest" label="Nearest color" />
+            <SegmentedControlItem value="tone" label="By tone" />
+          </SegmentedControl>
+        </InspectorRow>
+      ) : null}
+      {g.color === 'palette' ? (
+        <Text type="supporting">
+          {g.match === 'tone' ? 'Each mark takes the palette color at its tone: the first color for the lightest marks, the last for the darkest.' : 'Each mark takes the palette color nearest the source under it, so every mark is one flat color.'}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
 /* ================= inspector ================= */
 export function GenerateInspector() {
   const s = useStore();
@@ -190,11 +250,12 @@ export function GenerateInspector() {
           label="Sample image"
           size="sm"
           layout="fill"
-          value={m.kind === 'sample' ? g.sample || '' : ''}
+          value={m.kind === 'sample' ? g.sample || '' : m.kind === 'ribbons' ? 'ribbons' : ''}
           onChange={useSample}>
           <SegmentedControlItem value="sphere" label="Spheres" />
           <SegmentedControlItem value="rings" label="Rings" />
           <SegmentedControlItem value="ramp" label="Ramp" />
+          <SegmentedControlItem value="ribbons" label="Ribbons" />
         </SegmentedControl>
         <HStack gap={1} wrap="wrap">
           <Button
@@ -212,6 +273,48 @@ export function GenerateInspector() {
         </HStack>
         <Text type="supporting">You can also drop an image or video on the canvas, or paste an image.</Text>
       </InspectorSection>
+
+      {m.kind === 'ribbons' ? (
+        <InspectorSection title="Ribbons">
+          <Slider
+            label="Position"
+            isLabelHidden
+            min={0}
+            max={1000}
+            value={m.duration ? Math.round((m.time / m.duration) * 1000) : 0}
+            onChange={(v: number) => seekRibbons(v / 1000)}
+            valueDisplay="none"
+            isDisabled={m.exporting}
+          />
+          <SliderRow label="Ribbons" value={g.ribCount} min={1} max={8} step={1} onChange={v => setGen('ribCount', v)} isDisabled={m.exporting} />
+          <SliderRow label="Width" value={g.ribWidth} min={0.03} max={0.2} step={0.005} format={v => Math.round(v * 100) + '%'} onChange={v => setGen('ribWidth', v)} isDisabled={m.exporting} />
+          <SliderRow label="Wander" value={g.ribWander} min={0} max={1} step={0.01} format={v => Math.round(v * 100) + '%'} onChange={v => setGen('ribWander', v)} isDisabled={m.exporting} />
+          <SliderRow label="Patches" value={g.ribPatches} min={1} max={8} step={1} format={v => (v === 1 ? '1 a ribbon' : v + ' a ribbon')} onChange={v => setGen('ribPatches', v)} isDisabled={m.exporting} />
+          <SliderRow label="Loop" value={g.ribLoop} min={4} max={20} step={1} format={v => v + ' s'} onChange={v => setGen('ribLoop', v)} isDisabled={m.exporting} />
+          <SliderRow label="Seed" value={g.ribSeed} min={1} max={999} onChange={v => setGen('ribSeed', v)} isDisabled={m.exporting} />
+          <Text type="supporting">The ribbons are drawn in the Palette colors (see Color). Every motion comes round once a loop, so a video of whole loops repeats with no seam.</Text>
+          <Button label="Tile look" size="sm" variant="secondary" icon={<Icon icon={LayoutGrid} size={ICON} />} onClick={A.tileLook} isDisabled={m.exporting} />
+          <Text type="supporting">Tile look puts only the four tile glyphs in the set, mixes them across the cells, colors them from the palette on near-black, and sets the tone so every ribbon shows.</Text>
+          <InspectorRow label="Frame rate">
+            <SegmentedControl label="Frame rate" size="sm" layout="fill" value={g.fps} onChange={v => setGen('fps', v)}>
+              {['24', '25', '30', '60'].map(f => (
+                <SegmentedControlItem key={f} value={f} label={f} />
+              ))}
+            </SegmentedControl>
+          </InspectorRow>
+          <SliderRow label="Video" value={g.ribLoops} min={1} max={4} step={1} format={v => `${v} × ${g.ribLoop} s`} onChange={v => setGen('ribLoops', v)} isDisabled={m.exporting} />
+          <Button
+            label={m.exporting ? 'Cancel render' : 'Render video .mp4'}
+            size="sm"
+            variant={m.exporting ? 'destructive' : 'primary'}
+            icon={<Icon icon={Clapperboard} size={ICON} />}
+            onClick={renderRibbons}
+          />
+          <Text type="supporting" hasTabularNumbers>
+            {m.progress || 'Renders every frame offline at full quality, up to 1920 px on the long side (the LED wall and Custom size: exactly that size).'}
+          </Text>
+        </InspectorSection>
+      ) : null}
 
       {m.kind === 'video' ? (
         <InspectorSection title="Video">
@@ -295,10 +398,18 @@ export function GenerateInspector() {
           </SegmentedControl>
         </InspectorRow>
         <Switch label="Empty cell as lightest step" size="sm" isDisabled={size} value={!!g.blank} onChange={v => setGen('blank', v)} />
+        <InspectorRow label="Glyphs">
+          <SegmentedControl label="Which glyph" size="sm" layout="fill" isDisabled={size} value={g.pick} onChange={v => setGen('pick', v)}>
+            <SegmentedControlItem value="tone" label="By tone" />
+            <SegmentedControlItem value="mixed" label="Mixed" />
+          </SegmentedControl>
+        </InspectorRow>
         <Text type="supporting">
           {size
             ? 'Each cell draws a glyph from the set, scaled by tone. One glyph in the set gives a classic halftone.'
-            : 'Dithering spreads the in-between tones across neighboring cells.'}
+            : g.pick === 'mixed'
+              ? 'Tone only decides which cells get a mark; each marked cell keeps its own glyph from the set (Seed reshuffles them).'
+              : 'Dithering spreads the in-between tones across neighboring cells.'}
         </Text>
       </InspectorSection>
 
@@ -318,13 +429,17 @@ export function GenerateInspector() {
         <SegmentedControl label="Color mode" size="sm" layout="fill" value={g.color} onChange={v => setGen('color', v)}>
           <SegmentedControlItem value="mono" label="One ink" />
           <SegmentedControlItem value="source" label="From source" />
+          <SegmentedControlItem value="palette" label="Palette" />
         </SegmentedControl>
-        <InspectorRow label="Ink">
-          {INKS.map(c => (
-            <PresetChip key={c} label="Ink" color={c} isOn={g.ink === c} onPick={() => setGen('ink', c)} />
-          ))}
-          <Swatch label="Custom ink" value={g.ink} onChange={v => setGen('ink', v)} />
-        </InspectorRow>
+        {g.color === 'mono' ? (
+          <InspectorRow label="Ink">
+            {INKS.map(c => (
+              <PresetChip key={c} label="Ink" color={c} isOn={g.ink === c} onPick={() => setGen('ink', c)} />
+            ))}
+            <Swatch label="Custom ink" value={g.ink} onChange={v => setGen('ink', v)} />
+          </InspectorRow>
+        ) : null}
+        {g.color === 'palette' || m.kind === 'ribbons' ? <PaletteEditor /> : null}
         <InspectorRow label="Paper">
           {PAPERS.map(c => (
             <PresetChip key={c} label="Paper" color={c} isOn={g.paper === c} onPick={() => setGen('paper', c)} />

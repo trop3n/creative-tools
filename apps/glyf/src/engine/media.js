@@ -2,17 +2,18 @@
 // and video exporters from @studio/core.
 import {
   loadImageFile, isVideoFile, isMediaFile, openVideoFile, openWebcam, frameCanvasFor, drawVideoFrame,
-  cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas as mk,
+  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas as mk,
 } from '@studio/core';
 import {S, emit, toast, saveFile, saveGen} from './store.js';
 import {render, schedule, getOutCanvas, fileBase} from './generator.js';
-import {fixedSize} from '@studio/core/frames';
+import {fixedSize, frameRatio, FRAME_RATIOS} from '@studio/core/frames';
+import {drawRibbons} from './ribbons.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /** Internal source state; S.media mirrors what the UI shows. */
 export const media = {src: null, kind: 'sample', exporting: false, vid: null, file: null, dispose: null, recorder: null};
 const M = () => S.media;
-const SAMPLE_NAMES = {sphere: 'Spheres', rings: 'Rings', ramp: 'Ramp'};
+const SAMPLE_NAMES = {sphere: 'Spheres', rings: 'Rings', ramp: 'Ramp', ribbons: 'Ribbons'};
 
 /* ---------- samples ---------- */
 function sampleCanvas(kind) {
@@ -49,13 +50,89 @@ function setSource(canvas, kind, label) {
 }
 export function useSample(kind) {
   stopVideo(); S.gen.sample = kind; saveGen();
+  if (kind === 'ribbons') return startRibbons();
   setSource(sampleCanvas(kind), 'sample', SAMPLE_NAMES[kind] + ' (sample)');
 }
 export function initSource() {
   const k = SAMPLE_NAMES[S.gen.sample] ? S.gen.sample : 'sphere';
   S.gen.sample = k;
+  if (k === 'ribbons') { startRibbons(); return; }
   media.src = sampleCanvas(k);
   M().label = SAMPLE_NAMES[k] + ' (sample)';
+}
+
+/* ---------- ribbons: a moving built-in source ---------- */
+let ribT = 0, ribLast = 0, ribKey = '', ribTok = 0;
+const ribParams = () => {
+  const g = S.gen;
+  return {count: g.ribCount, width: g.ribWidth, wander: g.ribWander, patches: g.ribPatches, loop: g.ribLoop, seed: g.ribSeed, palette: g.palette, background: '#000'};
+};
+/** The ribbons' canvas: the frame's shape (16:9 for Same as the source), 1280 on the long side. */
+function ribSize() {
+  const g = S.gen, r = frameRatio(g.frame, FRAME_RATIOS, [g.customW, g.customH]) || 16 / 9;
+  return r >= 1 ? [1280, Math.round(1280 / r)] : [Math.round(1280 * r), 1280];
+}
+/** Draw the ribbons at time t into the source canvas; true if anything changed. */
+function paintRibbons(t) {
+  const [W, H] = ribSize(), p = ribParams(), key = JSON.stringify([W, H, t, p]);
+  if (key === ribKey && media.src && media.src.width === W && media.src.height === H) return false;
+  ribKey = key;
+  if (!media.src || media.src.width !== W || media.src.height !== H) media.src = mk(W, H);
+  drawRibbons(media.src.getContext('2d'), W, H, t, p);
+  return true;
+}
+function startRibbons() {
+  ribT = 0; ribKey = ''; media.src = null; media.kind = 'ribbons';
+  Object.assign(M(), {kind: 'ribbons', label: 'Ribbons', playing: true, time: 0, duration: S.gen.ribLoop});
+  paintRibbons(0); emit(); schedule();
+  const tok = ++ribTok; // choosing Ribbons again starts a fresh loop and ends this one
+  const tick = now => {
+    if (media.kind !== 'ribbons' || tok !== ribTok) return;
+    const dt = ribLast ? Math.min(0.1, (now - ribLast) / 1000) : 0;
+    ribLast = now;
+    if (!media.exporting) {
+      const loop = S.gen.ribLoop;
+      if (M().playing) ribT = (ribT + dt) % loop;
+      if (S.view === 'gen' && !busy && paintRibbons(ribT)) { busy = true; render(true).finally(() => { busy = false; }); }
+      M().time = ribT; M().duration = loop;
+      if (now - lastEmit > 250) { lastEmit = now; emit(); }
+    }
+    requestAnimationFrame(tick);
+  };
+  ribLast = 0;
+  requestAnimationFrame(tick);
+}
+export function seekRibbons(f) { if (media.kind === 'ribbons' && !media.exporting) { ribT = f * S.gen.ribLoop; M().time = ribT; emit(); } }
+
+/** Render whole loops of the ribbons to MP4, frame by frame; a loop's last frame leads into its first. */
+export async function renderRibbons() {
+  if (media.kind !== 'ribbons') return;
+  if (media.exporting) { exportCancel = true; return; }
+  const g = S.gen, fps = +g.fps || 30, perLoop = Math.round(g.ribLoop * fps), frames = perLoop * Math.max(1, g.ribLoops);
+  media.exporting = true; exportCancel = false; M().exporting = true; M().progress = 'Starting…'; emit();
+  let n = 0, even = null;
+  try {
+    paintRibbons(0); await render(true);
+    const out = getOutCanvas(), W = out.width & ~1, H = out.height & ~1;
+    even = mk(W, H);
+    const res = await encodeFramesToMp4({
+      width: W, height: H, fps, frames,
+      drawFrame: async i => {
+        paintRibbons(((i % perLoop) / perLoop) * g.ribLoop);
+        await render(true);
+        const x = even.getContext('2d'); x.drawImage(getOutCanvas(), 0, 0);
+        return even;
+      },
+      onProgress: p => { M().progress = p.phase; if (n++ % 3 === 0) emit(); },
+      isCancelled: () => exportCancel,
+    });
+    if (res.cancelled) toast('Render canceled');
+    else {
+      await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
+      if (res.codecNote) setTimeout(() => toast('Video saved' + res.codecNote), 2300);
+    }
+  } catch (e) { toast('Video render failed: ' + (e.message || e), 'error'); }
+  media.exporting = false; M().exporting = false; M().progress = ''; ribKey = ''; emit(); schedule();
 }
 
 /* ---------- files ---------- */
@@ -112,6 +189,7 @@ export async function loadVideoFile(f) {
   });
 }
 export function playPause() {
+  if (media.kind === 'ribbons') { if (!media.exporting) { M().playing = !M().playing; emit(); } return; }
   const v = media.vid; if (!v || media.exporting) return;
   if (v.paused) v.play().then(() => syncVidUI(true)).catch(() => {}); else { v.pause(); syncVidUI(true); }
 }
