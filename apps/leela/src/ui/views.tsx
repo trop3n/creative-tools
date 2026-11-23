@@ -17,6 +17,7 @@ import {
   ArrowLeftRight, Check, Clapperboard, Dices, Download, FolderOpen, Image as ImageIcon, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Send, Shuffle, Trash2,
 } from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
+import {cleanSide} from '@studio/core/frames';
 import {PRESETS, MAX_STOPS, MAX_POINTS} from '@studio/core/gradient';
 import {STYLES} from '@studio/core/dither';
 import {
@@ -315,7 +316,8 @@ function PixelsInput({label, value, onCommit}: {label: string; value: number; on
   const commit = (text: string) => {
     clearTimeout(timer.current);
     const n = parseInt(text, 10);
-    if (isFinite(n)) onCommit(n); else setDraft(String(value));
+    if (isFinite(n)) onCommit(n);
+    setDraft(String(value)); // a changed value replaces this through the effect above
   };
   return (
     <TextInput
@@ -338,7 +340,7 @@ function PixelsInput({label, value, onCommit}: {label: string; value: number; on
 function ExportSection() {
   const s = useStore();
   const o = s.out, {w, h} = outSize(), plan = videoPlan();
-  const num = (v: string, d: number) => { const n = parseInt(v, 10); return isFinite(n) ? Math.min(MAX_SIDE, Math.max(16, n)) : d; };
+  const num = (v: string, d: number) => cleanSide(parseInt(v, 10), d); // whole, even, 16–8192 px
   const moving = s.config.motion !== 'none';
   return (
     <InspectorSection title="Export">
@@ -348,11 +350,11 @@ function ExportSection() {
       {o.size === 'custom' ? (
         <InspectorRow label="Pixels">
           <StackItem size="fill">
-            <PixelsInput label="Width in pixels" value={o.w} onCommit={v => setOut({w: num(String(v), o.w)})} />
+            <PixelsInput label="Width in pixels" value={w} onCommit={v => setOut({w: num(String(v), o.w)})} />
           </StackItem>
           <Text type="supporting">×</Text>
           <StackItem size="fill">
-            <PixelsInput label="Height in pixels" value={o.h} onCommit={v => setOut({h: num(String(v), o.h)})} />
+            <PixelsInput label="Height in pixels" value={h} onCommit={v => setOut({h: num(String(v), o.h)})} />
           </StackItem>
         </InspectorRow>
       ) : null}

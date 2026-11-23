@@ -7,7 +7,7 @@ import {
   PRESETS, MAX_STOPS, MAX_POINTS, effectCell,
 } from '@studio/core/gradient';
 import {createGpuDither, ditherRGBA, paintIndices, paintMask, STYLE_BY_ID, defaultParams, MAX_COLORS} from '@studio/core/dither';
-import {LED_WALL} from '@studio/core/frames';
+import {LED_WALL, cleanSide} from '@studio/core/frames';
 
 export const saved = toolStore('leela');
 
@@ -379,7 +379,7 @@ export function outSize() {
   const o = S.out, preset = SIZES.find(z => z.id === o.size);
   if (preset?.w) return {w: preset.w, h: preset.h};
   if (o.size === 'stage' && canvas) return {w: canvas.width, h: canvas.height};
-  return {w: Math.round(Math.min(MAX_SIDE, Math.max(16, o.w))), h: Math.round(Math.min(MAX_SIDE, Math.max(16, o.h)))};
+  return {w: cleanSide(o.w, 1920), h: cleanSide(o.h, 1080)}; // whole, even, 16–8192 px
 }
 
 /** Seconds and frames a video export will have (a whole number of loops when looping). */
