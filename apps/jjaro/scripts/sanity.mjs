@@ -1,8 +1,10 @@
 // Run with `npm test -w @studio/jjaro`. Node checks of JJARO's cloth: every setup at
-// every quality stays finite, doesn't overstretch, settles when there's no wind, survives
-// rough handling, and a frame's simulation stays within budget.
+// every quality stays finite, doesn't overstretch, settles when there's no wind, doesn't
+// pass through itself (except the heap, which is only counted), survives rough handling,
+// and a frame's simulation stays within budget.
 import {Cloth, SETUP_IDS, QUALITY, STEP} from '../src/engine/cloth.js';
 import {Surface} from '../src/engine/surface.js';
+import {piercings} from './pierce.mjs';
 
 let fails = 0;
 const fail = (...m) => { fails++; console.log('FAIL', ...m); };
@@ -25,8 +27,13 @@ for (const setup of SETUP_IDS) {
       if (Math.hypot(c.pos[a] - sf.pos[b], c.pos[a + 1] - sf.pos[b + 1], c.pos[a + 2] - sf.pos[b + 2]) > 1e-5) fail(setup, q, 'surface misses particle', x, y);
     }
     if (st > 1.2) fail(setup, q, `overstretched ×${st.toFixed(3)}`);
+    // Sheet edges crossing a triangle. The heap crumples through itself (about 1,000, 3,700
+    // and 8,000 at low, medium and high); particle repulsion can't stop that without also
+    // un-crumpling it (tried Nov. 23), so it is only counted. The others must stay clear.
+    const cross = piercings(c);
+    if (setup !== 'heap' && cross > 0) fail(setup, q, `passes through itself: ${cross} crossing edges`);
     if (setup !== 'float' && sp > 0.05) fail(setup, q, `still moving after 8 s: ${sp.toFixed(3)} u/s`);
-    console.log(`${setup.padEnd(8)} ${q.padEnd(6)} speed ${sp.toFixed(4)}  stretch ×${st.toFixed(3)}`);
+    console.log(`${setup.padEnd(8)} ${q.padEnd(6)} speed ${sp.toFixed(4)}  stretch ×${st.toFixed(3)}  crossings ${cross}`);
   }
 }
 
