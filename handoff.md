@@ -105,13 +105,7 @@ npm run build          # whole suite → dist/
 
 **Left open:**
 - Touch dragging hasn't been tried on a real phone or tablet.
-- The heap can show small spots where folds pass through each other. **Measured Nov. 23** with  (sheet edges that cross a triangle): after 8 s the heap has about 800, 4,100 and 8,800 crossing edges at low, medium and high; corners, edge, drape and float have none, and Unknown command: "test"
-
-
-Did you mean this?
-  npm test # Test a package
-To see a list of supported npm commands, run:
-  npm help now fails if they ever do. The heap's start shape is already folded through itself (its angle wobble, , runs backwards; under 1/3 it wouldn't), but fixing that alone doesn't change the settled count. Stronger particle repulsion (one full spacing, near pairs included, three passes a step) cut the count by 98% but un-crumpled the heap into a flat sheet, because the heap's folds come from the sheet being squeezed in its own plane, and repulsion can't tell that from layers overlapping. Pushing only along the surface normal made it jitter and didn't help. A real fix is edge–triangle collision, a bigger job; all of this was reverted. In the picture the crossings are thin slivers; the red patches are the rainbow, not the back face (both faces are foil).
+- The heap can show small spots where folds pass through each other. **Measured Nov. 23** with `scripts/pierce.mjs` (sheet edges that cross a triangle): after 8 s the heap has about 800, 4,100 and 8,800 crossing edges at low, medium and high; corners, edge, drape and float have none, and `npm test` now fails if they ever do. The heap's start shape is already folded through itself (its angle wobble, `0.35 * sin(3a)`, runs backwards; under 1/3 it wouldn't), but fixing that alone doesn't change the settled count. Stronger particle repulsion (one full spacing, near pairs included, three passes a step) cut the count by 98% but un-crumpled the heap into a flat sheet, because the heap's folds come from the sheet being squeezed in its own plane, and repulsion can't tell that from layers overlapping. Pushing only along the surface normal made it jitter and didn't help. A real fix is edge–triangle collision, a bigger job; all of this was reverted. In the picture the crossings are thin slivers; the red patches are the rainbow, not the back face (both faces are foil).
 - The research's pour-liquid feature was left out of v1 on purpose; it could come back later as a small "droplets" feature.
 - Spectrum order was checked by eye, not numerically.
 
