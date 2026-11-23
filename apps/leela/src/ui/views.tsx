@@ -350,11 +350,15 @@ function ExportSection() {
       {o.size === 'custom' ? (
         <InspectorRow label="Pixels">
           <StackItem size="fill">
-            <PixelsInput label="Width in pixels" value={w} onCommit={v => setOut({w: num(String(v), o.w)})} />
-          </StackItem>
-          <Text type="supporting">×</Text>
-          <StackItem size="fill">
-            <PixelsInput label="Height in pixels" value={h} onCommit={v => setOut({h: num(String(v), o.h)})} />
+            <HStack gap={1} vAlign="center">
+              <StackItem size="fill">
+                <PixelsInput label="Width in pixels" value={w} onCommit={v => setOut({w: num(String(v), o.w)})} />
+              </StackItem>
+              <Text type="supporting">×</Text>
+              <StackItem size="fill">
+                <PixelsInput label="Height in pixels" value={h} onCommit={v => setOut({h: num(String(v), o.h)})} />
+              </StackItem>
+            </HStack>
           </StackItem>
         </InspectorRow>
       ) : null}
