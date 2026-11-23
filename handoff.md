@@ -1,6 +1,6 @@
 # Handoff — creative-tools, Nov. 18–23, 2026
 
-**Current state (Nov. 23):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). The container still runs `703ccd3`, behind `main` (LEELA rounding, MP4 sizes and messages, JJARO droplets aren't deployed yet) in LXC container 105 on `pve` (see below).
+**Current state (Nov. 23):** All work is committed and pushed; `main` matches `origin/main`. The only local change is `packages/build/inline.js` (line endings only; leave it out of commits). The suite runs from `db6029d` in LXC container 105 on `pve` (see below).
 
 The suite holds nine apps: `launcher`, `glyf`, `durandal`, `leela`, `bloom`, `tycho`, `thoth`, `pfhor` and `jjaro`. All are registered in `suite.json` and have `dev:` and `build:` scripts in the root `package.json`. Shared code lives in `packages/core` (dither engine, gradient engine, `encodeFramesToMp4`, hand-off store). `npm test` runs the engine checks for core, TYCHO, THOTH, PFHOR and JJARO; all pass.
 
@@ -18,7 +18,7 @@ npm run build          # whole suite → dist/
 | B (run in `~`, used a temporary worktree) | BLOOM | `~/creative/specs/1stave-effects/01-procedural-botanical.md` |
 | Nov. 19–20 | TYCHO, THOTH, PFHOR, DURANDAL polish, deploy, JJARO | the 1stAve specs, then `holocloth-research` on kaizen |
 
-**Hosted** (last deploy `703ccd3`) in LXC container 105 (`creative-tools`) on `pve`, the Proxmox host: **https://creative-tools.tail5e1c3e.ts.net/**, tailnet only. It moved there from the host itself on Nov. 21; the old `pve.tail5e1c3e.ts.net` address no longer serves anything.
+**Hosted** (last deploy `db6029d`) in LXC container 105 (`creative-tools`) on `pve`, the Proxmox host: **https://creative-tools.tail5e1c3e.ts.net/**, tailnet only. It moved there from the host itself on Nov. 21; the old `pve.tail5e1c3e.ts.net` address no longer serves anything.
 
 - Container: unprivileged Debian 13, 1 core, 256 MB, 2 GB on `local-lvm`, 10.10.5.205 on `vmbr0`, starts at boot, `/dev/net/tun` passed through (same pattern as etch and garage). It runs only Tailscale; nothing else was installed.
 - Files live in `/srv/creative-tools` inside the container. `tailscale serve` shares that folder over HTTPS (the webcam and clipboard need HTTPS).
