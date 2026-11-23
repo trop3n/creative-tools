@@ -42,6 +42,8 @@ export const DEFAULT_CONFIG = {
   invert: false, // print everywhere except the artwork
   paper: '#ece6da', // foil stamp: the paper under the foil
   ink: 0.9, // ink on foil: 0..1, how strong the inks are
+  drops: 0, // 0..1: water droplets on the foil (0: none)
+  dropSize: 0.4, // 0..1
   lights: 2, // 1..3
   lightSwing: 0.5, // 0..1: how far the lights sweep
   lightSize: 0.3, // 0..1: soft-box size
@@ -83,6 +85,8 @@ export function cleanConfig(raw = {}) {
     invert: typeof c.invert === 'boolean' ? c.invert : d.invert,
     paper: color(c.paper, d.paper),
     ink: num(c.ink, 0, 1, d.ink),
+    drops: num(c.drops, 0, 1, d.drops),
+    dropSize: num(c.dropSize, 0, 1, d.dropSize),
     lights: Math.round(num(c.lights, 1, MAX_LIGHTS, d.lights)),
     lightSwing: num(c.lightSwing, 0, 1, d.lightSwing),
     lightSize: num(c.lightSize, 0, 1, d.lightSize),

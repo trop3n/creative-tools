@@ -17,7 +17,7 @@ import {Check, Dices, Download, Film, ImageDown, X, FolderOpen, ImageUp, Link, P
 import {pickFiles} from '@studio/core';
 import {SETUPS} from '../engine/cloth.js';
 import {ASPECTS, METALS, PAPERS, PRESETS} from '../engine/config.js';
-import {PATTERNS, PRINTS, MAX_LIGHTS} from '../engine/foil.js';
+import {PATTERNS, PRINTS, MAX_LIGHTS, MAX_DROPS} from '../engine/foil.js';
 import {
   useStore, loadArt, clearArt, exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExport, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
 } from '../engine/live.js';
@@ -219,6 +219,12 @@ export function Inspector() {
             <Text type="supporting">Drop or paste an image anywhere to print it. Shapes come from see-through backgrounds, or else from the dark parts.</Text>
           </>
         ) : null}
+      </InspectorSection>
+
+      <InspectorSection title="Droplets">
+        <SliderRow label="Droplets" value={c.drops} min={0} max={1} step={0.02} format={v => (v < 0.01 ? 'Off' : String(Math.round(v * MAX_DROPS)))} onChange={v => set('drops', v)} />
+        {c.drops > 0 ? <SliderRow label="Size" value={c.dropSize} min={0} max={1} step={0.01} format={pct} onChange={v => set('dropSize', v)} /> : null}
+        <Text type="supporting">Beads of water on the foil. They ride the folds and magnify the rainbow under them. New fall scatters them again.</Text>
       </InspectorSection>
 
       <InspectorSection title="Lights">

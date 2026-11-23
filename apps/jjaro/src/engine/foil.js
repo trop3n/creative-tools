@@ -28,6 +28,31 @@ export const PRINTS = [
 ];
 export const PRINT_IDS = PRINTS.map(p => p.id);
 
+// Water droplets beaded on the foil. Each is a shallow dome stuck to the sheet (so it rides
+// the folds): the foil under it is seen through it, magnified and bent, and its own surface
+// mirrors the studio. They don't run, so exported loops stay seamless.
+export const MAX_DROPS = 48;
+
+/**
+ * Where the droplets sit: amount 0..1 (how many), size 0..1, a seed and a seeded random
+ * source (cloth.js's rng). Darts thrown at the sheet, keeping those that don't touch
+ * another droplet. Returns {count, drops: Float32Array(MAX_DROPS * 3) of u, v, radius}
+ * (radius in sheet widths).
+ */
+export function dropLayout(amount, size, seed, rand) {
+  const drops = new Float32Array(MAX_DROPS * 3);
+  const want = Math.round(amount * MAX_DROPS);
+  const R = rand(seed * 7919 + 17), placed = [];
+  for (let tries = 0; placed.length < want && tries < want * 40; tries++) {
+    const r = (0.012 + 0.03 * size) * (0.55 + 0.45 * R());
+    const u = r + R() * (1 - 2 * r), v = r + R() * (1 - 2 * r);
+    if (placed.some(([pu, pv, pr]) => Math.hypot(pu - u, pv - v) < pr + r + 0.006)) continue;
+    placed.push([u, v, r]);
+  }
+  placed.forEach(([u, v, r], i) => { drops[i * 3] = u; drops[i * 3 + 1] = v; drops[i * 3 + 2] = r; });
+  return {count: placed.length, drops};
+}
+
 export const FS_FOIL = `#version 300 es
 precision highp float;
 in vec3 vPos, vNrm, vTan;
@@ -41,6 +66,8 @@ uniform int uPrint;
 uniform sampler2D uArt;
 uniform float uArtAspect, uArtSize, uArtAlpha, uInvert, uInk;
 uniform vec3 uPaper;
+uniform vec3 uDrops[${MAX_DROPS}];
+uniform int uDropCount;
 out vec4 o;
 
 const float PI = 3.14159265;
@@ -102,6 +129,24 @@ float artwork(vec2 uv, out vec4 art) {
   return uInvert > 0.5 ? 1.0 - cov : cov;
 }
 
+// The droplet over this point: how much of the pixel it covers (0..1, antialiased with
+// px, a pixel's size on the sheet), and in d the offset from its middle (in radii, 1 at
+// the rim) and its radius. A droplet is a shallow dome, so it tilts most at the rim.
+float droplet(vec2 uv, float px, out vec3 d) {
+  d = vec3(0.0);
+  for (int i = 0; i < ${MAX_DROPS}; i++) {
+    if (i >= uDropCount) break;
+    vec3 q = uDrops[i];
+    vec2 o = (uv - q.xy) / q.z;
+    float r = length(o);
+    if (r < 1.0 + px / q.z) {
+      d = vec3(o / max(1.0, r), q.z);
+      return clamp((1.0 - r) * q.z / px + 0.5, 0.0, 1.0);
+    }
+  }
+  return 0.0;
+}
+
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); } // Narkowicz's fit
 
 void main() {
@@ -109,8 +154,19 @@ void main() {
   bool front = dot(n, v) >= 0.0; // the printed side
   if (!front) n = -n; // both faces are foil
   vec3 t = normalize(vTan - n * dot(n, vTan)), b = cross(n, t);
+
+  // Under a droplet, the foil is seen through a lens: magnified (the grooves are read
+  // nearer its middle) and tilted the other way. nWater is the droplet's own surface.
+  vec3 drop = vec3(0.0);
+  float px = max(length(fwidth(vUv)), 1e-6);
+  float wet = uDropCount > 0 ? droplet(vUv, px, drop) : 0.0;
+  vec3 tilt = t * drop.x + b * drop.y, nWater = n;
+  if (wet > 0.0) {
+    nWater = normalize(n + tilt * 0.8);
+    n = normalize(n - tilt * 0.3 * wet);
+  }
   float spacing;
-  vec2 gr = grooves(vUv, spacing);
+  vec2 gr = grooves(vUv - drop.xy * drop.z * 0.35 * wet, spacing);
   vec4 art = vec4(0.0);
   float cov = uPrint > 0 ? artwork(vUv, art) : 0.0;
   if (uPrint == 1) gr.x += cov * PI * 0.5; // kinegram: the grooves are cut through both faces
@@ -148,6 +204,14 @@ void main() {
     col = mix(uPaper * light, col, front ? cov : 0.0);
   } else if (uPrint == 3 && front) {
     col *= mix(vec3(1.0), pow(art.rgb, vec3(2.2)), art.a * uInk);
+  }
+  if (wet > 0.0) {
+    // The droplet's surface: clear, mirroring the studio more at grazing angles (Schlick,
+    // water), with a dark meniscus at the rim; the soft boxes give it its glints.
+    float fres = 0.02 + 0.98 * pow(1.0 - max(dot(nWater, v), 0.0), 5.0);
+    vec3 water = mix(col * 1.08, environment(reflect(-v, nWater)), fres);
+    water *= 1.0 - 0.3 * smoothstep(0.55, 1.0, dot(drop.xy, drop.xy));
+    col = mix(col, water, wet);
   }
   o = vec4(pow(aces(col), vec3(1.0 / 2.2)), 1.0);
 }`;

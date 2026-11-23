@@ -3,8 +3,8 @@
 import {useSyncExternalStore} from 'react';
 import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
 import {parseColor, oklabToLinear} from '@studio/core/gradient';
-import {Cloth, QUALITY} from './cloth.js';
-import {lightDirs, PATTERN_IDS, PRINT_IDS} from './foil.js';
+import {Cloth, QUALITY, rng} from './cloth.js';
+import {lightDirs, dropLayout, PATTERN_IDS, PRINT_IDS} from './foil.js';
 import {artFromFile, artFromData, artData, sampleArt} from './art.js';
 import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane, focusDistance, effectReach} from './renderer.js';
 import {frameDims} from '@studio/core/frames';
@@ -125,6 +125,14 @@ function fit() {
   draw();
 }
 
+// The droplets' layout only changes with these settings, so keep the last one.
+let dropCache = {key: '', value: null};
+function dropsFor(c) {
+  const key = c.drops + '|' + c.dropSize + '|' + c.seed;
+  if (dropCache.key !== key) dropCache = {key, value: c.drops > 0 ? dropLayout(c.drops, c.dropSize, c.seed, rng) : null};
+  return dropCache.value;
+}
+
 /**
  * Everything the renderer needs for one frame of `sheet` (the live cloth or a frozen
  * copy) at `time` seconds of light motion. `orbit` turns the camera from the config's.
@@ -138,6 +146,7 @@ function sceneFrame(c, sheet, time, aspect, {orbit = 0, transparent = false, fra
       tint: toLinear(c.tint), env: c.background.map(toLinear), rainbow: c.rainbow, spread: c.spread, spacing: c.spacing,
       scale: c.scale, angle: c.angle * Math.PI / 180, seed: (c.seed % 1000) * 0.37, pattern: PATTERN_IDS.indexOf(c.pattern),
       lights: c.lights, lightDirs: lightDirs(orbit ? {...c, orbit: c.orbit + orbit} : c, time, c.period), lightSize: c.lightSize,
+      drops: dropsFor(c),
     },
     print: {mode: PRINT_IDS.indexOf(c.print), art: S.art, size: c.artSize, invert: c.invert, paper: toLinear(c.paper), ink: c.ink},
   };

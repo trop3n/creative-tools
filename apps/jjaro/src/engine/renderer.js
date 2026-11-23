@@ -270,7 +270,7 @@ export function createRenderer(canvas, {preserve = false, alpha = false} = {}) {
     /**
      * f: {cloth, cam (from frameCamera), background [[sRGB] center, [sRGB] edge],
      *     foil: {tint (linear), env [[linear] top, [linear] bottom], rainbow, spread, spacing (µm), scale, angle (rad), seed,
-     *            pattern (index), lights, lightDirs (Float32Array), lightSize},
+     *            pattern (index), lights, lightDirs (Float32Array), lightSize, drops ({count, drops} from dropLayout)},
      *     print: {mode (index; 0 none), art {canvas, alpha, aspect}, size, invert, paper (linear), ink},
      *     post: {glow 0..1, blur 0..1, focus (distance from the eye), grain 0..1, frame (grain frame), transparent},
      *     view: {W, H, x, y}: the part of a W × H frame this canvas holds (default: all of it)}
@@ -336,6 +336,8 @@ export function createRenderer(canvas, {preserve = false, alpha = false} = {}) {
       gl.uniform1f(u.uScale, m.scale); gl.uniform1f(u.uAngle, m.angle); gl.uniform1f(u.uSeed, m.seed);
       gl.uniform1i(u.uPattern, m.pattern); gl.uniform1i(u.uLights, m.lights);
       gl.uniform3fv(u['uLightDir[0]'], m.lightDirs); gl.uniform1f(u.uLightSize, m.lightSize);
+      gl.uniform1i(u.uDropCount, m.drops ? m.drops.count : 0);
+      if (m.drops?.count) gl.uniform3fv(u['uDrops[0]'], m.drops.drops);
       const p = f.print;
       gl.uniform1i(u.uPrint, p.art ? p.mode : 0);
       if (p.art) {
