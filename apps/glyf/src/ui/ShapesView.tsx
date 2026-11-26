@@ -6,6 +6,7 @@ import {Card} from '@astryxdesign/core/Card';
 import {ClickableCard} from '@astryxdesign/core/ClickableCard';
 import {Divider} from '@astryxdesign/core/Divider';
 import {Grid} from '@astryxdesign/core/Grid';
+import {NumberInput} from '@astryxdesign/core/NumberInput';
 import {Icon} from '@astryxdesign/core/Icon';
 import {IconButton} from '@astryxdesign/core/IconButton';
 import {HStack, StackItem, VStack} from '@astryxdesign/core/Layout';
@@ -17,11 +18,11 @@ import {Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {
-  ArrowDownToLine, ArrowUpToLine, Circle, Copy, Download, FileUp, FlipHorizontal2, FlipVertical2,
-  MousePointer2, Pentagon, Plus, RotateCw, Scissors, Square, Trash2, TriangleRight, Undo2,
+  ArrowDownToLine, ArrowUpToLine, Circle, Copy, Crop, Download, FileUp, FlipHorizontal2, FlipVertical2,
+  MousePointer2, Pentagon, Plus, Repeat2, RotateCcw, RotateCw, Scissors, Slash, Square, Trash2, TriangleRight, Undo2, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import {S, A, useStore, cur, selEl, pushHist, changed, emit, undo, selectGlyph, setTool} from '../engine/store.js';
-import {shapeInner, elMarkup, getBox, setBox, corners, moveEl, boxFrom, makeEl, clone, P, n2} from '../engine/shapes.js';
+import {shapeInner, elMarkup, getBox, setBox, corners, moveEl, boxFrom, makeEl, clone, P, n2, strokePts, setMode, modeOf} from '../engine/shapes.js';
 import {GlyphArt, ICON, InspectorRow, InspectorSection, SliderRow} from './parts';
 import {pickFiles} from '@studio/core';
 
@@ -38,7 +39,17 @@ const TOOL_NOTES: Record<string, string> = {
   quarter: 'Drag away from the corner the arc pivots on. Shift for a true quarter circle.',
   tri: 'Drag away from the right-angle corner. Shift keeps it square.',
   poly: 'Click to place points. Click the first point, double-click, or press Enter to close. Esc cancels.',
+  line: 'Drag to draw a straight stroke at the line weight in the tool bar. Hold Shift to keep it level, upright or at 45°.',
 };
+const WEIGHTS = [2, 4, 6, 8, 10, 12.5, 16, 20, 25].map(v => ({value: String(v), label: `Weight ${v}`}));
+/** The paint mode new parts get: Add, Cut (erase what's below) or Keep (only what's inside stays). */
+const paintOf = (ed: any) => (ed.clip ? 'keep' : ed.cut ? 'cut' : 'add');
+/** A line from a to b, Shift snapping it to 45° steps. */
+function lineTo(a: any, b: any, snap45: boolean) {
+  if (!snap45) return b;
+  const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy), ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  return {x: n2(a.x + Math.cos(ang) * l), y: n2(a.y + Math.sin(ang) * l)};
+}
 const SNAPS = [
   {value: '0', label: 'Snap off'},
   {value: '5', label: 'Snap 5'},
@@ -147,7 +158,7 @@ export function ShapeEditor() {
     ed.poly = null; setPreview('');
     if (pts.length < 3) { emit(); return; }
     pushHist();
-    const e: any = P(pts); if (ed.cut) e.cut = true;
+    const e: any = setMode(P(pts), paintOf(ed));
     cur().els.push(e); ed.sel = cur().els.length - 1; changed();
   };
   // Enter / Escape reach the polygon through this hook so the keyboard handler stays in one place.
@@ -189,8 +200,13 @@ export function ShapeEditor() {
     const d = drag.current; if (!d || !shape) return;
     if (d.kind === 'draw') {
       d.cur = sp; d.square = ev.shiftKey;
+      if (ed.tool === 'line') {
+        const end = lineTo(d.start, sp, ev.shiftKey);
+        setPreview(Math.hypot(end.x - d.start.x, end.y - d.start.y) > 0.5 ? elMarkup(P(strokePts(d.start.x, d.start.y, end.x, end.y, ed.lineW))) : '');
+        return;
+      }
       const b = boxFrom(d.start, d.cur, d.square);
-      setPreview(b.w && b.h ? elMarkup(makeEl(ed.tool, b, ed.cut)) : '');
+      setPreview(b.w && b.h ? elMarkup(makeEl(ed.tool, b, paintOf(ed))) : '');
       return;
     }
     let ne;
@@ -215,9 +231,16 @@ export function ShapeEditor() {
   const onUp = () => {
     const d = drag.current; drag.current = null; if (!d || !shape) return;
     if (d.kind === 'draw') {
-      const b = boxFrom(d.start, d.cur, d.square);
       setPreview('');
-      if (b.w >= 0.5 && b.h >= 0.5) { pushHist(); shape.els.push(makeEl(ed.tool, b, ed.cut)); ed.sel = shape.els.length - 1; changed(); }
+      if (ed.tool === 'line') {
+        const end = lineTo(d.start, d.cur, d.square);
+        if (Math.hypot(end.x - d.start.x, end.y - d.start.y) > 0.5) {
+          pushHist(); shape.els.push(setMode(P(strokePts(d.start.x, d.start.y, end.x, end.y, ed.lineW)), paintOf(ed))); ed.sel = shape.els.length - 1; changed();
+        }
+        return;
+      }
+      const b = boxFrom(d.start, d.cur, d.square);
+      if (b.w >= 0.5 && b.h >= 0.5) { pushHist(); shape.els.push(makeEl(ed.tool, b, paintOf(ed))); ed.sel = shape.els.length - 1; changed(); }
     } else if (d.pushed) changed();
   };
 
@@ -259,7 +282,7 @@ export function ShapeEditor() {
                   <g
                     key={i}
                     data-idx={i}
-                    {...stylex.props(styles.ov, ed.tool === 'select' && styles.ovHit, e.cut && styles.ovCut, i === ed.sel && styles.ovSel)}
+                    {...stylex.props(styles.ov, ed.tool === 'select' && styles.ovHit, (e.cut || e.clip) && styles.ovCut, i === ed.sel && styles.ovSel)}
                     dangerouslySetInnerHTML={{__html: elMarkup(e)}}
                   />
                 ))
@@ -267,7 +290,7 @@ export function ShapeEditor() {
             {handles.map(h => (
               <rect key={h.id} data-h={h.id} x={h.x - 1.6} y={h.y - 1.6} width={3.2} height={3.2} {...stylex.props(styles.handle)} />
             ))}
-            <g {...stylex.props(styles.preview, ed.cut && styles.previewCut)} dangerouslySetInnerHTML={{__html: preview}} />
+            <g {...stylex.props(styles.preview, (ed.cut || ed.clip) && styles.previewCut)} dangerouslySetInnerHTML={{__html: preview}} />
           </svg>
         </Card>
       </StackItem>
@@ -296,6 +319,12 @@ export function ShapesToolbar() {
       size="sm"
       startContent={
         <>
+          <SegmentedControl label="Shapes mode" size="sm" value={ed.mode} onChange={A.catMode}>
+            <SegmentedControlItem value="draw" label="Draw" />
+            <SegmentedControlItem value="catalog" label="Catalog" />
+          </SegmentedControl>
+          {ed.mode === 'catalog' ? null : (
+          <>
           <SegmentedControl label="Tool" size="sm" value={ed.tool} onChange={setTool}>
             <SegmentedControlItem value="select" label="Select (V)" isLabelHidden icon={<Icon icon={MousePointer2} size={ICON} />} />
             <SegmentedControlItem value="rect" label="Rectangle (R)" isLabelHidden icon={<Icon icon={Square} size={ICON} />} />
@@ -303,11 +332,16 @@ export function ShapesToolbar() {
             <SegmentedControlItem value="quarter" label="Quarter circle (Q)" isLabelHidden icon={<Icon icon={QuarterIcon} size={ICON} />} />
             <SegmentedControlItem value="tri" label="Right triangle (T)" isLabelHidden icon={<Icon icon={TriangleRight} size={ICON} />} />
             <SegmentedControlItem value="poly" label="Polygon (P)" isLabelHidden icon={<Icon icon={Pentagon} size={ICON} />} />
+            <SegmentedControlItem value="line" label="Line (L)" isLabelHidden icon={<Icon icon={Slash} size={ICON} />} />
           </SegmentedControl>
-          <SegmentedControl label="Paint mode" size="sm" value={ed.cut ? 'cut' : 'add'} onChange={v => { ed.cut = v === 'cut'; emit(); }}>
+          <SegmentedControl label="Paint mode" size="sm" value={paintOf(ed)} onChange={v => { ed.cut = v === 'cut'; ed.clip = v === 'keep'; emit(); }}>
             <SegmentedControlItem value="add" label="Add" icon={<Icon icon={Plus} size={ICON} />} />
             <SegmentedControlItem value="cut" label="Cut (X)" icon={<Icon icon={Scissors} size={ICON} />} />
+            <SegmentedControlItem value="keep" label="Keep (K)" icon={<Icon icon={Crop} size={ICON} />} />
           </SegmentedControl>
+          {ed.tool === 'line' ? (
+            <Selector label="Line weight" isLabelHidden size="sm" variant="ghost" placement="above" width={124} value={String(ed.lineW)} options={WEIGHTS} onChange={v => { ed.lineW = +v; emit(); }} />
+          ) : null}
           <Selector
             label="Snap"
             isLabelHidden
@@ -320,6 +354,8 @@ export function ShapesToolbar() {
             onChange={v => { ed.snap = +v; emit(); }}
           />
           <IconButton label="Undo (Ctrl+Z)" tooltip="Undo" size="sm" variant="ghost" icon={<Icon icon={Undo2} size={ICON} />} onClick={undo} />
+          </>
+          )}
         </>
       }
     />
@@ -331,6 +367,7 @@ export function ShapesInspector() {
   const st = useStore();
   const shape = cur(), e = selEl();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [repeatN, setRepeatN] = useState(6);
   const rxFirst = useRef(true);
   useEffect(() => { rxFirst.current = true; }, [st.ed.sel, st.ed.id]);
   if (!shape) return null;
@@ -350,15 +387,27 @@ export function ShapesInspector() {
               />
             ) : null}
             <InspectorRow label="Mode">
-              <SegmentedControl label="Part mode" size="sm" layout="fill" value={e.cut ? 'cut' : 'add'} onChange={v => { if ((v === 'cut') !== !!e.cut) A.toggleCut(); }}>
+              <SegmentedControl label="Part mode" size="sm" layout="fill" value={modeOf(e)} onChange={A.setPaint}>
                 <SegmentedControlItem value="add" label="Add" />
                 <SegmentedControlItem value="cut" label="Cut" />
+                <SegmentedControlItem value="keep" label="Keep" />
               </SegmentedControl>
             </InspectorRow>
+            {e.t !== 'raw' ? <PartBox e={e} /> : null}
             <InspectorRow label="Transform">
               <IconButton label="Rotate part 90°" tooltip="Rotate 90°" size="sm" icon={<Icon icon={RotateCw} size={ICON} />} onClick={() => A.elXf('rot')} />
+              <IconButton label="Turn part 15° left" tooltip="Turn 15° left" size="sm" icon={<Icon icon={RotateCcw} size={ICON} />} onClick={() => A.rotPart(-15)} />
+              <IconButton label="Turn part 15° right" tooltip="Turn 15° right" size="sm" icon={<Icon icon={RotateCw} size={ICON} />} onClick={() => A.rotPart(15)} />
               <IconButton label="Flip part horizontally" tooltip="Flip horizontally" size="sm" icon={<Icon icon={FlipHorizontal2} size={ICON} />} onClick={() => A.elXf('fh')} />
               <IconButton label="Flip part vertically" tooltip="Flip vertically" size="sm" icon={<Icon icon={FlipVertical2} size={ICON} />} onClick={() => A.elXf('fv')} />
+              <IconButton label="Shrink part 10%" tooltip="Shrink 10%" size="sm" icon={<Icon icon={ZoomOut} size={ICON} />} onClick={() => A.scalePart(0.9)} />
+              <IconButton label="Grow part 10%" tooltip="Grow 10%" size="sm" icon={<Icon icon={ZoomIn} size={ICON} />} onClick={() => A.scalePart(1 / 0.9)} />
+            </InspectorRow>
+            <InspectorRow label="Copies">
+              <IconButton label="Add a mirrored copy, left to right" tooltip="Mirror left–right" size="sm" icon={<Icon icon={FlipHorizontal2} size={ICON} />} onClick={() => A.mirrorPart('fh')} />
+              <IconButton label="Add a mirrored copy, top to bottom" tooltip="Mirror top–bottom" size="sm" icon={<Icon icon={FlipVertical2} size={ICON} />} onClick={() => A.mirrorPart('fv')} />
+              <Selector label="Copies around the centre" isLabelHidden size="sm" width={92} value={String(repeatN)} options={[2, 3, 4, 5, 6, 8, 10, 12].map(n => ({value: String(n), label: `× ${n}`}))} onChange={v => setRepeatN(+v)} />
+              <IconButton label={`Repeat the part ${repeatN} times around the centre`} tooltip="Repeat around the centre" size="sm" icon={<Icon icon={Repeat2} size={ICON} />} onClick={() => A.repeatPart(repeatN)} />
             </InspectorRow>
             <InspectorRow label="Order">
               <IconButton label="Raise part ( ] )" tooltip="Raise" size="sm" icon={<Icon icon={ArrowUpToLine} size={ICON} />} onClick={() => A.reorder(1)} />
@@ -402,10 +451,26 @@ export function ShapesInspector() {
             How to draw
           </Text>
           <Text type="supporting">{TOOL_NOTES[st.ed.tool]}</Text>
-          <Text type="supporting">Cut parts erase everything drawn before them. Keys: V R E Q T P pick tools, X switches Add and Cut.</Text>
+          <Text type="supporting">Cut parts erase everything drawn before them; Keep parts keep only what lies inside them. Turning a part to an angle other than 90° makes it a polygon. Keys: V R E Q T P L pick tools, X switches Cut, K switches Keep.</Text>
         </VStack>
       </Section>
     </>
+  );
+}
+
+/** The selected part's position and size, in board units (0–100). */
+function PartBox({e}: {e: any}) {
+  const b = getBox(e), set = (k: string, v: number) => A.fitPart({...b, [k]: v});
+  const box = (k: 'x' | 'y' | 'w' | 'h', label: string) => (
+    <StackItem size="fill">
+      <NumberInput label={label} size="sm" width="100%" min={k === 'w' || k === 'h' ? 0.5 : -50} max={150} step={0.5} value={n2(b[k])} onChange={v => set(k, v)} />
+    </StackItem>
+  );
+  return (
+    <VStack gap={1}>
+      <HStack gap={1}>{box('x', 'X')}{box('y', 'Y')}</HStack>
+      <HStack gap={1}>{box('w', 'Width')}{box('h', 'Height')}</HStack>
+    </VStack>
   );
 }
 
@@ -418,9 +483,11 @@ export function useShapeKeys() {
       if (mod && k === 'z') { ev.preventDefault(); undo(); return; }
       if (mod && k === 'd') { ev.preventDefault(); A.dupEl(); return; }
       if (mod || ev.altKey) return;
-      const tools: Record<string, string> = {v: 'select', r: 'rect', e: 'ellipse', q: 'quarter', t: 'tri', p: 'poly'};
+      if (S.ed.mode === 'catalog') return;
+      const tools: Record<string, string> = {v: 'select', r: 'rect', e: 'ellipse', q: 'quarter', t: 'tri', p: 'poly', l: 'line'};
       if (tools[k]) { setTool(tools[k]); return; }
-      if (k === 'x') { S.ed.cut = !S.ed.cut; emit(); return; }
+      if (k === 'x') { S.ed.cut = !S.ed.cut; S.ed.clip = false; emit(); return; }
+      if (k === 'k') { S.ed.clip = !S.ed.clip; S.ed.cut = false; emit(); return; }
       if (k === 'escape' && !S.ed.poly) { S.ed.sel = -1; emit(); return; }
       if (k === '[') { A.reorder(-1); return; }
       if (k === ']') { A.reorder(1); return; }

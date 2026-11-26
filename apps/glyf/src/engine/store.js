@@ -2,8 +2,9 @@
 // emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
 import {readJSON, writeJSON, saveFile as coreSave} from '@studio/core';
-import {seedLib, tileShapes, TILE_NAMES, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, slug} from './shapes.js';
+import {seedLib, tileShapes, TILE_NAMES, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, slug, setMode, modeOf, rotateEl, scaleEl, fitBox} from './shapes.js';
 import {CUSTOM} from '@studio/core/frames';
+import {FAMILY, FAMILIES, buildFamily, defaults} from './families.js';
 
 /** Read (one argument) or write (two arguments) a JSON value in localStorage. */
 export function store(key, val) {
@@ -25,7 +26,9 @@ export const GEN_DEFAULT = {
   steps: 'measured', blank: true, rot: 'none', gap: 0.06, seed: 7, color: 'mono', ink: '#00304e',
   paper: '#dfdfdf', transparent: false, sample: 'sphere', fps: '30', audio: true, frame: 'source', customW: CUSTOM.w, customH: CUSTOM.h,
   pick: 'tone', // tone: each cell's glyph by its tone; mixed: any glyph in the set, fixed per cell
+  tone: 'classic', detail: 0.5, // classic: ink matched to the screen value; linear: to light (for fine grids seen from afar); detail 0..1: match glyph shapes at edges
   palette: PALETTES[0].colors.slice(), match: 'nearest', // Palette color mode: nearest color, or by tone
+  patKind: 'noise', patScale: 4, patDetail: 0.5, patAngle: 0, patSeed: 1, // Pattern source
   ribCount: 5, ribWidth: 0.09, ribWander: 0.6, ribPatches: 3, ribLoop: 10, ribSeed: 1, ribLoops: 1, // Ribbons source
 };
 
@@ -37,7 +40,9 @@ else if (!lib.tiles) { lib.shapes.push(...tileShapes()); lib.tiles = true; store
 export const S = {
   view: location.hash === '#shapes' ? 'shapes' : 'gen',
   lib,
-  ed: {id: (lib.shapes[15] || lib.shapes[0]).id, tool: 'select', cut: false, sel: -1, snap: 12.5, poly: null, hist: []},
+  ed: {id: (lib.shapes[15] || lib.shapes[0]).id, mode: 'draw', tool: 'select', cut: false, clip: false, lineW: 10, sel: -1, snap: 12.5, poly: null, hist: []},
+  // The shape catalog: the chosen family, a tag filter, and each family's last settings.
+  cat: Object.assign({family: FAMILIES[0].id, tag: '', params: {}}, store('glyf.cat.v1') || {}),
   gen: Object.assign({}, GEN_DEFAULT, store('glyf.gen.v1') || {}),
   cov: {},          // glyph id -> ink coverage 0..1
   ramp: [],         // glyphs in the active ramp, light to dark
@@ -73,6 +78,10 @@ export async function saveFile(filename, data, mime) {
 let saveT;
 export function saveLib() { clearTimeout(saveT); saveT = setTimeout(() => store('glyf.lib.v1', S.lib), 250); }
 export const saveGen = () => store('glyf.gen.v1', S.gen);
+const saveCat = () => store('glyf.cat.v1', S.cat);
+/** The catalog's current family and its settings (defaults filled in). */
+export const catFamily = () => FAMILY[S.cat.family] || FAMILIES[0];
+export const catParams = () => { const f = catFamily(); return {...defaults(f), ...(S.cat.params[f.id] || {})}; };
 export const byId = id => S.lib.shapes.find(s => s.id === id);
 export const cur = () => byId(S.ed.id);
 export const selEl = () => { const s = cur(); return s && s.els[S.ed.sel]; };
@@ -116,18 +125,62 @@ export const A = {
   },
   rename(name) { const s = cur(); if (s) { s.name = name || 'Untitled'; changed(); } },
   setInSet(id, v) { const s = byId(id); if (s) { s.inSet = v; changed(); } },
+  /* ---------- catalog ---------- */
+  catMode(m) { S.ed.mode = m === 'catalog' ? 'catalog' : 'draw'; if (S.ed.poly) S.ed.poly = null; emit(); },
+  catPick(id) { if (FAMILY[id]) { S.cat.family = id; saveCat(); emit(); } },
+  catTag(t) { S.cat.tag = t; saveCat(); emit(); },
+  catSet(key, v) { const f = catFamily(); S.cat.params[f.id] = {...catParams(), [key]: v}; saveCat(); emit(); },
+  catReset() { delete S.cat.params[catFamily().id]; saveCat(); emit(); },
+  /** New settings at random within each slider's range (and any option). */
+  catShuffle() {
+    const f = catFamily(), q = {};
+    for (const p of f.params) {
+      if (p.options) q[p.key] = p.options[Math.floor(Math.random() * p.options.length)].v;
+      else { const n = Math.round((p.max - p.min) / p.step); q[p.key] = +(p.min + Math.floor(Math.random() * (n + 1)) * p.step).toFixed(4); }
+    }
+    S.cat.params[f.id] = q; saveCat(); emit();
+  },
+  /** Add the catalog's shape to the library; inSet puts it in the generator set, edit opens it. */
+  catAdd({inSet = false, edit = false} = {}) {
+    const f = catFamily(), n = S.lib.shapes.filter(x => x.name.startsWith(f.name)).length + 1;
+    const g = {id: uid(), name: n > 1 ? `${f.name} ${n}` : f.name, els: buildFamily(f.id, catParams()), inSet};
+    S.lib.shapes.push(g);
+    if (edit) { S.ed.id = g.id; S.ed.sel = -1; S.ed.mode = 'draw'; S.ed.tool = 'select'; }
+    changed();
+    toast(edit ? `Added ${g.name}. Editing it now.` : inSet ? `Added ${g.name} to the library and the set` : `Added ${g.name} to the library`);
+  },
   /** The tile look: only the tiles in the set, mixed per cell, in flat palette colors on near-black. */
   tileLook() {
     if (!S.lib.shapes.some(s => TILE_NAMES.includes(s.name))) S.lib.shapes.push(...tileShapes());
     S.lib.shapes.forEach(s => (s.inSet = TILE_NAMES.includes(s.name)));
-    Object.assign(S.gen, {mode: 'density', pick: 'mixed', dither: 'none', steps: 'measured', blank: true, invert: true, gamma: 3, contrast: 1, bright: 0, rot: 'none', gap: 0.14, cols: Math.min(S.gen.cols, 48), color: 'palette', match: 'nearest', paper: '#242222'});
+    Object.assign(S.gen, {mode: 'density', pick: 'mixed', dither: 'none', steps: 'measured', blank: true, invert: true, gamma: 3, contrast: 1, bright: 0, rot: 'none', gap: 0.14, cols: Math.min(S.gen.cols, 48), color: 'palette', match: 'nearest', paper: '#242222', tone: 'classic'});
     saveGen(); changed();
   },
   allInSet(v) { S.lib.shapes.forEach(s => (s.inSet = v)); changed(); },
   clear() { const s = cur(); if (!s || !s.els.length) return; pushHist(); s.els = []; S.ed.sel = -1; changed(); toast('Cleared. Undo brings it back.'); },
   glyphXf(k) { const s = cur(); if (!s || !s.els.length) return; pushHist(); s.els.forEach(e => xfEl(e, k)); changed(); },
   elXf(k) { const s = cur(), e = selEl(); if (!e) return; pushHist(); s.els[S.ed.sel] = xfLocal(e, k); changed(); },
-  toggleCut() { const e = selEl(); if (!e) return; pushHist(); e.cut = !e.cut; changed(); },
+  toggleCut() { const e = selEl(); if (!e) return; pushHist(); setMode(e, e.cut ? 'add' : 'cut'); changed(); },
+  /** The selected part's paint mode: 'add', 'cut' or 'keep' (only what's inside it stays). */
+  setPaint(m) { const e = selEl(); if (!e || modeOf(e) === m) return; pushHist(); setMode(e, m); changed(); },
+  /** Replace the selected part with f(part), if f can (raw SVG can't turn or scale freely). */
+  partOp(f, what) {
+    const s = cur(), e = selEl(); if (!e) return;
+    const ne = f(e);
+    if (!ne) return toast(`An imported SVG part can't be ${what}`, 'error');
+    pushHist(); s.els[S.ed.sel] = ne; changed();
+  },
+  rotPart(deg) { A.partOp(e => rotateEl(e, deg), 'turned by that angle'); },
+  scalePart(k) { A.partOp(e => scaleEl(e, k), 'scaled'); },
+  fitPart(b) { if (b.w > 0.1 && b.h > 0.1) A.partOp(e => fitBox(e, b), 'resized'); },
+  /** n copies of the selected part around the board's centre (the original is the first). */
+  repeatPart(n) {
+    const s = cur(), e = selEl(); if (!e || n < 2) return;
+    const copies = []; for (let i = 1; i < n; i++) { const c = rotateEl(e, (360 * i) / n, 50, 50); if (!c) return toast("An imported SVG part can't be repeated around the centre", 'error'); copies.push(c); }
+    pushHist(); s.els.splice(S.ed.sel + 1, 0, ...copies); changed();
+  },
+  /** A mirrored copy of the selected part across the board's middle ('fh' left–right, 'fv' top–bottom). */
+  mirrorPart(k) { const s = cur(), e = selEl(); if (!e) return; pushHist(); s.els.splice(S.ed.sel + 1, 0, xfEl(clone(e), k)); S.ed.sel++; changed(); },
   dupEl() {
     const s = cur(), e = selEl(); if (!e) return; pushHist();
     const off = S.ed.snap || 5; s.els.push(moveEl(e, off, off)); S.ed.sel = s.els.length - 1; changed();

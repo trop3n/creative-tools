@@ -8,12 +8,13 @@ import {S, emit, toast, saveFile, saveGen} from './store.js';
 import {render, schedule, getOutCanvas, fileBase} from './generator.js';
 import {fixedSize, frameRatio, FRAME_RATIOS} from '@studio/core/frames';
 import {drawRibbons} from './ribbons.js';
+import {drawPattern, PATTERNS} from './patterns.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 /** Internal source state; S.media mirrors what the UI shows. */
 export const media = {src: null, kind: 'sample', exporting: false, vid: null, file: null, dispose: null, recorder: null};
 const M = () => S.media;
-const SAMPLE_NAMES = {sphere: 'Spheres', rings: 'Rings', ramp: 'Ramp', ribbons: 'Ribbons'};
+const SAMPLE_NAMES = {sphere: 'Spheres', rings: 'Rings', ramp: 'Ramp', ribbons: 'Ribbons', pattern: 'Pattern'};
 
 /* ---------- samples ---------- */
 function sampleCanvas(kind) {
@@ -51,14 +52,40 @@ function setSource(canvas, kind, label) {
 export function useSample(kind) {
   stopVideo(); S.gen.sample = kind; saveGen();
   if (kind === 'ribbons') return startRibbons();
+  if (kind === 'pattern') return startPattern();
   setSource(sampleCanvas(kind), 'sample', SAMPLE_NAMES[kind] + ' (sample)');
 }
 export function initSource() {
   const k = SAMPLE_NAMES[S.gen.sample] ? S.gen.sample : 'sphere';
   S.gen.sample = k;
   if (k === 'ribbons') { startRibbons(); return; }
+  if (k === 'pattern') { startPattern(); return; }
   media.src = sampleCanvas(k);
   M().label = SAMPLE_NAMES[k] + ' (sample)';
+}
+
+/* ---------- patterns: procedural still sources ---------- */
+let patKey = '';
+const patLabel = () => 'Pattern: ' + (PATTERNS.find(p => p.id === S.gen.patKind) || PATTERNS[0]).name;
+/** Redraw the pattern if its settings or the frame changed (the generator calls this before each render). */
+export function refreshPattern() {
+  if (media.kind !== 'pattern') return;
+  const g = S.gen, r = frameRatio(g.frame, FRAME_RATIOS, [g.customW, g.customH]) || 4 / 3, L = 640;
+  const [W, H] = r >= 1 ? [L, Math.round(L / r)] : [Math.round(L * r), L];
+  const p = {kind: g.patKind, scale: g.patScale, detail: g.patDetail, angle: g.patAngle, seed: g.patSeed}, key = JSON.stringify([W, H, p]);
+  if (key === patKey && media.src) return;
+  patKey = key;
+  const c = media.src && media.src.width === W && media.src.height === H ? media.src : mk(W, H), x = c.getContext('2d');
+  const im = x.createImageData(W, H);
+  drawPattern(im.data, W, H, p);
+  x.putImageData(im, 0, 0);
+  media.src = c;
+  M().label = patLabel();
+}
+function startPattern() {
+  media.src = null; media.kind = 'pattern'; patKey = '';
+  Object.assign(M(), {kind: 'pattern', label: patLabel(), playing: false, time: 0, duration: 0});
+  refreshPattern(); emit(); schedule();
 }
 
 /* ---------- ribbons: a moving built-in source ---------- */

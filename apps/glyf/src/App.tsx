@@ -22,6 +22,7 @@ import {S, A, emit, useStore, setToast, store, changed, toast} from './engine/st
 import {schedule} from './engine/generator.js';
 import {initSource, loadMediaFile, acceptsMedia, pauseForHidden, resumeForShown} from './engine/media.js';
 import {ShapesRail, ShapeEditor, ShapesToolbar, ShapesInspector, useShapeKeys} from './ui/ShapesView';
+import {CatalogStage, CatalogInspector} from './ui/CatalogView';
 import {GenerateRail, GenerateStage, GenerateToolbar, GenerateInspector} from './ui/GenerateView';
 import {ICON} from './ui/parts';
 
@@ -210,7 +211,7 @@ export default function App() {
                           padding={4}
                           content={
                             <LayoutContent padding={4} isScrollable={false} label={shapes ? 'Glyph editor' : 'Generated output'}>
-                              {shapes ? <ShapeEditor /> : <GenerateStage />}
+                              {shapes ? (s.ed.mode === 'catalog' ? <CatalogStage /> : <ShapeEditor />) : <GenerateStage />}
                             </LayoutContent>
                           }
                           footer={
@@ -243,7 +244,7 @@ export default function App() {
                         isScrollable
                         label={shapes ? 'Glyph settings' : 'Generator settings'}
                         xstyle={styles.foldsAtInspector}>
-                        {shapes ? <ShapesInspector /> : <GenerateInspector />}
+                        {shapes ? (s.ed.mode === 'catalog' ? <CatalogInspector /> : <ShapesInspector />) : <GenerateInspector />}
                       </LayoutPanel>
                     </>
                   }
@@ -256,7 +257,7 @@ export default function App() {
           {shapes ? <ShapesRail /> : <GenerateRail />}
         </Drawer>
         <Drawer isOpen={drawer === 'inspector'} onOpenChange={o => setDrawer(o ? 'inspector' : '')} width={340} padding={0} label={shapes ? 'Glyph settings' : 'Generator settings'}>
-          {shapes ? <ShapesInspector /> : <GenerateInspector />}
+          {shapes ? (s.ed.mode === 'catalog' ? <CatalogInspector /> : <ShapesInspector />) : <GenerateInspector />}
         </Drawer>
       </LayerProvider>
     </Theme>

@@ -15,7 +15,7 @@
     "serve": "node scripts/serve.mjs",
     "dev:durandal": "node scripts/check-node.cjs && npm run dev -w @studio/durandal",
     "build:durandal": "node scripts/check-node.cjs && npm run build -w @studio/durandal",
-    "test": "node scripts/check-node.cjs && npm test -w @studio/core -w @studio/tycho -w @studio/thoth -w @studio/pfhor -w @studio/jjaro",
+    "test": "node scripts/check-node.cjs && npm test -w @studio/core -w @studio/tycho -w @studio/thoth -w @studio/pfhor -w @studio/jjaro -w @studio/glyf",
     "dev:leela": "node scripts/check-node.cjs && npm run dev -w @studio/leela",
     "build:leela": "node scripts/check-node.cjs && npm run build -w @studio/leela",
     "dev:bloom": "node scripts/check-node.cjs && npm run dev -w @studio/bloom",

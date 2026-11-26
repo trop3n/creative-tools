@@ -3,7 +3,8 @@ import {S, emit, saveGen, setLibListener, toast, saveFile} from './store.js';
 import {copyText} from '@studio/core';
 import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
 import {glyphSVG, shapeInner, n2, slug} from './shapes.js';
-import {media} from './media.js';
+import {media, refreshPattern} from './media.js';
+import {GRID, inkOf, candidates, matchCells} from './match.js';
 
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -32,6 +33,19 @@ function rasterGlyph(shape) {
   });
   rasterCache.set(key, p);
   return p;
+}
+
+/** A glyph's ink as a GRID × GRID patch, drawn at its size in the cell (the gap around it). */
+const patchCache = new WeakMap();
+function glyphPatch(cv, gap) {
+  const hit = patchCache.get(cv);
+  if (hit && hit.gap === gap) return hit.patch;
+  const SZ = 64, b = SZ / GRID, c = mk(SZ, SZ), x = c.getContext('2d', {willReadFrequently: true}), s = SZ * (1 - gap), o = (SZ - s) / 2;
+  x.drawImage(cv, o, o, s, s);
+  const d = x.getImageData(0, 0, SZ, SZ).data, patch = new Float32Array(GRID * GRID);
+  for (let y = 0; y < SZ; y++) for (let X = 0; X < SZ; X++) patch[((y / b) | 0) * GRID + ((X / b) | 0)] += d[(y * SZ + X) * 4 + 3] / 255 / (b * b);
+  patchCache.set(cv, {gap, patch});
+  return patch;
 }
 
 function sampleGrid(src, cols, rows, crop) {
@@ -117,6 +131,7 @@ export function setGen(k, v) { S.gen[k] = v; saveGen(); emit(); schedule(); }
 
 let rampKey = '';
 export async function render(quiet) {
+  refreshPattern(); // a pattern source redraws itself when its settings or the frame change
   const my = ++tok, set = S.lib.shapes.filter(s => s.inSet), src = media.src;
   const rs = await Promise.all(set.map(rasterGlyph));
   if (my !== tok) return;
@@ -131,18 +146,29 @@ export async function render(quiet) {
   const crop = cropRect(src.width, src.height, frameRatio(g.frame, FRAME_RATIOS, custom) || 0), fixed = fixedSize(g.frame, custom);
   const rows = Math.max(1, Math.round((cols * crop.h) / crop.w));
   const px = sampleGrid(src, cols, rows, crop), N = cols * rows, val = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    let L = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
-    L = clamp((L - 0.5) * g.contrast + 0.5 + g.bright, 0, 1);
-    L = Math.pow(L, 1 / g.gamma);
-    val[i] = g.invert ? L : 1 - L;
-  }
+  const toneOpts = {tone: g.tone, contrast: g.contrast, bright: g.bright, gamma: g.gamma, invert: g.invert};
+  for (let i = 0; i < N; i++) val[i] = inkOf(px[i * 4], px[i * 4 + 1], px[i * 4 + 2], toneOpts);
   const maxC = glyphs[m - 1].cov;
   const lv = glyphs.map((gl, i) => ({gl, v: g.steps === 'even' ? (g.blank ? (i + 1) / m : m > 1 ? i / (m - 1) : 1) : gl.cov / maxC}));
   if (g.blank) lv.unshift({gl: null, v: 0});
   else if (g.steps !== 'even' && m > 1) { const lo = lv[0].v; lv.forEach(l => (l.v = (l.v - lo) / (1 - lo || 1))); }
   const size = g.mode === 'size';
-  const idx = size ? null : quantize(val, cols, rows, lv.map(l => l.v), g.dither);
+  const rotAt = (x, y) => (g.rot === 'random' ? hash(x, y, g.seed * 2 + 1) % 4 : g.rot === 'checker' ? (x + y) & 1 : 0);
+  // Detail and Fit read each cell as a patch and match glyph shapes (match.js); otherwise
+  // each cell's tone picks the glyph with the nearest ink, as before.
+  const shaped = !size && g.pick !== 'mixed' && (g.detail > 0 || g.rot === 'fit');
+  let chosen = null, idx = null;
+  if (shaped) {
+    const sub = sampleGrid(src, cols * GRID, rows * GRID, crop), ink = new Float32Array(sub.length / 4);
+    for (let j = 0; j < ink.length; j++) ink[j] = inkOf(sub[j * 4], sub[j * 4 + 1], sub[j * 4 + 2], toneOpts);
+    const levelOf = new Map(lv.filter(l => l.gl).map(l => [l.gl, l.v]));
+    const base = glyphs.map(gl => ({gl, level: levelOf.get(gl), patch: glyphPatch(gl.cv, g.gap)}));
+    if (g.rot === 'fit') { const all = candidates(base, [0, 1, 2, 3], g.blank); chosen = matchCells(ink, cols, rows, () => all, g.detail, g.dither); }
+    else {
+      const byRot = [0, 1, 2, 3].map(r => candidates(base, [r], g.blank));
+      chosen = matchCells(ink, cols, rows, (x, y) => byRot[rotAt(x, y)], g.detail, g.dither);
+    }
+  } else if (!size) idx = quantize(val, cols, rows, lv.map(l => l.v), g.dither);
 
   const moving = media.kind === 'video' || media.kind === 'camera' || media.kind === 'ribbons';
   const cell = Math.max(4, Math.min(40, Math.floor((moving ? 1920 : 2400) / Math.max(cols, rows))));
@@ -156,12 +182,13 @@ export async function render(quiet) {
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
     const i = y * cols + x; let gl, sc = 1;
     if (size) { const v = val[i]; if (v < 0.03) continue; gl = glyphs[m > 1 ? hash(x, y, g.seed) % m : 0]; sc = Math.sqrt(v); }
+    else if (chosen) { gl = chosen[i].gl; if (!gl) continue; }
     else {
       gl = lv[idx[i]].gl; if (!gl) continue;
       // Mixed: tone only decides whether a cell is marked; which glyph is fixed per cell.
       if (g.pick === 'mixed' && m > 1) gl = glyphs[hash(x, y, g.seed + 101) % m];
     }
-    const rot = g.rot === 'random' ? hash(x, y, g.seed * 2 + 1) % 4 : g.rot === 'checker' ? (x + y) & 1 : 0;
+    const rot = chosen ? chosen[i].rot : rotAt(x, y);
     const s = Math.min(cw, ch) * (1 - g.gap) * sc, cx = x * cw + cw / 2, cy = y * ch + ch / 2;
     lx.setTransform(1, 0, 0, 1, cx, cy); if (rot) lx.rotate((rot * Math.PI) / 2);
     lx.drawImage(gl.cv, -s / 2, -s / 2, s, s);

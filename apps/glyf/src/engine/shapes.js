@@ -1,5 +1,6 @@
 // Shape model: a glyph is a list of parts on a 100×100 board. Parts paint in
-// order; a "cut" part erases everything painted before it.
+// order; a "cut" part erases everything painted before it, and a "keep" part (clip)
+// keeps only what lies inside it (an intersection).
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 export const clone = o => JSON.parse(JSON.stringify(o));
@@ -11,6 +12,11 @@ export const Q = (x, y, w, h, c) => ({t: 'quarter', x, y, w, h, c});
 export const T = (x, y, w, h, c) => ({t: 'tri', x, y, w, h, c});
 export const P = pts => ({t: 'poly', pts});
 const cut = e => ((e.cut = true), e);
+export const asCut = cut;
+export const asKeep = e => ((e.clip = true), e);
+/** A part's paint mode: 'add', 'cut' or 'keep'. */
+export const modeOf = e => (e.clip ? 'keep' : e.cut ? 'cut' : 'add');
+export const setMode = (e, m) => { delete e.cut; delete e.clip; if (m === 'cut') e.cut = true; if (m === 'keep') e.clip = true; return e; };
 export const BOX = {rect: 1, quarter: 1, tri: 1};
 
 const SEEDS = [
@@ -84,9 +90,10 @@ export function shapeInner(shape, prefix) {
   const pre = prefix || 'a' + ++anon;
   let acc = '', k = 0;
   for (const e of shape.els) {
-    if (e.cut) {
-      const id = `${pre}-m${k++}`;
-      acc = `<mask id="${id}" maskUnits="userSpaceOnUse" x="-60" y="-60" width="220" height="220"><rect x="-60" y="-60" width="220" height="220" fill="#fff"/><g fill="#000" color="#000">${elMarkup(e)}</g></mask><g mask="url(#${id})">${acc}</g>`;
+    if (e.cut || e.clip) {
+      // Cut: a white mask with the part in black. Keep: a black mask with the part in white.
+      const id = `${pre}-m${k++}`, bg = e.clip ? '#000' : '#fff', fg = e.clip ? '#fff' : '#000';
+      acc = `<mask id="${id}" maskUnits="userSpaceOnUse" x="-60" y="-60" width="220" height="220"><rect x="-60" y="-60" width="220" height="220" fill="${bg}"/><g fill="${fg}" color="${fg}">${elMarkup(e)}</g></mask><g mask="url(#${id})">${acc}</g>`;
     } else acc += elMarkup(e);
   }
   return `<g fill="currentColor">${acc}</g>`;
@@ -145,14 +152,99 @@ export function boxFrom(a, b, square) {
   const c = dx >= 0 ? (dy >= 0 ? 0 : 3) : dy >= 0 ? 1 : 2;
   return {x: Math.min(a.x, a.x + dx), y: Math.min(a.y, a.y + dy), w: Math.abs(dx), h: Math.abs(dy), c};
 }
+/* ---------- geometry: polygons for any angle ---------- */
+const DEG = Math.PI / 180;
+/** Points along an arc (degrees, 0 = right, clockwise on screen). */
+export function arcPts(cx, cy, rx, ry, a0, a1, n = 32) {
+  const out = [];
+  for (let i = 0; i <= n; i++) { const a = (a0 + ((a1 - a0) * i) / n) * DEG; out.push([n2(cx + Math.cos(a) * rx), n2(cy + Math.sin(a) * ry)]); }
+  return out;
+}
+/** A band between two radii over an arc; inner radius 0 makes a pie slice. */
+export function arcBand(cx, cy, r0, r1, a0, a1, n = 40) {
+  const outer = arcPts(cx, cy, r1, r1, a0, a1, n);
+  return P(r0 > 0.01 ? outer.concat(arcPts(cx, cy, r0, r0, a1, a0, n)) : outer.concat([[cx, cy]]));
+}
+/** A regular polygon or star (inner 0..1 of the radius; 1 or more = plain polygon). */
+export function starPts(cx, cy, r, n, rotDeg = -90, inner = 1) {
+  const pts = [], k = inner < 1 ? 2 : 1;
+  for (let i = 0; i < n * k; i++) {
+    const a = (rotDeg + (360 * i) / (n * k)) * DEG, rr = k === 2 && i % 2 ? r * inner : r;
+    pts.push([n2(cx + Math.cos(a) * rr), n2(cy + Math.sin(a) * rr)]);
+  }
+  return pts;
+}
+/** A thick straight stroke from (x1, y1) to (x2, y2), square-ended. */
+export function strokePts(x1, y1, x2, y2, w) {
+  const dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy) || 1, nx = (-dy / l) * (w / 2), ny = (dx / l) * (w / 2);
+  return [[x1 + nx, y1 + ny], [x2 + nx, y2 + ny], [x2 - nx, y2 - ny], [x1 - nx, y1 - ny]].map(q => [n2(q[0]), n2(q[1])]);
+}
+/** Any part as a polygon (raw SVG can't be), keeping its paint mode; rounded corners too. */
+export function toPoly(e) {
+  let pts = null;
+  if (e.t === 'poly') pts = e.pts.map(q => q.slice());
+  else if (e.t === 'rect') {
+    const r = Math.min(e.rx || 0, e.w / 2, e.h / 2);
+    pts = r < 0.01 ? corners(e) : [
+      ...arcPts(e.x + e.w - r, e.y + r, r, r, -90, 0, 8), ...arcPts(e.x + e.w - r, e.y + e.h - r, r, r, 0, 90, 8),
+      ...arcPts(e.x + r, e.y + e.h - r, r, r, 90, 180, 8), ...arcPts(e.x + r, e.y + r, r, r, 180, 270, 8),
+    ];
+  } else if (e.t === 'ellipse') pts = arcPts(e.cx, e.cy, e.rx, e.ry, 0, 360, 64).slice(0, -1);
+  else if (e.t === 'tri') { const C = corners(e); pts = [C[e.c], C[e.c ^ 1], C[3 - e.c]]; }
+  else if (e.t === 'quarter') {
+    const C = corners(e), pc = C[e.c], start = Math.atan2(C[e.c ^ 1][1] - pc[1], C[e.c ^ 1][0] - pc[0]) / DEG;
+    const end = Math.atan2(C[3 - e.c][1] - pc[1], C[3 - e.c][0] - pc[0]) / DEG;
+    let sweep = end - start; if (sweep > 180) sweep -= 360; if (sweep < -180) sweep += 360;
+    // An elliptical quarter: scale a unit arc to the box.
+    pts = [pc, ...Array.from({length: 25}, (_, i) => {
+      const a = (start + (sweep * i) / 24) * DEG;
+      return [n2(pc[0] + Math.cos(a) * e.w), n2(pc[1] + Math.sin(a) * e.h)];
+    })];
+  }
+  if (!pts) return null;
+  const out = P(pts);
+  if (e.cut) out.cut = true;
+  if (e.clip) out.clip = true;
+  return out;
+}
+/** Rotate a part by any angle about (cx, cy) (default: its own centre). Returns a polygon. */
+export function rotateEl(e, deg, cx, cy) {
+  const q = toPoly(e); if (!q) return null;
+  if (cx == null) { const b = getBox(q); cx = b.x + b.w / 2; cy = b.y + b.h / 2; }
+  const c = Math.cos(deg * DEG), s = Math.sin(deg * DEG);
+  q.pts = q.pts.map(([x, y]) => [n2(cx + (x - cx) * c - (y - cy) * s), n2(cy + (x - cx) * s + (y - cy) * c)]);
+  return q;
+}
+/** Scale a part about its own centre. Box parts keep their kind; others become polygons. */
+export function scaleEl(e, k) {
+  const b = getBox(e), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (BOX[e.t] || e.t === 'ellipse') {
+    const o = clone(e); setBox(o, {x: cx - (b.w * k) / 2, y: cy - (b.h * k) / 2, w: b.w * k, h: b.h * k});
+    if (o.rx) o.rx = n2(o.rx * k);
+    return o;
+  }
+  const q = toPoly(e); if (!q) return null;
+  q.pts = q.pts.map(([x, y]) => [n2(cx + (x - cx) * k), n2(cy + (y - cy) * k)]);
+  return q;
+}
+/** Move and resize any part to the box b; polygons stretch their points. */
+export function fitBox(e, b) {
+  const o = clone(e);
+  if (BOX[e.t] || e.t === 'ellipse') { setBox(o, b); return o; }
+  if (e.t !== 'poly') return null;
+  const a = getBox(e), sx = a.w ? b.w / a.w : 1, sy = a.h ? b.h / a.h : 1;
+  o.pts = e.pts.map(([x, y]) => [n2(b.x + (x - a.x) * sx), n2(b.y + (y - a.y) * sy)]);
+  return o;
+}
+
 export function makeEl(tool, b, isCut) {
   let e;
   if (tool === 'rect') e = R(b.x, b.y, b.w, b.h);
   else if (tool === 'ellipse') e = E(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2);
   else if (tool === 'quarter') e = Q(b.x, b.y, b.w, b.h, b.c);
   else e = T(b.x, b.y, b.w, b.h, b.c);
-  if (isCut) e.cut = true;
-  return e;
+  // isCut: true (cut) or a paint mode ('add' | 'cut' | 'keep').
+  return setMode(e, isCut === true ? 'cut' : isCut || 'add');
 }
 
 /* ---------- SVG import ---------- */

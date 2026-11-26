@@ -15,6 +15,7 @@ import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Camera, CameraOff, Circle, Clapperboard, ClipboardCopy, Download, ImageUp, LayoutGrid, Minus, Pause, Play, Plus, Square, Volume2, VolumeX} from 'lucide-react';
 import {S, A, useStore, byId, PALETTES, MAX_PALETTE} from '../engine/store.js';
+import {PATTERNS} from '../engine/patterns.js';
 import {setGen, setOutCanvas, exportPNG, exportSVG, copySVG} from '../engine/generator.js';
 import {
   useSample, loadMediaFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, setMirror, stopCamera, toggleRecord,
@@ -246,17 +247,24 @@ export function GenerateInspector() {
   return (
     <>
       <InspectorSection title="Source">
-        <SegmentedControl
-          label="Sample image"
-          size="sm"
-          layout="fill"
-          value={m.kind === 'sample' ? g.sample || '' : m.kind === 'ribbons' ? 'ribbons' : ''}
-          onChange={useSample}>
-          <SegmentedControlItem value="sphere" label="Spheres" />
-          <SegmentedControlItem value="rings" label="Rings" />
-          <SegmentedControlItem value="ramp" label="Ramp" />
-          <SegmentedControlItem value="ribbons" label="Ribbons" />
-        </SegmentedControl>
+        <InspectorRow label="Built-in">
+          <Selector
+            label="Built-in source"
+            isLabelHidden
+            size="sm"
+            width="100%"
+            placeholder="Your image, video or webcam"
+            value={m.kind === 'sample' ? g.sample || '' : m.kind === 'ribbons' || m.kind === 'pattern' ? m.kind : ''}
+            options={[
+              {value: 'sphere', label: 'Spheres'},
+              {value: 'rings', label: 'Rings'},
+              {value: 'ramp', label: 'Ramp'},
+              {value: 'ribbons', label: 'Ribbons (moving)'},
+              {value: 'pattern', label: 'Pattern'},
+            ]}
+            onChange={useSample}
+          />
+        </InspectorRow>
         <HStack gap={1} wrap="wrap">
           <Button
             label="Image or video…"
@@ -273,6 +281,20 @@ export function GenerateInspector() {
         </HStack>
         <Text type="supporting">You can also drop an image or video on the canvas, or paste an image.</Text>
       </InspectorSection>
+
+      {m.kind === 'pattern' ? (
+        <InspectorSection title="Pattern">
+          <InspectorRow label="Kind">
+            <Selector label="Pattern kind" isLabelHidden size="sm" width="100%" value={g.patKind} options={PATTERNS.map(p => ({value: p.id, label: p.name}))} onChange={v => setGen('patKind', v)} />
+          </InspectorRow>
+          <Text type="supporting">{(PATTERNS.find(p => p.id === g.patKind) || PATTERNS[0]).hint}</Text>
+          <SliderRow label="Scale" value={g.patScale} min={1} max={20} step={0.5} onChange={v => setGen('patScale', v)} />
+          <SliderRow label="Detail" value={g.patDetail} min={0} max={1} step={0.05} format={v => Math.round(v * 100) + '%'} onChange={v => setGen('patDetail', v)} />
+          <SliderRow label="Angle" value={g.patAngle} min={0} max={180} step={1} format={v => v + '°'} onChange={v => setGen('patAngle', v)} />
+          <SliderRow label="Seed" value={g.patSeed} min={1} max={999} onChange={v => setGen('patSeed', v)} />
+          <Text type="supporting">The pattern is the source: GLYF reads it like a picture. Try Fit or Random rotation, a Palette, or the quarter-circle glyphs, and save it as SVG.</Text>
+        </InspectorSection>
+      ) : null}
 
       {m.kind === 'ribbons' ? (
         <InspectorSection title="Ribbons">
@@ -366,6 +388,13 @@ export function GenerateInspector() {
         <SliderRow label="Contrast" value={g.contrast} min={0.2} max={3} step={0.01} format={fixed(2)} onChange={v => setGen('contrast', v)} />
         <SliderRow label="Gamma" value={g.gamma} min={0.3} max={3} step={0.01} format={fixed(2)} onChange={v => setGen('gamma', v)} />
         <Switch label="Invert tones" size="sm" value={!!g.invert} onChange={v => setGen('invert', v)} />
+        <InspectorRow label="Tone">
+          <SegmentedControl label="Tone matching" size="sm" layout="fill" value={g.tone} onChange={v => setGen('tone', v)}>
+            <SegmentedControlItem value="linear" label="Linear" />
+            <SegmentedControlItem value="classic" label="Classic" />
+          </SegmentedControl>
+        </InspectorRow>
+        <Text type="supporting">{g.tone === 'classic' ? 'Classic matches ink to the screen value: right for marks you see one by one.' : 'Linear matches ink to light, as print does: right for fine grids seen from a distance, such as the LED wall; coarse grids come out darker.'}</Text>
       </InspectorSection>
 
       <InspectorSection title="Mapping">
@@ -398,6 +427,7 @@ export function GenerateInspector() {
           </SegmentedControl>
         </InspectorRow>
         <Switch label="Empty cell as lightest step" size="sm" isDisabled={size} value={!!g.blank} onChange={v => setGen('blank', v)} />
+        <SliderRow label="Detail" value={g.detail} min={0} max={1} step={0.05} format={v => (v < 0.025 ? 'Tone only' : Math.round(v * 100) + '%')} onChange={v => setGen('detail', v)} isDisabled={size || g.pick === 'mixed'} />
         <InspectorRow label="Glyphs">
           <SegmentedControl label="Which glyph" size="sm" layout="fill" isDisabled={size} value={g.pick} onChange={v => setGen('pick', v)}>
             <SegmentedControlItem value="tone" label="By tone" />
@@ -409,7 +439,9 @@ export function GenerateInspector() {
             ? 'Each cell draws a glyph from the set, scaled by tone. One glyph in the set gives a classic halftone.'
             : g.pick === 'mixed'
               ? 'Tone only decides which cells get a mark; each marked cell keeps its own glyph from the set (Seed reshuffles them).'
-              : 'Dithering spreads the in-between tones across neighboring cells.'}
+              : g.detail > 0
+                ? "Detail compares each cell with each glyph's shape, so edges and diagonals get glyphs that look like them. Dithering spreads the tone left over to neighboring cells."
+                : 'Dithering spreads the in-between tones across neighboring cells.'}
         </Text>
       </InspectorSection>
 
@@ -417,6 +449,7 @@ export function GenerateInspector() {
         <InspectorRow label="Rotation">
           <SegmentedControl label="Rotation" size="sm" layout="fill" value={g.rot} onChange={v => setGen('rot', v)}>
             <SegmentedControlItem value="none" label="Upright" />
+            <SegmentedControlItem value="fit" label="Fit" />
             <SegmentedControlItem value="random" label="Random" />
             <SegmentedControlItem value="checker" label="Checker" />
           </SegmentedControl>

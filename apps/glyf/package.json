@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && studio-inline && node scripts/artifact.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --no-warnings scripts/match-check.mjs && node --no-warnings scripts/families-check.mjs"
   },
   "devDependencies": {
     "@studio/build": "*",

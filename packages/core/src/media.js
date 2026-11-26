@@ -106,13 +106,34 @@ export function seekVideo(video, t) {
   });
 }
 
-/** Human-readable reason a webcam could not start. */
+/**
+ * Human-readable reason a webcam could not start, with what to do about it. The browser's
+ * own error name goes on the end in brackets, so a report of the message says exactly
+ * what happened.
+ */
 export function cameraErrorMessage(e) {
-  const n = e && e.name;
-  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera found';
-  if (n === 'NotAllowedError' || n === 'SecurityError')
-    return 'Camera blocked. The claude.ai viewer does not allow cameras; open the tool from its own address in Chrome or Edge.';
-  return 'Camera failed to start' + (e && e.message ? ': ' + e.message : '');
+  const n = (e && e.name) || 'Error', tag = ` (${n})`;
+  if (n === 'NotFoundError' || n === 'DevicesNotFoundError') return 'No camera found. Check that one is plugged in and turned on' + tag;
+  if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError')
+    return 'The camera is busy or Windows blocked it. Close any other app using it (Teams, Zoom, OBS, the Camera app), then try again' + tag;
+  if (n === 'NotAllowedError' || n === 'PermissionDeniedError')
+    return "Camera access was refused. Allow the camera for this site (the icon at the left of the address bar), then try again. The claude.ai viewer never allows cameras" + tag;
+  if (n === 'SecurityError') return 'Camera access is not available on this page. Open the tool from its own https address' + tag;
+  if (n === 'TimeoutError') return "The camera started but sent no picture. Try again, or choose another camera" + tag;
+  return 'Camera failed to start' + (e && e.message ? ': ' + e.message : '') + tag;
+}
+
+/** Ask for a camera, falling back to no size request if the camera refuses the preferred one. */
+async function cameraStream(deviceId) {
+  const size = {width: {ideal: 1280}, height: {ideal: 720}}, id = deviceId ? {deviceId: {exact: deviceId}} : {};
+  try {
+    return await navigator.mediaDevices.getUserMedia({video: {...size, ...id}, audio: false});
+  } catch (e) {
+    // Some cameras and drivers refuse even an "ideal" size; ask again for whatever they give.
+    if (e && (e.name === 'OverconstrainedError' || e.name === 'NotReadableError' || e.name === 'AbortError'))
+      return await navigator.mediaDevices.getUserMedia({video: deviceId ? id : true, audio: false});
+    throw e;
+  }
 }
 
 /**
@@ -122,14 +143,21 @@ export function cameraErrorMessage(e) {
 export async function openWebcam(deviceId) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
     throw Object.assign(new Error('Camera access is not available on this page'), {name: 'SecurityError'});
-  const constraints = {width: {ideal: 1280}, height: {ideal: 720}};
-  if (deviceId) constraints.deviceId = {exact: deviceId};
-  const stream = await navigator.mediaDevices.getUserMedia({video: constraints, audio: false});
+  const stream = await cameraStream(deviceId);
   const video = document.createElement('video');
   video.muted = true;
   video.playsInline = true;
   video.srcObject = stream;
-  await new Promise(r => { video.onloadeddata = r; video.play().catch(() => {}); });
+  // Wait for the first picture, but not forever: a camera can open and never send one.
+  const first = await new Promise(r => {
+    const t = setTimeout(() => r(false), 8000);
+    video.onloadeddata = () => { clearTimeout(t); r(true); };
+    video.play().catch(() => {});
+  });
+  if (!first) {
+    stream.getTracks().forEach(t => t.stop());
+    throw Object.assign(new Error('No picture from the camera'), {name: 'TimeoutError'});
+  }
   const track = stream.getVideoTracks()[0];
   let cameras = [];
   try {
