@@ -25,6 +25,26 @@ export const hexToRGB = hex => {
 export const rgbToHex = ([r, g, b]) => '#' + [r, g, b].map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
 
 /** Palette as a flat Float32Array [r0, g0, b0, r1, …]. */
+/**
+ * Colors from a palette file: GIMP .gpl ("R G B name" lines), or any text holding
+ * rrggbb codes, with or without # (Lospec .hex, a list, JSON). In order, repeats
+ * dropped, at most MAX_COLORS.
+ */
+export function parsePalette(text) {
+  const out = [], src = String(text || '');
+  const add = hex => { hex = hex.toLowerCase(); if (!out.includes(hex)) out.push(hex); };
+  if (/^\s*GIMP Palette/i.test(src)) {
+    for (const line of src.split(/\r?\n/)) {
+      const m = /^\s*(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})(\s|$)/.exec(line);
+      if (m) add(rgbToHex([+m[1], +m[2], +m[3]]));
+    }
+  } else for (const m of src.matchAll(/(?:^|[^0-9a-z])#?([0-9a-f]{6})(?![0-9a-z])/gi)) add('#' + m[1]);
+  return out.slice(0, MAX_COLORS);
+}
+
+/** A palette as a Lospec-style .hex file: one rrggbb per line. */
+export const paletteHexFile = colors => colors.map(c => c.replace('#', '').toLowerCase()).join('\n') + '\n';
+
 export const paletteRGB = colors => Float32Array.from(colors.slice(0, MAX_COLORS).flatMap(hexToRGB));
 
 /** Index of the palette color nearest to (r, g, b). Ties go to the earlier color. */

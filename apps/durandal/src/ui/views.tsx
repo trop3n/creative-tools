@@ -20,13 +20,13 @@ import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS,
 import {CUSTOM, FRAME_RATIOS, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {useStore, currentParams} from '../engine/state.js';
 import {
-  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, exportDims, gpuAvailable,
+  setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportJPG, exportSVG, importPalette, exportPalette, exportDims, gpuAvailable,
   paletteColors, setImageCount, repickImageColors, editCustom, isAnimating, addEffect, setEffect, removeEffect, moveEffect,
 } from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
   setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase, renameKeyframe, moveKeyframe,
-  setAnimate, setAnimSeconds, renderAnimation,
+  setAnimate, setAnimSeconds, renderAnimation, batchExport,
 } from '../engine/media.js';
 import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
@@ -295,6 +295,11 @@ export function Inspector() {
         <SliderRow label="Highlights" value={st.highlights} min={-100} max={100} format={signed} onChange={v => setSetting('highlights', v)} />
         <SliderRow label="Shadows" value={st.shadows} min={-100} max={100} format={signed} onChange={v => setSetting('shadows', v)} />
         <SliderRow label="Blur" value={st.blur} min={0} max={20} format={v => `${v} px`} onChange={v => setSetting('blur', v)} />
+        <SliderRow label="Sharpen" value={st.sharpen ?? 0} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('sharpen', v)} />
+        <SliderRow label="Noise" value={st.noise ?? 0} min={0} max={100} format={v => `${v}%`} onChange={v => setSetting('noise', v)} />
+        {st.mode === 'palette' || st.mode === 'cmyk' ? (
+          <SliderRow label="Saturation" value={st.saturation ?? 0} min={-100} max={100} format={signed} onChange={v => setSetting('saturation', v)} />
+        ) : null}
         <HStack>
           <Button label="Reset tone" size="sm" variant="ghost" icon={<Icon icon={RotateCcw} size={ICON} />} onClick={resetTone} />
         </HStack>
@@ -376,7 +381,21 @@ export function Inspector() {
         <HStack gap={1} wrap="wrap">
           <Button label="Save PNG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportPNG} />
           <Button label="Save SVG" size="sm" variant="secondary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
+          <Button label="Save JPG" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportJPG} />
         </HStack>
+        {s.media.kind === 'sample' || s.media.kind === 'image' ? (
+          <HStack gap={1} vAlign="center" wrap="wrap">
+            <Button
+              label={s.media.batch ? 'Cancel batch' : 'Batch: many images…'}
+              size="sm"
+              variant={s.media.batch ? 'destructive' : 'ghost'}
+              icon={<Icon icon={ImageUp} size={ICON} />}
+              isDisabled={s.media.exporting && !s.media.batch}
+              onClick={async () => { if (s.media.exporting) batchExport([]); else batchExport(await pickFiles('image/*', true)); }}
+            />
+            {s.media.batch && s.media.progress ? <Text type="supporting">{s.media.progress}</Text> : null}
+          </HStack>
+        ) : null}
         <Text type="supporting">
           {s.result && !fixedSize(look.frame, [look.customW, look.customH]) ? `${exportDims(s.result).join(' × ')} px` : ' '}
         </Text>
@@ -460,7 +479,17 @@ function PaletteControls() {
           </HStack>
         </>
       ) : null}
-      <Text type="supporting">Up to {MAX_COLORS} colors. Changing one saves the set as your custom palette.</Text>
+      <HStack gap={1} wrap="wrap">
+        <Button
+          label="Import palette…"
+          size="sm"
+          variant="ghost"
+          icon={<Icon icon={FolderOpen} size={ICON} />}
+          onClick={async () => { const [f] = await pickFiles('.hex,.gpl,.txt,.json,text/plain'); importPalette(f); }}
+        />
+        <Button label="Export .hex" size="sm" variant="ghost" icon={<Icon icon={Download} size={ICON} />} onClick={exportPalette} />
+      </HStack>
+      <Text type="supporting">Up to {MAX_COLORS} colors. Changing one, or importing a .hex or .gpl file, saves the set as your custom palette.</Text>
     </>
   );
 }

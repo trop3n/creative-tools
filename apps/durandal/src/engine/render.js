@@ -2,7 +2,7 @@
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug} from '@studio/core';
 import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
-import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither, applyEffects, hasEffects, newEffect, MAX_EFFECTS} from '@studio/core/dither';
+import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, parsePalette, paletteHexFile, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither, applyEffects, hasEffects, newEffect, MAX_EFFECTS} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -449,8 +449,24 @@ export function editCustom(colors) {
   persist(); schedule(); emit();
 }
 
+/** Load a palette file (.hex, .gpl or any text with color codes) as the custom palette. */
+export async function importPalette(file) {
+  if (!file) return;
+  let colors = [];
+  try { colors = parsePalette(await file.text()); } catch (e) { /* unreadable: handled below */ }
+  if (colors.length < 2) return toast(`No palette found in ${file.name}. Use a .hex or .gpl file, or text with color codes like #00304e.`, 'error');
+  S.settings.mode = 'palette';
+  editCustom(colors);
+  toast(`Loaded ${colors.length} colors from ${file.name} as your custom palette`);
+}
+/** Save the palette on show as a .hex file (one rrggbb per line; Lospec and most tools read it). */
+export async function exportPalette() {
+  const res = await saveFile(`durandal-${slug(S.settings.palette || 'palette')}.hex`, new Blob([paletteHexFile(paletteColors({pick: false}))], {type: 'text/plain'}), 'text/plain');
+  toast(res.message, res.status === 'error' ? 'error' : 'info');
+}
+
 export function resetTone() {
-  Object.assign(S.settings, {brightness: 0, contrast: 0, midtones: 0, highlights: 0, shadows: 0, blur: 0});
+  Object.assign(S.settings, {brightness: 0, contrast: 0, midtones: 0, highlights: 0, shadows: 0, blur: 0, saturation: 0, sharpen: 0, noise: 0});
   persist(); schedule(); emit();
 }
 
@@ -461,19 +477,31 @@ export const fileBase = () => {
   return `durandal-${slug(name)}-${S.settings.style}`;
 };
 
-export function exportPNG() {
+export const exportPNG = () => exportStill('png');
+/** JPG for places that want one; dithered edges come out a little soft. */
+export const exportJPG = () => exportStill('jpg');
+
+/** A result as a still export paints it: the fixed frame's size, else Pixel size (or one pixel) per cell. */
+export function stillOutput(r) {
+  const f = fixedFrame();
+  return f ? fixedOutput(r, f) : scaledOutput(exportScale(), null, r);
+}
+/** The still on the stage as loaded (before the Frame crop), to put back after a batch. */
+export const currentStill = () => (src && !isVideo(src.base) ? src.base : null);
+
+function exportStill(kind) {
+  const type = kind === 'jpg' ? 'image/jpeg' : 'image/png';
   const r = S.result;
   if (!r) return toast('Nothing to export yet');
   // A GPU result whose engine has gone can't be painted; the SVG export checks the same.
   if (!isLiveGpu(r) && !(r.colors ? r.indices : r.mask)) return toast('That frame is gone. Try again.', 'error');
   // Full size: each cell becomes a block of `block` pixels. Cells: one pixel per cell.
   // A fixed frame (the LED wall) comes out at exactly its size.
-  const f = fixedFrame();
-  (f ? fixedOutput(r, f) : scaledOutput(exportScale())).toBlob(async b => {
-    if (!b) return toast('PNG export failed', 'error');
-    const res = await saveFile(fileBase() + '.png', b, 'image/png');
+  stillOutput(r).toBlob(async b => {
+    if (!b) return toast(kind.toUpperCase() + ' export failed', 'error');
+    const res = await saveFile(fileBase() + '.' + kind, b, type);
     toast(res.message, res.status === 'error' ? 'error' : 'info');
-  }, 'image/png');
+  }, type, 0.92);
 }
 
 const SVG_SHAPED_MAX = 1_000_000;

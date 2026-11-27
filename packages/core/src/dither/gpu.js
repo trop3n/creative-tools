@@ -16,7 +16,7 @@
 // The mask then holds palette indices (index / 255 in the red channel).
 import {fieldCutoffs} from './fields.js';
 import {STYLE_BY_ID, defaultParams} from './styles.js';
-import {DEFAULT_SETTINGS, blockSize, toneTable, colorLut, paletteColors, inkColors, cmykCutoffs} from './pipeline.js';
+import {DEFAULT_SETTINGS, blockSize, toneTable, colorLut, paletteColors, inkColors, cmykCutoffs, needsPrep} from './pipeline.js';
 import {MAX_COLORS, fieldOffsets, paletteRGB, paletteSpread} from './palette.js';
 import {SHAPE_CODE, isPlainCells, shapeRadius} from './cells.js';
 
@@ -251,6 +251,7 @@ export function createGpuDither(canvas) {
     supports(settings, w = sw, h = sh) {
       const style = styleOf(settings);
       if (!style || !style.field) return false;
+      if (needsPrep(settings)) return false; // saturation, sharpen and noise run on the CPU
       if (w > maxTex || h > maxTex) return false;
       if (Math.round(settings.blur || 0) >= 1 && !floatTargets) return false;
       return true;

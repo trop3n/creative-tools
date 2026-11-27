@@ -2,11 +2,11 @@
 // plus MP4 render (video) and live recording (webcam). Video plumbing comes from
 // @studio/core, shared with GLYF.
 import {
-  loadImageFile, isImageFile, isVideoFile, openVideoFile, openWebcam,
+  loadImageFile, isImageFile, isVideoFile, slug, openVideoFile, openWebcam,
   cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
-import {renderNow, idle, isBusy, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating} from './render.js';
+import {renderNow, idle, isBusy, stillOutput, currentStill, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating} from './render.js';
 import {makeKey, putKey, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
 import {isProjectFile, openProject, takePendingKeys} from './project.js';
 
@@ -452,6 +452,49 @@ export async function renderAnimation() {
   if (pinned.warned) persist();
   Object.assign(M(), {exporting: false, progress: '', time: back});
   reapplyKeys(); schedule(); emit();
+}
+
+/* ---------- batch ---------- */
+/**
+ * Dither many images with the current settings and save each as a PNG (the browser
+ * may ask once to allow several downloads). Runs from a still; the picture on the
+ * stage comes back afterwards.
+ */
+export async function batchExport(files) {
+  if (M().exporting) { cancelExport = true; return; }
+  const images = (files || []).filter(isImageFile);
+  if (!images.length) return;
+  if (M().kind === 'video' || M().kind === 'camera') return toast('Batch works from a still. Stop the video or webcam first.');
+  const back = currentStill();
+  cancelExport = false;
+  animPlay(false);
+  Object.assign(M(), {exporting: true, batch: true, progress: 'Starting…'});
+  emit();
+  let done = 0, failed = 0;
+  try {
+    await idle();
+    for (const [i, file] of images.entries()) {
+      if (cancelExport) break;
+      M().progress = `Image ${i + 1} of ${images.length}: ${file.name}`;
+      emit();
+      try {
+        const r = await renderNow(await loadImageFile(file, 2400));
+        const blob = await new Promise(res => stillOutput(r).toBlob(res, 'image/png'));
+        if (!blob) throw new Error('no PNG');
+        const saved = await saveFile(`durandal-${slug(file.name.replace(/\.[^.]+$/, ''))}-${S.settings.style}.png`, blob, 'image/png');
+        if (saved.status === 'error') throw new Error(saved.message);
+        if (saved.status === 'declined') break;
+        done++;
+      } catch (e) {
+        failed++;
+      }
+    }
+  } finally {
+    Object.assign(M(), {exporting: false, batch: false, progress: ''});
+    if (back) await renderNow(back).catch(() => {});
+    emit();
+  }
+  toast(`Saved ${done} of ${images.length} images${failed ? `; ${failed} could not be read or saved` : ''}${cancelExport ? ' (canceled)' : ''}.`, failed ? 'error' : 'info');
 }
 
 /* ---------- live recording (webcam) ---------- */

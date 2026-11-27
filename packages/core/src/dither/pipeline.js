@@ -1,6 +1,6 @@
 // The DURANDAL processing pipeline, framework-free so it runs in a worker or Node:
 //
-//   RGBA → luminance → tone (brightness, contrast, midtones, highlights, shadows)
+//   RGBA → (saturation, sharpen, noise) → luminance → tone (brightness, contrast, midtones, highlights, shadows)
 //        → blur → shrink to block size (nearest) → dither → invert
 //
 // The result is a 1-bit mask at block resolution; `paintMask` scales it back up
@@ -13,7 +13,7 @@
 // see ditherCMYK().
 import {STYLE_BY_ID, defaultParams} from './styles.js';
 import {KERNELS} from './diffusion.js';
-import {FIELDS, equalize} from './fields.js';
+import {FIELDS, equalize, mulberry32} from './fields.js';
 import {MAX_COLORS, paletteRGB, paletteField, paletteDiffuse, paletteScanlines, nearestColor} from './palette.js';
 import {paletteOstromukhov} from './ostromukhov.js';
 
@@ -29,9 +29,51 @@ export const DEFAULT_SETTINGS = {
   colors: null, // palette mode: hex colors, 2..16
   strength: 100, // palette mode: how hard to dither, percent
   black: 100, // CMYK mode: how much of the shared gray goes to black ink, percent
+  saturation: 0, // -100..100, palette and CMYK modes (two tones only see brightness)
+  sharpen: 0, // 0..100, an unsharp mask about half a cell wide
+  noise: 0, // 0..100, grain added to the source before dithering
 };
 
 const clamp255 = v => (v < 0 ? 0 : v > 255 ? 255 : v);
+const inColor = s => s.mode === 'palette' || s.mode === 'cmyk';
+
+/** True when saturation, sharpen or noise would change the source (the GPU path leaves these to the CPU). */
+export const needsPrep = (s = {}) => !!(s.sharpen > 0 || s.noise > 0 || (s.saturation && inColor(s)));
+
+/**
+ * Saturation, sharpen and noise on the source RGBA, in that order, before anything
+ * else sees it. Returns a new array, or rgba itself when they're all off.
+ */
+export function prepareRGBA(rgba, w, h, settings) {
+  const s = {...DEFAULT_SETTINGS, ...settings};
+  if (!needsPrep(s)) return rgba;
+  const out = new Uint8ClampedArray(rgba), n = w * h;
+  if (s.saturation && inColor(s)) {
+    const k = 1 + s.saturation / 100;
+    for (let p = 0; p < n * 4; p += 4) {
+      const l = 0.299 * out[p] + 0.587 * out[p + 1] + 0.114 * out[p + 2];
+      out[p] = l + (out[p] - l) * k; out[p + 1] = l + (out[p + 1] - l) * k; out[p + 2] = l + (out[p + 2] - l) * k;
+    }
+  }
+  if (s.sharpen > 0) {
+    // Unsharp mask at the scale of a cell, so it crisps what the dither will show.
+    const r = Math.max(1, Math.round(Math.max(1, Math.floor(s.block)) / 2)), amount = (s.sharpen / 100) * 2;
+    for (let c = 0; c < 3; c++) {
+      const plane = new Float32Array(n);
+      for (let i = 0; i < n; i++) plane[i] = out[i * 4 + c];
+      const soft = blur(Float32Array.from(plane), w, h, r);
+      for (let i = 0; i < n; i++) out[i * 4 + c] = plane[i] + (plane[i] - soft[i]) * amount;
+    }
+  }
+  if (s.noise > 0) {
+    const rand = mulberry32(1), amp = s.noise * 1.28; // the same grain every redraw
+    for (let p = 0; p < n * 4; p += 4) {
+      const d = (rand() * 2 - 1) * amp;
+      out[p] += d; out[p + 1] += d; out[p + 2] += d;
+    }
+  }
+  return out;
+}
 
 /** ITU-R 601 luma, rounded the same way Pillow's "L" conversion does. */
 export function luminance(rgba, w, h) {
@@ -319,10 +361,12 @@ export function ditherCMYK(rgba, w, h, settings) {
 }
 
 /** Full pipeline from RGBA pixels (e.g. ImageData.data), in any mode. */
-export const ditherRGBA = (rgba, w, h, settings) =>
-  settings && settings.mode === 'palette' ? ditherColor(rgba, w, h, settings)
-  : settings && settings.mode === 'cmyk' ? ditherCMYK(rgba, w, h, settings)
-  : ditherGray(luminance(rgba, w, h), w, h, settings);
+export function ditherRGBA(rgba, w, h, settings) {
+  rgba = prepareRGBA(rgba, w, h, settings);
+  return settings && settings.mode === 'palette' ? ditherColor(rgba, w, h, settings)
+    : settings && settings.mode === 'cmyk' ? ditherCMYK(rgba, w, h, settings)
+    : ditherGray(luminance(rgba, w, h), w, h, settings);
+}
 
 const hexRGB = hex => {
   const n = parseInt(hex.replace('#', ''), 16);

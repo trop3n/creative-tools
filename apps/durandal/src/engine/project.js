@@ -26,6 +26,7 @@ const isHex = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const SETTING_RANGE = {
   block: [1, 32], threshold: [0, 100], blur: [0, 20], strength: [0, 100], black: [0, 100],
   brightness: [-100, 100], contrast: [-100, 100], midtones: [-100, 100], highlights: [-100, 100], shadows: [-100, 100],
+  saturation: [-100, 100], sharpen: [0, 100], noise: [0, 100],
 };
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 

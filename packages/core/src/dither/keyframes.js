@@ -9,7 +9,7 @@ import {STYLE_BY_ID, defaultParams} from './styles.js';
 import {EFFECT_BY_ID} from './effects.js';
 
 /** Settings that can animate: everything that is a plain number on a slider. */
-export const ANIMATABLE = ['block', 'threshold', 'strength', 'black', 'brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
+export const ANIMATABLE = ['block', 'threshold', 'strength', 'black', 'brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur', 'saturation', 'sharpen', 'noise'];
 // Whole-number settings (pixel size and blur radius change in whole steps).
 const WHOLE = new Set(['block', 'blur']);
 
