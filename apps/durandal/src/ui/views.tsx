@@ -21,16 +21,16 @@ import {CUSTOM, FRAME_RATIOS, fixedSize, fixedSizeLabel, frameIds, frameLabel} f
 import {useStore, currentParams, toast} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportJPG, exportSVG, importPalette, exportPalette, exportDims, gpuAvailable,
-  paletteColors, setImageCount, repickImageColors, editCustom, isAnimating, stillBlob, addEffect, setEffect, removeEffect, moveEffect,
+  paletteColors, setImageCount, repickImageColors, editCustom, isAnimating, stillBlob, addEffect, setEffect, removeEffect, moveEffect, hasGlyphs,
 } from '../engine/render.js';
 import {
-  SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
+  SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, startLive, stopCamera,
   setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase, renameKeyframe, moveKeyframe,
   setAnimate, setAnimSeconds, renderAnimation, batchExport,
 } from '../engine/media.js';
 import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {LiveFromSuite, RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
 const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#c99530'];
@@ -244,11 +244,12 @@ export function Inspector() {
         <HStack gap={1} wrap="wrap">
           <Button label="Image or video…" size="sm" variant="primary" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openMedia} />
           {s.media.kind === 'camera' ? (
-            <Button label="Stop camera" size="sm" icon={<Icon icon={CameraOff} size={ICON} />} onClick={stopCamera} />
+            <Button label={s.media.live ? 'Stop live' : 'Stop camera'} size="sm" icon={<Icon icon={CameraOff} size={ICON} />} onClick={stopCamera} />
           ) : (
             <Button label="Webcam" size="sm" icon={<Icon icon={Camera} size={ICON} />} onClick={() => startWebcam()} />
           )}
         </HStack>
+        <LiveFromSuite onPick={startLive} isDisabled={s.media.exporting || s.media.recording} />
         <RecentFromSuite onOpen={loadFile} />
         <Text type="supporting">You can also drop an image or video anywhere on the page, or paste an image.</Text>
       </InspectorSection>
@@ -324,10 +325,17 @@ export function Inspector() {
             size="sm"
             width="100%"
             value={look.cellShape || 'square'}
-            options={SHAPES.map(sh => ({value: sh.id, label: sh.name}))}
+            options={[...SHAPES.map(sh => ({value: sh.id, label: sh.name})), {value: 'glyphs', label: 'Glyphs (from GLYF)'}]}
             onChange={v => setLook('cellShape', v)}
           />
         </InspectorRow>
+        {look.cellShape === 'glyphs' ? (
+          <Text type="supporting">
+            {hasGlyphs()
+              ? 'Each cell is one of the glyphs in GLYF’s set: darker colors get inkier glyphs.'
+              : 'Open GLYF and put glyphs in its set. Until then, cells are squares.'}
+          </Text>
+        ) : null}
         <SliderRow label="Gap" value={look.gap || 0} min={0} max={80} format={v => `${v}%`} onChange={v => setLook('gap', v)} />
         {(look.cellShape && look.cellShape !== 'square') || look.gap > 0 ? (
           <>
@@ -878,11 +886,15 @@ function KeyframesSection() {
 function WebcamSection() {
   const {media: m, look} = useStore();
   return (
-    <InspectorSection title="Webcam">
+    <InspectorSection title={m.live ? 'Live' : 'Webcam'}>
       {m.cams.length > 1 ? (
         <Selector label="Camera" size="sm" options={m.cams} value={m.camId} onChange={v => startWebcam(v)} />
       ) : null}
-      <Switch label="Mirror image" size="sm" value={!!look.mirror} onChange={setMirrorImage} />
+      {m.live ? (
+        <Text type="supporting">Keep the other window open and visible, side by side with this one.</Text>
+      ) : (
+        <Switch label="Mirror image" size="sm" value={!!look.mirror} onChange={setMirrorImage} />
+      )}
       <Text type="supporting">Record captures the output live, as you see it, with no sound.</Text>
     </InspectorSection>
   );

@@ -21,12 +21,12 @@ import {DOT_SHAPES} from '../engine/halftone.js';
 import {PRESETS, ASPECTS, MODES, WEIGHTS} from '../engine/config.js';
 import {
   useStore, attachCanvas, applyPreset, randomize, togglePlay, restart, set, setIn, setFill, setBackdropColor, applyBackdropPalette, setMode,
-  openMedia, startCamera, removeMedia, exportPNG, stillBlob, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
+  openMedia, startCamera, startLive, removeMedia, exportPNG, stillBlob, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
   setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink, toast,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {LiveFromSuite, RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -254,6 +254,7 @@ function MediaSection() {
         <Button label="Webcam" size="sm" variant="ghost" icon={<Icon icon={Camera} size={ICON} />} isDisabled={s.mediaBusy} onClick={startCamera} />
         {m ? <IconButton label="Remove the image or video" tooltip="Remove" size="sm" variant="ghost" icon={<Icon icon={Trash2} size={ICON} />} onClick={removeMedia} /> : null}
       </HStack>
+      <LiveFromSuite onPick={startLive} isDisabled={s.mediaBusy || !!s.exporting} />
       <RecentFromSuite onOpen={openMedia} />
       {m ? (
         <>

@@ -1,9 +1,11 @@
 // TYCHO's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
+import {
+  toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender, suiteGlyphs, watchGlyphs, rasterGlyphs, tintGlyph, glyphSymbol,
+} from '@studio/core';
 import {buildScene, drawScene, timing, roundAt} from './modules.js';
-import {CanvasPainter, SvgPainter} from './paint.js';
+import {CanvasPainter, SvgPainter, setGlyphs} from './paint.js';
 import {frameDims} from '@studio/core/frames';
 import {cleanConfig, presetConfig, randomConfig, paletteColors, PRESETS, aspectOf, MAX_COLORS} from './config.js';
 
@@ -34,6 +36,7 @@ export const S = {
   exportSize: saved.get('exportSize', 1920),
   exportLoops: saved.get('exportLoops', 1),
   exporting: null, // {done, total} while an MP4 renders
+  glyphs: 0, // how many of GLYF's glyphs a glyph layer can use
   toast: null, // set by the app: (message, kind) => void
 };
 if (fromLink) {
@@ -90,8 +93,11 @@ function fit() {
   draw();
 }
 
+// Offer the stage to other windows of the suite (the live link); a new watcher gets one more draw.
+const live = createLiveSender({label: '', onWatch: () => draw()});
+
 function draw() {
-  if (painter && canvas.width > 1) paintFrame(painter, S.config, canvas.width, canvas.height, S.time);
+  if (painter && canvas.width > 1) { paintFrame(painter, S.config, canvas.width, canvas.height, S.time); live.frame(canvas); }
 }
 
 function tick(now) {
@@ -120,6 +126,22 @@ export function attachCanvas(c) {
   raf = requestAnimationFrame(tick);
   emit();
 }
+
+/* ---------- GLYF's glyphs ---------- */
+// Rasterized once per set change; the painters tint and place them.
+let glyphLoad = 0;
+function loadGlyphs() {
+  const n = ++glyphLoad;
+  rasterGlyphs(suiteGlyphs(), 256).then(list => {
+    if (n !== glyphLoad) return; // a newer set is on its way
+    const ok = list.filter(g => g.mask);
+    setGlyphs(ok.map(g => ({tint: color => tintGlyph(g.mask, color), symbol: id => glyphSymbol(g, id)})));
+    S.glyphs = ok.length;
+    draw();
+    emit();
+  });
+}
+if (typeof window !== 'undefined') { loadGlyphs(); watchGlyphs(loadGlyphs); }
 
 /* ---------- editing ---------- */
 function setConfig(cfg, preset = '') {

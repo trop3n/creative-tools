@@ -4,6 +4,7 @@ import {useSyncExternalStore} from 'react';
 import {
   toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, makeCanvas, isVideoFile, isImageFile,
   loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage, takeSent, TOOL_NAMES,
+  createLiveSender, openLiveSource, suiteGlyphs, watchGlyphs, rasterGlyphs, byInk, tintGlyph, glyphSymbol,
 } from '@studio/core';
 import {analyze, buildCells, drawCells, thresholdAt, canvasPainter, svgPainter} from './mosaic.js';
 import {sampleCanvas} from './samples.js';
@@ -33,8 +34,9 @@ export const S = {
   playing: !reduceMotion,
   time: 0,
   cells: 0, // how many cells the last frame drew
-  media: null, // {kind: 'image' | 'video' | 'camera', label, el, w, h, video?, dispose}
+  media: null, // {kind: 'image' | 'video' | 'camera', label, el, w, h, video?, live?, dispose}
   mediaBusy: false,
+  glyphCount: 0, // glyphs in GLYF's shared set
   looks: (saved.get('looks.v1', []) || []).filter(l => l && typeof l.name === 'string' && l.config),
   exportSize: saved.get('exportSize', 1440),
   exportLoops: saved.get('exportLoops', 1),
@@ -84,14 +86,15 @@ function analysisFor(cfg) {
   const aW = a >= 1 ? cfg.detail : Math.round(cfg.detail * a), aH = a >= 1 ? Math.round(cfg.detail / a) : cfg.detail;
   const src = sourceOf();
   const frame = src.video ? src.video.currentTime + ':' + (src.video.paused ? 'p' : performance.now()) : '';
-  const key = [src.kind === 'sample' ? cfg.sample : src.label, aW, aH, cfg.contrast, cfg.brightness, src.kind === 'camera' && cfg.mirror, frame].join('|');
+  const mirror = src.kind === 'camera' && !src.live && cfg.mirror; // a live link is never mirrored
+  const key = [src.kind === 'sample' ? cfg.sample : src.label, aW, aH, cfg.contrast, cfg.brightness, mirror, frame].join('|');
   if (cache.key === key && cache.A) return cache.A;
   if (work.width !== aW || work.height !== aH) { work.width = aW; work.height = aH; }
   const k = Math.max(aW / src.w, aH / src.h);
   workCtx.setTransform(1, 0, 0, 1, 0, 0);
   workCtx.fillStyle = '#808080';
   workCtx.fillRect(0, 0, aW, aH);
-  if (src.kind === 'camera' && cfg.mirror) workCtx.setTransform(-1, 0, 0, 1, aW, 0);
+  if (mirror) workCtx.setTransform(-1, 0, 0, 1, aW, 0);
   workCtx.drawImage(src.el, (aW - src.w * k) / 2, (aH - src.h * k) / 2, src.w * k, src.h * k);
   workCtx.setTransform(1, 0, 0, 1, 0, 0);
   const A = analyze(workCtx.getImageData(0, 0, aW, aH).data, aW, aH, cfg.contrast, cfg.brightness);
@@ -99,12 +102,34 @@ function analysisFor(cfg) {
   return A;
 }
 
+/* ---------- GLYF's glyphs ---------- */
+// The Glyphs shape draws GLYF's shared set, sorted by ink. Each set is rasterized once per
+// size (128 px on the stage, 256 px for PNG and MP4) and again when GLYF changes it.
+let glyphSets = {}, stageGlyphs = [], glyphLoads = 0;
+function glyphsAt(size) {
+  if (!glyphSets[size]) {
+    // Every size keeps the 128 px ink order, so the stage and the files pick the same glyphs.
+    const list = suiteGlyphs();
+    glyphSets[size] = Promise.all([rasterGlyphs(list, 128), rasterGlyphs(list, size)]).then(([small, big]) => byInk(small.map((g, i) => ({...g, mask: g.mask && big[i].mask}))).map((g, i) => ({
+      ...g, sym: 'glyph-' + i, symbol: glyphSymbol(g, 'glyph-' + i), tint: color => tintGlyph(g.mask, color),
+    })));
+  }
+  return glyphSets[size];
+}
+function loadGlyphs() {
+  const n = ++glyphLoads;
+  glyphSets = {};
+  S.glyphCount = suiteGlyphs().length;
+  glyphsAt(128).then(gs => { if (n !== glyphLoads) return; stageGlyphs = gs; draw(); emit(); });
+}
+if (typeof window !== 'undefined') { loadGlyphs(); watchGlyphs(loadGlyphs); }
+
 /** Draw the frame at time t into painter p, W × H pixels. Returns the cell count. */
-function paintFrame(p, cfg, W, H, t) {
+function paintFrame(p, cfg, W, H, t, glyphs = stageGlyphs) {
   const A = analysisFor(cfg);
   const lp = (t / cfg.loop) % 1;
   const cells = buildCells(A, cfg, thresholdAt(cfg, lp), cfg.resolve > 0);
-  drawCells(p, cells, cfg, W, H, W / A.aW, lp);
+  drawCells(p, cells, cfg, W, H, W / A.aW, lp, glyphs);
   return cells.length;
 }
 
@@ -125,8 +150,11 @@ function fit() {
   draw();
 }
 
+// The live link: other windows of the suite can use the stage as their source.
+const live = createLiveSender({label: () => PRESETS.find(p => p.id === S.preset)?.name || 'Custom', onWatch: () => draw()});
+
 function draw() {
-  if (painter && canvas.width > 1) S.cells = paintFrame(painter, S.config, canvas.width, canvas.height, S.time);
+  if (painter && canvas.width > 1) { S.cells = paintFrame(painter, S.config, canvas.width, canvas.height, S.time); live.frame(canvas); }
 }
 
 // Without Resolve, Scatter or a moving source, frames don't change, so the loop only redraws when needed.
@@ -249,17 +277,21 @@ export async function openSent() {
   await openMedia(file);
   toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
 }
-export async function startCamera() {
+/** Use a camera-like source: open() resolves to openWebcam()'s shape; a live link is never mirrored. */
+async function openCamera(open, isLive) {
   S.mediaBusy = true; emit();
   try {
-    const cam = await openWebcam();
-    setMedia({kind: 'camera', label: cam.label || 'Webcam', el: cam.video, video: cam.video, w: cam.video.videoWidth, h: cam.video.videoHeight, dispose: cam.dispose});
+    const cam = await open();
+    setMedia({kind: 'camera', live: isLive, label: cam.label || 'Webcam', el: cam.video, video: cam.video, w: cam.video.videoWidth, h: cam.video.videoHeight, dispose: cam.dispose});
   } catch (e) {
-    toast(cameraErrorMessage(e), 'error');
+    toast(isLive ? e.message || 'Could not open the live picture' : cameraErrorMessage(e), 'error');
   } finally {
     S.mediaBusy = false; emit();
   }
 }
+export const startCamera = () => openCamera(openWebcam, false);
+/** Use another window of the suite (Live from another window) as the source. */
+export const startLive = (id, name) => openCamera(() => openLiveSource(id, 'Live: ' + name), true);
 
 /* ---------- export ---------- */
 let exportCanvas = null, exportPainter = null, cancelExport = false;
@@ -279,10 +311,11 @@ export function setExportLoops(v) { S.exportLoops = v; saved.set('exportLoops', 
 export function setMatchVideo(v) { S.matchVideo = v; saved.set('matchVideo', v); emit(); }
 
 /** The frame on screen at export size, as a PNG blob. */
-function pngBlob() {
+async function pngBlob() {
+  const glyphs = await glyphsAt(256);
   const [w, h] = exportDims();
   const c = exportTarget(w, h);
-  paintFrame(exportPainter, S.config, w, h, S.time);
+  paintFrame(exportPainter, S.config, w, h, S.time, glyphs);
   return new Promise(res => c.toBlob(res, 'image/png'));
 }
 export async function exportPNG() {
@@ -331,13 +364,14 @@ export async function exportMP4() {
   S.exporting = {done: 0, total: frames};
   emit();
   try {
+    const glyphs = await glyphsAt(256);
     const c = exportTarget(w, h);
     const {blob, codecNote} = await encodeFramesToMp4({
       width: w, height: h, fps, frames,
       drawFrame: async i => {
         const t = i / fps;
         if (v) { await seekVideo(v, Math.min(v.duration - 0.001, t % v.duration)); cache.key = ''; }
-        paintFrame(exportPainter, cfg, w, h, t);
+        paintFrame(exportPainter, cfg, w, h, t, glyphs);
         return c;
       },
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },

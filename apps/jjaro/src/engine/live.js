@@ -1,7 +1,7 @@
 // JJARO's app state, the simulation loop, pointer handling and every action the UI
 // takes. Engine code mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, takeSent, TOOL_NAMES} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, takeSent, TOOL_NAMES, createLiveSender} from '@studio/core';
 import {parseColor, oklabToLinear} from '@studio/core/gradient';
 import {Cloth, QUALITY, rng} from './cloth.js';
 import {lightDirs, dropLayout, PATTERN_IDS, PRINT_IDS} from './foil.js';
@@ -159,11 +159,15 @@ function sceneFrame(c, sheet, time, aspect, {orbit = 0, transparent = false, fra
   };
 }
 
+// Offer the stage to other windows of the suite (the live link); a new watcher gets one more draw.
+const live = createLiveSender({label: '', onWatch: () => draw()});
+
 function draw() {
   if (!renderer || renderer.lost || !canvas || canvas.width < 2) return;
   const f = sceneFrame(S.config, cloth, S.time, canvas.width / canvas.height, {frame: Math.floor(S.time * 24)});
   cam = f.cam;
   renderer.render(f);
+  live.frame(canvas);
 }
 
 function tick(now) {

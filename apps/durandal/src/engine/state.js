@@ -31,6 +31,7 @@ export const S = {
     anim: false, // a still with a timeline of its own (time, duration and playing above)
     exporting: false, progress: '', batch: false, // MP4 render or a batch
     cams: [], camId: '', recording: false, recTime: 0, // webcam
+    live: false, // the 'camera' is another tool's window (the live link)
   },
   result: null, // {mask | indices + colors, w, h, ms, gpu?}
   busy: false,

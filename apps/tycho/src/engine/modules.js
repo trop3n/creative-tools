@@ -8,6 +8,7 @@ import {rng, hashInts, gridDims, splitLayout, neighbours} from './layout.js';
 
 export const SHAPES = {
   square: 'Square', circle: 'Circle', half: 'Half circle', quarter: 'Quarter circle', triangle: 'Triangle', line: 'Line', ring: 'Ring',
+  glyph: 'Glyphs from GLYF', // GLYF's shared set; off by default
 };
 export const SHAPE_IDS = Object.keys(SHAPES);
 export const MOTIONS = {
@@ -23,7 +24,7 @@ const ARRANGEMENTS = {
   stripe: {shapes: ['line', 'square'], w: [2, 0]},
   concentric: {shapes: ['circle', 'square', 'ring', 'quarter', 'half'], w: [2, 0.6]},
   radial: {shapes: ['triangle', 'line', 'circle'], w: [1.4, 1]},
-  single: {shapes: ['circle', 'square', 'triangle', 'half', 'ring', 'quarter'], w: [0.6, 2]},
+  single: {shapes: ['circle', 'square', 'triangle', 'half', 'ring', 'quarter', 'glyph'], w: [0.6, 2]},
   glow: {shapes: ['circle'], w: [0.25, 0]},
 };
 const ROUND = new Set(['circle', 'ring']);
@@ -128,6 +129,8 @@ function makeLayer(R, cfg, cell, top, colors) {
         L.size = between(R, 0.7, 1); L.width = between(R, 0.12, 0.35); L.rot = pick(R, [0, Math.PI / 4, Math.PI / 2, -Math.PI / 4]);
       } else if (shape === 'ring') {
         L.size = between(R, 0.55, 0.95); L.width = between(R, 0.08, 0.2);
+      } else if (shape === 'glyph') {
+        L.size = between(R, 0.6, 0.95);
       }
       break;
     }
@@ -163,6 +166,8 @@ function makeLayer(R, cfg, cell, top, colors) {
       L.size = between(R, 0.6, 1);
       break;
   }
+  // A glyph layer uses one glyph of GLYF's set, seeded like its shape (wrapped to the set's size when drawn).
+  if (shape === 'glyph') L.glyph = Math.floor(R() * 64);
   // Blink swaps to a third colour. A two-colour module has none, so the base layer
   // inverts the whole cell instead, and an upper layer (which would cover the base) moves differently.
   const others = colors.filter(c => c !== L.fg && c !== L.fg2 && c !== colors[0]);
@@ -233,7 +238,7 @@ const ease = u => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
 const pulse = u => 0.5 - 0.5 * Math.cos(TAU * u); // 0 → 1 → 0 over a loop
 const par = (i, j) => (((i + j) % 2) + 2) % 2;
 // The turn a rotating shape makes per loop: one of its symmetries, so loops line up.
-const STEP = {square: Math.PI / 2, line: Math.PI, half: TAU, quarter: TAU, triangle: TAU, circle: 0, ring: 0};
+const STEP = {square: Math.PI / 2, line: Math.PI, half: TAU, quarter: TAU, triangle: TAU, circle: 0, ring: 0, glyph: TAU};
 
 /** Corner `q` of a rect: 0 bottom-left, 1 top-left, 2 top-right, 3 bottom-right, with the rotation that opens a quarter into it. */
 const cornerOf = (x, y, w, h, q) => [[x, y + h], [x, y], [x + w, y], [x + w, y + h]][q];
@@ -282,6 +287,8 @@ function drawLayer(p, L, x, y, w, h, U, t, motionSec, bg) {
             p.fill('line', chain(base, Sc(1, L.width * sw)), col);
           } else if (L.shape === 'ring') {
             p.stroke('ring', chain(base, Sc(1 - L.width * sw)), col, L.width * sw);
+          } else if (L.shape === 'glyph') {
+            p.glyph(L.glyph, base, col);
           } else {
             p.fill(L.shape, base, col);
           }
@@ -376,6 +383,7 @@ function drawLayer(p, L, x, y, w, h, U, t, motionSec, bg) {
       const flip = M === 'flip' ? Math.cos(TAU * u) : 1;
       const m = chain(T(cx, cy), Rot(rot), Sc(S * flip, S));
       if (L.shape === 'ring') p.stroke('ring', chain(m, Sc(1 - L.width * sw)), A, L.width * sw);
+      else if (L.shape === 'glyph') p.glyph(L.glyph, m, A);
       else p.fill(L.shape, L.shape === 'half' ? chain(m, T(0, -0.25)) : m, A);
       break;
     }

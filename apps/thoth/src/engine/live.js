@@ -3,7 +3,7 @@
 import {useSyncExternalStore} from 'react';
 import {
   toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, makeCanvas, isVideoFile, isImageFile,
-  loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage, takeSent, TOOL_NAMES,
+  loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage, takeSent, TOOL_NAMES, createLiveSender, openLiveSource,
 } from '@studio/core';
 import {drawSource} from './source.js';
 import {createHalftone} from './halftone.js';
@@ -100,8 +100,11 @@ function fit() {
   draw();
 }
 
+// Offer the stage to other windows of the suite (the live link); a new watcher gets one more draw.
+const liveLink = createLiveSender({label: '', onWatch: () => draw()});
+
 function draw() {
-  if (renderer && !renderer.lost && canvas.width > 1) paintFrame(renderer, liveSource, S.config, S.time);
+  if (renderer && !renderer.lost && canvas.width > 1) { paintFrame(renderer, liveSource, S.config, S.time); liveLink.frame(canvas); }
 }
 
 function tick(now) {
@@ -227,17 +230,21 @@ export async function openMedia(file) {
     S.mediaBusy = false; emit();
   }
 }
-export async function startCamera() {
+/** Use a live picture as the source: open() resolves to {video, dispose, label}, like openWebcam(). */
+async function startStream(open, mirror, errorMessage) {
   S.mediaBusy = true; emit();
   try {
-    const cam = await openWebcam();
-    setMedia({kind: 'camera', label: cam.label || 'Webcam', el: cam.video, video: cam.video, w: cam.video.videoWidth, h: cam.video.videoHeight, mirror: true, dispose: cam.dispose});
+    const cam = await open();
+    setMedia({kind: 'camera', label: cam.label, el: cam.video, video: cam.video, w: cam.video.videoWidth, h: cam.video.videoHeight, mirror, dispose: cam.dispose});
   } catch (e) {
-    toast(cameraErrorMessage(e), 'error');
+    toast(errorMessage(e), 'error');
   } finally {
     S.mediaBusy = false; emit();
   }
 }
+export const startCamera = () => startStream(() => openWebcam().then(cam => ({...cam, label: cam.label || 'Webcam'})), true, cameraErrorMessage);
+/** Watch another tool's window (the live link) as the source: like the webcam, not mirrored. */
+export const startLive = (id, name) => startStream(() => openLiveSource(id, `Live: ${name}`), false, e => e?.message || 'Could not watch that window');
 export function removeMedia() { setMedia(null); }
 
 // Sent from another tool (Send to → THOTH): the file waits on the shelf.

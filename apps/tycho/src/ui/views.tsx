@@ -143,6 +143,9 @@ export function Inspector() {
             <ToggleButton key={id} label={SHAPES[id]} size="sm" isPressed={c.shapes.includes(id)} onPressedChange={on => toggleIn('shapes', id, on, 'Keep at least one shape')} />
           ))}
         </HStack>
+        {c.shapes.includes('glyph') && !s.glyphs ? (
+          <Text type="supporting">Open GLYF and put glyphs in its set. Until then, glyph layers draw squares.</Text>
+        ) : null}
         <Text type="label" color="secondary">Motions</Text>
         <HStack gap={1} wrap="wrap">
           {MOTION_IDS.map(id => (

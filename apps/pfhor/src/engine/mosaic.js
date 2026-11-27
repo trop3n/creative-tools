@@ -1,10 +1,10 @@
 // PFHOR's mosaic: a quadtree over an image. Flat regions stay as big cells; detailed ones
 // split into smaller cells. Each cell takes a palette colour and is drawn as a circle,
-// square or rounded square. Nothing is kept between frames: splits ease in as the
+// square, rounded square or one of GLYF's glyphs (picked by tone). Nothing is kept between frames: splits ease in as the
 // threshold passes them, so the "resolve" animation and exports come out the same every time.
 import {parseColor, linearToOklab} from '@studio/core/gradient';
 
-export const SHAPES = {circle: 'Circles', square: 'Squares', rounded: 'Rounded squares', mixed: 'Mixed'};
+export const SHAPES = {circle: 'Circles', square: 'Squares', rounded: 'Rounded squares', mixed: 'Mixed', glyph: 'Glyphs (from GLYF)'};
 export const METRICS = {variance: 'Tone', edge: 'Edges', both: 'Tone and edges'};
 export const MAPPINGS = {ramp: 'Lightness ramp', nearest: 'Nearest color'};
 
@@ -93,7 +93,8 @@ export function thresholdAt(cfg, lp) {
 }
 
 /**
- * Cells for an analysis at threshold thr: [{cx, cy, sz, color, id}] in analysis pixels.
+ * Cells for an analysis at threshold thr: [{cx, cy, sz, color, l, id}] in analysis pixels
+ * (l: the cell's mean luminance, 0..1, for picking a glyph by tone).
  * With `ease`, a cell whose detail is just over the threshold is only part-way split: its
  * children start stacked on the parent and spread to their own places as the detail rises,
  * so an animated threshold never pops.
@@ -105,18 +106,18 @@ export function buildCells(A, cfg, thr, ease = true) {
   // Without easing (a still threshold), splits are all-or-nothing, so no cell rests half-split.
   const soft = ease ? thr * 0.45 + 0.004 : 1e-9;
   // `cap`: a cell is never more split than its parent, so a subtree eases out with it.
-  const visit = (x, y, size, depth, dcx, dcy, dsz, inherit, cap) => {
+  const visit = (x, y, size, depth, dcx, dcy, dsz, inherit, cap, inheritL) => {
     const st = region(A, x, y, x + size, y + size);
     if (!st) return;
     const own = colorFor(P, cfg, st);
     const canSplit = depth < cfg.maxDepth && size / 2 >= cfg.minSize;
     const s = canSplit ? Math.min(cap, smooth(thr, thr + soft, metricOf(cfg, st))) : 0;
-    if (s <= 0) { out.push({cx: dcx, cy: dcy, sz: dsz, color: inherit || own, id: ((x * 73856093) ^ (y * 19349663) ^ (size * 83492791)) >>> 0}); return; }
+    if (s <= 0) { out.push({cx: dcx, cy: dcy, sz: dsz, color: inherit || own, l: inherit ? inheritL : st.l, id: ((x * 73856093) ^ (y * 19349663) ^ (size * 83492791)) >>> 0}); return; }
     const h = size / 2, k = dsz / size;
     for (let j = 0; j < 2; j++) {
       for (let i = 0; i < 2; i++) {
         const ox = (i - 0.5) * h, oy = (j - 0.5) * h; // child centre relative to this cell's centre
-        visit(x + i * h, y + j * h, h, depth + 1, dcx + s * ox * k, dcy + s * oy * k, dsz * (1 - s / 2), s < 0.5 ? inherit || own : null, s);
+        visit(x + i * h, y + j * h, h, depth + 1, dcx + s * ox * k, dcy + s * oy * k, dsz * (1 - s / 2), s < 0.5 ? inherit || own : null, s, inherit ? inheritL : st.l);
       }
     }
   };
@@ -134,8 +135,12 @@ export const scatterAt = (cfg, lp) => cfg.scatter * Math.pow(Math.sin(Math.PI * 
  * Draw cells (analysis pixels, scaled by k to output pixels) into a painter of size W × H.
  * Scatter flings each cell away from home along its own direction and swirl, then back.
  */
-export function drawCells(p, cells, cfg, W, H, k, lp) {
+export function drawCells(p, cells, cfg, W, H, k, lp, glyphs = []) {
   p.background(W, H, cfg.background);
+  // Glyphs (sorted least to most ink) by tone: the further a cell is from the background's
+  // lightness, the inkier its glyph. Without glyphs, glyph cells fall back to squares.
+  const bg = parseInt(cfg.background.slice(1), 16);
+  const lightBg = (0.2126 * (bg >> 16) + 0.7152 * ((bg >> 8) & 255) + 0.0722 * (bg & 255)) / 255 > 0.5;
   const env = scatterAt(cfg, lp);
   const S = Math.min(W, H);
   const sw = (cfg.stroke * S) / 1080;
@@ -149,8 +154,11 @@ export function drawCells(p, cells, cfg, W, H, k, lp) {
       cx += Math.cos(a) * d; cy += Math.sin(a) * d;
       sz *= 1 + env * (hash(c.id, 4) - 0.35) * 0.9;
     }
-    const kind = cfg.shape === 'mixed' ? ['circle', 'square', 'rounded'][Math.floor(hash(c.id, 5) * 3)] : cfg.shape;
-    if (kind === 'circle') {
+    const kind = cfg.shape === 'mixed' ? ['circle', 'square', 'rounded'][Math.floor(hash(c.id, 5) * 3)] : cfg.shape === 'glyph' && !glyphs.length ? 'square' : cfg.shape;
+    if (kind === 'glyph') {
+      const side = sz * (1 - cfg.gap), tone = lightBg ? 1 - c.l : c.l;
+      if (side > 0.4) p.glyph(cx - side / 2, cy - side / 2, side, glyphs[Math.min(glyphs.length - 1, Math.floor(tone * glyphs.length))], c.color, alpha);
+    } else if (kind === 'circle') {
       const r = (sz / 2) * cfg.fill;
       if (r > 0.2) p.circle(cx, cy, r, c.color, cfg.strokeColor, Math.min(sw, r * 0.5), alpha);
     } else {
@@ -177,13 +185,15 @@ export function canvasPainter(ctx) {
       ctx.fillStyle = fill; ctx.fill();
       if (sw > 0.05) { ctx.lineWidth = sw; ctx.strokeStyle = stroke; ctx.stroke(); }
     },
+    // g.tint(color): the glyph's mask in that color (see the glyphs in live.js).
+    glyph(x, y, s, g, fill, alpha) { ctx.globalAlpha = alpha; ctx.drawImage(g.tint(fill), x, y, s, s); },
   };
 }
 
 const f2 = v => +v.toFixed(2);
 /** A painter that records SVG elements; toString() gives the document. */
 export function svgPainter() {
-  const parts = [];
+  const parts = [], symbols = new Map();
   let head = '';
   const paint = (fill, stroke, sw, alpha) => `fill="${fill}"${sw > 0.05 ? ` stroke="${stroke}" stroke-width="${f2(sw)}"` : ''}${alpha < 1 ? ` opacity="${f2(alpha)}"` : ''}`;
   return {
@@ -194,6 +204,11 @@ export function svgPainter() {
     rect(x, y, w, h, rad, fill, stroke, sw, alpha) {
       parts.push(`<rect x="${f2(x)}" y="${f2(y)}" width="${f2(w)}" height="${f2(h)}"${rad > 0 ? ` rx="${f2(rad)}"` : ''} ${paint(fill, stroke, sw, alpha)}/>`);
     },
-    toString() { return head + parts.join('') + '</svg>'; },
+    // g.sym: the glyph's symbol id; g.symbol: its <symbol> markup, written once into <defs>.
+    glyph(x, y, s, g, fill, alpha) {
+      symbols.set(g.sym, g.symbol);
+      parts.push(`<use href="#${g.sym}" x="${f2(x)}" y="${f2(y)}" width="${f2(s)}" height="${f2(s)}" color="${fill}"${alpha < 1 ? ` opacity="${f2(alpha)}"` : ''}/>`);
+    },
+    toString() { return head + (symbols.size ? `<defs>${[...symbols.values()].join('')}</defs>` : '') + parts.join('') + '</svg>'; },
   };
 }

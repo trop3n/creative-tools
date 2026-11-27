@@ -1,8 +1,8 @@
 // Rendering: the GPU path for pattern styles, the worker round trip for the rest,
 // painting, settings and still export.
-import {makeCanvas, saveFile, slug} from '@studio/core';
+import {makeCanvas, saveFile, slug, createLiveSender, suiteGlyphs, watchGlyphs, rasterGlyphs, byInk, tintGlyph, glyphSymbol} from '@studio/core';
 import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
-import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, parsePalette, paletteHexFile, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither, applyEffects, hasEffects, newEffect, MAX_EFFECTS} from '@studio/core/dither';
+import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, hexToRGB, indicesToSVG, maskToSVG, adaptivePalette, parsePalette, paletteHexFile, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither, applyEffects, hasEffects, newEffect, MAX_EFFECTS} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -286,13 +286,124 @@ const isLiveGpu = r => r && r.gpu && gpu && gpu.generation === r.gen;
 /** Index → color for a result: its palette, or [ink, paper] for two tones. */
 const colorsOf = r => r.colors || [S.look.ink, S.look.paper];
 
+/** The cell shape in use: Glyphs draw as squares until GLYF has published a set. */
+const cellShape = () => (S.look.cellShape === 'glyphs' && !glyphSet.length ? 'square' : S.look.cellShape || 'square');
 /** Cell shape settings for a result: {shape, gap (0..1), gapColor}. */
 const cellsOf = r => ({
-  shape: S.look.cellShape || 'square',
+  shape: cellShape(),
   gap: (S.look.gap || 0) / 100,
   gapColor: extremeColor(colorsOf(r), S.look.gapTone === 'light' ? 'light' : 'dark'),
 });
-const shaped = () => !isPlainCells(S.look.cellShape, (S.look.gap || 0) / 100);
+const shaped = () => !isPlainCells(cellShape(), (S.look.gap || 0) / 100);
+const glyphCells = () => cellShape() === 'glyphs';
+
+/* ---------- glyph cells (GLYF's shared set) ---------- */
+const GLYPH_SIZE = 128; // raster size: crisp up to 128 pixels per cell
+let glyphSet = []; // GLYF's glyphs as masks, least ink first
+let glyphLoad = 0;
+function loadGlyphs() {
+  const seq = ++glyphLoad;
+  rasterGlyphs(suiteGlyphs(), GLYPH_SIZE).then(list => {
+    if (seq !== glyphLoad) return;
+    glyphSet = byInk(list);
+    stamps.clear();
+    if (S.look.cellShape === 'glyphs') paint(); else emit();
+  });
+}
+/** True once GLYF's set is here to draw cells with. */
+export const hasGlyphs = () => glyphSet.length > 0;
+
+const luma = c => { const [r, g, b] = hexToRGB(c); return r * 299 + g * 587 + b * 114; };
+/** A stable hash of a cell's position, so a two-tone picture doesn't repeat one stamp. */
+function cellHash(x, y) {
+  let h = Math.imul(x + 1, 0x27d4eb2d) ^ Math.imul(y + 1, 0x165667b1);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12;
+  return h >>> 0;
+}
+/**
+ * Which glyph each cell gets, (color index, x, y) → glyph. Darker colors get inkier glyphs.
+ * With two colors, ink cells take one from the inkier half of the set and paper cells from
+ * the lighter half, by cell position. `inkFirst`: index 0 is the ink (two tones).
+ */
+function glyphPicker(colors, inkFirst) {
+  const G = glyphSet, n = G.length;
+  if (colors.length === 2) {
+    const dark = inkFirst || luma(colors[0]) <= luma(colors[1]) ? 0 : 1, half = Math.ceil(n / 2);
+    const light = G.slice(0, half), inky = G.slice(n - half);
+    return (i, x, y) => { const set = i === dark ? inky : light; return set[cellHash(x, y) % set.length]; };
+  }
+  const byColor = [];
+  colors.map((c, i) => i).sort((a, b) => luma(colors[b]) - luma(colors[a])) // lightest first
+    .forEach((ci, rank) => { byColor[ci] = G[Math.round((rank * (n - 1)) / Math.max(1, colors.length - 1))]; });
+  return i => byColor[i] || G[0];
+}
+/** A result's cells as color indices (two tones: 0 ink, 1 paper); null if its bits are gone. */
+function cellIndices(r) {
+  const bits = r.colors ? r.indices : r.mask;
+  if (!bits || r.colors) return bits;
+  const idx = new Uint8Array(bits.length);
+  for (let i = 0; i < idx.length; i++) idx[i] = bits[i] !== 0 ? 1 : 0;
+  return idx;
+}
+
+const stamps = new Map(); // "size|glyph|color" -> the glyph tinted and scaled to size
+function stamp(g, color, s) {
+  const key = s + '|' + g.id + '|' + color;
+  let c = stamps.get(key);
+  if (!c) {
+    if (stamps.size > 2048) stamps.clear();
+    c = makeCanvas(s, s);
+    const x = c.getContext('2d');
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(tintGlyph(g.mask, color), 0, 0, s, s);
+    stamps.set(key, c);
+  }
+  return c;
+}
+/** Draw a result as glyph cells, k pixels per cell, over the gap color. False if its bits are gone. */
+function drawGlyphs(x, r, k) {
+  const idx = cellIndices(r);
+  if (!idx) return false;
+  const colors = colorsOf(r), {gap, gapColor} = cellsOf(r), pick = glyphPicker(colors, !r.colors);
+  const s = Math.round(k * (1 - gap)), o = Math.floor((k - s) / 2);
+  x.fillStyle = gapColor;
+  x.fillRect(0, 0, r.w * k, r.h * k);
+  if (s < 1) return true;
+  // A cell in the gap color is invisible, so it is left out.
+  const skip = colors.map(c => c.toLowerCase() === gapColor.toLowerCase());
+  for (let y = 0, i = 0; y < r.h; y++) {
+    for (let cx = 0; cx < r.w; cx++, i++) {
+      const ci = idx[i];
+      if (skip[ci] || !colors[ci]) continue;
+      x.drawImage(stamp(pick(ci, cx, y), colors[ci], s), cx * k + o, y * k + o);
+    }
+  }
+  return true;
+}
+/** Glyph cells as SVG: a <symbol> per glyph, a <use> per cell. */
+function glyphSVG(idx, r, {width, height, title, gap, gapColor}) {
+  const colors = colorsOf(r), pick = glyphPicker(colors, !r.colors), used = new Map();
+  const s = Math.max(0, 1 - gap), o = +((1 - s) / 2).toFixed(4);
+  const skip = colors.map(c => c.toLowerCase() === gapColor.toLowerCase()), uses = [];
+  if (s > 0) for (let y = 0, i = 0; y < r.h; y++) {
+    for (let x = 0; x < r.w; x++, i++) {
+      const ci = idx[i];
+      if (skip[ci] || !colors[ci]) continue;
+      const g = pick(ci, x, y);
+      if (!used.has(g)) used.set(g, 'g' + used.size);
+      uses.push(`<use href="#${used.get(g)}" x="${+(x + o).toFixed(4)}" y="${+(y + o).toFixed(4)}" width="${+s.toFixed(4)}" height="${+s.toFixed(4)}" color="${colors[ci]}"/>`);
+    }
+  }
+  const esc = t => String(t).replace(/[<>&"]/g, c => ({'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'})[c]);
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${r.w} ${r.h}">`,
+    title ? `<title>${esc(title)}</title>` : '',
+    `<defs>${[...used].map(([g, id]) => glyphSymbol(g, id)).join('')}</defs>`,
+    `<rect width="${r.w}" height="${r.h}" fill="${gapColor}"/>`,
+    ...uses,
+    '</svg>\n',
+  ].filter(Boolean).join('\n');
+}
 
 /* ---------- effects ---------- */
 const fxOn = () => hasEffects(S.look.effects);
@@ -349,6 +460,14 @@ function pixels(r, outW, outH) {
   return r.mask ? paintMask(r.mask, r.w, r.h, outW, outH, S.look.ink, S.look.paper) : null;
 }
 
+// Glyph cells follow GLYF's set as it changes.
+loadGlyphs();
+watchGlyphs(loadGlyphs);
+
+// Live link: other windows of the suite can watch the stage as a source. A new watcher
+// gets a fresh paint, so a still is sent too.
+const sender = createLiveSender({label: () => STYLE_BY_ID[S.settings.style]?.name || '', onWatch: () => paint()});
+
 /** Paint the last result at cell resolution; CSS scales it up with hard edges. */
 export function paint() {
   const r = S.result;
@@ -356,7 +475,9 @@ export function paint() {
   const k = previewScale(r), W = r.w * k, H = r.h * k;
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   const x = canvas.getContext('2d');
-  if (isLiveGpu(r)) {
+  if (glyphCells()) {
+    if (!drawGlyphs(x, r, k)) return emit(); // a GPU result whose engine has gone
+  } else if (isLiveGpu(r)) {
     gpu.present(colorsOf(r), k, cellsOf(r));
     x.drawImage(gpu.canvas, 0, 0);
   } else {
@@ -365,6 +486,7 @@ export function paint() {
     x.putImageData(new ImageData(px, W, H), 0, 0);
   }
   runEffects(canvas, k);
+  sender.frame(canvas);
   if (mirror) {
     const m = mirror.getContext('2d');
     m.imageSmoothingEnabled = false;
@@ -380,7 +502,8 @@ export function scaledOutput(k, into, r = S.result) {
   const w = r.w * k, h = r.h * k;
   const out = into && into.width === w && into.height === h ? into : makeCanvas(w, h);
   const x = out.getContext('2d');
-  if (isLiveGpu(r)) {
+  if (glyphCells()) drawGlyphs(x, r, k);
+  else if (isLiveGpu(r)) {
     // Scale on the GPU and copy across: no read-back of the mask.
     gpu.present(colorsOf(r), k, cellsOf(r));
     x.drawImage(gpu.canvas, 0, 0);
@@ -429,6 +552,8 @@ export function setStyle(id) {
 }
 export function setLook(key, value) {
   S.look[key] = value;
+  // Glyph cells read as ink on paper, so they start on the lightest color (switch Gap color back if you like).
+  if (key === 'cellShape' && value === 'glyphs') S.look.gapTone = 'light';
   persist();
   if (key === 'ink' || key === 'paper' || key === 'cellShape' || key === 'gap' || key === 'gapTone') paint();
   else if (key === 'frame' || key === 'customW' || key === 'customH') { reframe(); emit(); }
@@ -473,7 +598,7 @@ export function resetTone() {
 /* ---------- still export ---------- */
 export const fileBase = () => {
   const m = S.media;
-  const name = m.kind === 'image' || m.kind === 'video' ? m.label.replace(/\.[^.]+$/, '') : m.kind === 'camera' ? 'webcam' : S.look.sample;
+  const name = m.kind === 'image' || m.kind === 'video' ? m.label.replace(/\.[^.]+$/, '') : m.kind === 'camera' ? (m.live ? 'live' : 'webcam') : S.look.sample;
   return `durandal-${slug(name)}-${S.settings.style}`;
 };
 
@@ -526,7 +651,7 @@ export async function exportSVG() {
   }
   const bits = r.colors ? r.indices : r.mask;
   if (!bits) return toast('That frame is gone. Try again.', 'error');
-  const svg = r.colors ? indicesToSVG(bits, r.w, r.h, r.colors, opts) : maskToSVG(bits, r.w, r.h, S.look.ink, S.look.paper, opts);
+  const svg = glyphCells() ? glyphSVG(cellIndices(r), r, opts) : r.colors ? indicesToSVG(bits, r.w, r.h, r.colors, opts) : maskToSVG(bits, r.w, r.h, S.look.ink, S.look.paper, opts);
   const res = await saveFile(fileBase() + '.svg', new Blob([svg], {type: 'image/svg+xml'}), 'image/svg+xml');
   const note = res.status !== 'error' && fxOn() ? ' The SVG has the dither only; effects are in PNG and MP4.' : '';
   toast(res.message + note, res.status === 'error' ? 'error' : 'info');

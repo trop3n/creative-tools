@@ -1,7 +1,7 @@
 // Run with `npm test -w @studio/pfhor`. Node check of PFHOR's quadtree on a synthetic image:
 // cells stay in bounds, detail grows as the threshold falls, a tiny threshold step barely
 // changes the picture (splits ease in, they don't pop), and the worst case stays fast.
-import {analyze, buildCells, thresholdAt, scatterAt} from '../src/engine/mosaic.js';
+import {analyze, buildCells, thresholdAt, scatterAt, drawCells, svgPainter} from '../src/engine/mosaic.js';
 import {cleanConfig, presetConfig, PRESETS, DEFAULT_CONFIG} from '../src/engine/config.js';
 
 let fails = 0;
@@ -81,5 +81,27 @@ const many = buildCells(N, cleanConfig({...DEFAULT_CONFIG, minSize: 2, maxDepth:
 const ms = performance.now() - t0;
 console.log(`worst case: ${many.length} cells in ${ms.toFixed(1)} ms`);
 if (ms > 120) fail('too slow', ms);
+// Glyph cells: the shape survives cleaning, every cell carries a tone, the inkier glyph goes where
+// the tone is furthest from the background, no glyphs falls back to squares, and SVG writes each symbol once.
+if (cleanConfig({...DEFAULT_CONFIG, shape: 'glyph'}).shape !== 'glyph') fail('glyph shape lost in cleanConfig');
+const gcfg = cleanConfig({...DEFAULT_CONFIG, shape: 'glyph', background: '#ffffff'});
+const gcells = buildCells(A, gcfg, 0.08);
+if (!gcells.every(c => c.l >= 0 && c.l <= 1)) fail('cell tone out of range');
+const calls = [];
+const rec = {background() {}, circle() {}, rect: () => calls.push('rect'), glyph: (x, y, s, g) => calls.push(g.id)};
+const pair = [{cx: 10, cy: 10, sz: 8, color: '#000000', l: 0.05, id: 1}, {cx: 30, cy: 10, sz: 8, color: '#000000', l: 0.95, id: 2}];
+drawCells(rec, pair, gcfg, 100, 100, 1, 0, [{id: 'light'}, {id: 'heavy'}]);
+if (calls.join() !== 'heavy,light') fail('glyph by tone on a light background', calls.join());
+calls.length = 0;
+drawCells(rec, pair, {...gcfg, background: '#000000'}, 100, 100, 1, 0, [{id: 'light'}, {id: 'heavy'}]);
+if (calls.join() !== 'light,heavy') fail('glyph by tone on a dark background', calls.join());
+calls.length = 0;
+drawCells(rec, pair, gcfg, 100, 100, 1, 0, []);
+if (calls.join() !== 'rect,rect') fail('glyph fallback', calls.join());
+const sp = svgPainter(), sym = {sym: 'glyph-0', symbol: '<symbol id="glyph-0" viewBox="0 0 100 100"></symbol>'};
+drawCells(sp, pair, gcfg, 100, 100, 1, 0, [sym]);
+const svg = sp.toString();
+if (svg.split('<symbol').length !== 2 || svg.split('<use href="#glyph-0"').length !== 3) fail('glyph SVG', svg);
+else console.log(`ok glyphs: ${gcells.length} cells with tone, picked by tone, square fallback, SVG symbols`);
 console.log(`failures: ${fails}`);
 if (fails) process.exit(1);

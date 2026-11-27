@@ -3,7 +3,7 @@
 // @studio/core, shared with GLYF.
 import {
   loadImageFile, isImageFile, isVideoFile, slug, openVideoFile, openWebcam,
-  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff, takeSent, TOOL_NAMES,
+  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff, takeSent, TOOL_NAMES, openLiveSource,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
 import {renderNow, idle, isBusy, stillOutput, currentStill, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating} from './render.js';
@@ -130,7 +130,7 @@ export async function loadFile(file) {
 
 /* ---------- video and webcam ---------- */
 /** Dither the video's current frame (both engines get a copy at most 1280 on the long side). */
-const renderFrame = () => renderNow(live.vid, {mirror: M().kind === 'camera' && S.look.mirror});
+const renderFrame = () => renderNow(live.vid, {mirror: M().kind === 'camera' && !M().live && S.look.mirror});
 
 function syncVideoUI(force = false) {
   const v = live.vid;
@@ -273,15 +273,19 @@ export function setVolume(v) {
   if (!M().sound && v > 0) setSound(true); else emit();
 }
 
-export async function startWebcam(deviceId) {
+export const startWebcam = deviceId => startCamera(() => openWebcam(deviceId), cameraErrorMessage);
+/** Another tool's window as the source, like a webcam (never mirrored). */
+export const startLive = (id, name) => startCamera(() => openLiveSource(id, `Live: ${name}`), e => e.message, true);
+
+async function startCamera(open, message, isLive = false) {
   const ticket = ++loadSeq;
   let cam;
-  try { cam = await openWebcam(deviceId); }
-  catch (e) { return toast(cameraErrorMessage(e), 'error'); }
+  try { cam = await open(); }
+  catch (e) { return toast(message(e), 'error'); }
   if (ticket !== loadSeq) { cam.dispose(); return; }
   stopLive();
   Object.assign(live, {vid: cam.video, dispose: cam.dispose});
-  Object.assign(M(), {kind: 'camera', label: cam.label || 'Webcam', w: cam.video.videoWidth, h: cam.video.videoHeight, cams: cam.cameras, camId: cam.deviceId});
+  Object.assign(M(), {kind: 'camera', live: isLive, label: cam.label || 'Webcam', w: cam.video.videoWidth, h: cam.video.videoHeight, cams: cam.cameras, camId: cam.deviceId});
   startLoop(cam.video);
   emit();
 }

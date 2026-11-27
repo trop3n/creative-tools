@@ -43,7 +43,7 @@ export const DEFAULT_CONFIG = {
   perModule: 3, // colours per module, 2..4
   layers: 2, // most layers per module, 1..3
   scale: 1, // pattern scale, 0.5..2
-  shapes: SHAPE_IDS,
+  shapes: SHAPE_IDS.filter(s => s !== 'glyph'), // glyphs from GLYF only when turned on
   motions: MOTION_IDS,
   bpm: 120, // 40..200
   motionBeats: 4, // beats per motion loop

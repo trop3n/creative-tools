@@ -22,12 +22,12 @@ import {SAMPLES} from '../engine/samples.js';
 import {PRESETS, PALETTES, ASPECTS, MAX_COLORS} from '../engine/config.js';
 import {
   useStore, attachCanvas, applyPreset, randomize, togglePlay, restart, set, applyPalette, setColor, addColor, removeColor, reverseColors,
-  pickSample, openMedia, startCamera, exportPNG, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
+  pickSample, openMedia, startCamera, startLive, exportPNG, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
   setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink, stillBlob, applySuiteColors, toast,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {RecentFromSuite, SendToRow, SuitePaletteRow, LiveFromSuite} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -107,9 +107,10 @@ function SourceSection() {
         <Button label={m ? 'Replace' : 'Open image or video'} size="sm" variant="secondary" icon={<Icon icon={ImagePlus} size={ICON} />} isDisabled={s.mediaBusy} onClick={pick} />
         <Button label="Webcam" size="sm" variant="ghost" icon={<Icon icon={Camera} size={ICON} />} isDisabled={s.mediaBusy} onClick={startCamera} />
       </HStack>
+      <LiveFromSuite onPick={startLive} isDisabled={!!s.exporting || s.mediaBusy} />
       <RecentFromSuite onOpen={openMedia} />
       {m ? <Text type="supporting" maxLines={1}>{m.label}</Text> : null}
-      {m?.kind === 'camera' ? <Switch label="Mirror the webcam" size="sm" value={c.mirror} onChange={v => set('mirror', v)} /> : null}
+      {m?.kind === 'camera' && !m.live ? <Switch label="Mirror the webcam" size="sm" value={c.mirror} onChange={v => set('mirror', v)} /> : null}
       <SliderRow label="Contrast" value={c.contrast} min={0.5} max={2.5} step={0.01} format={times} onChange={v => set('contrast', v)} />
       <SliderRow label="Brightness" value={c.brightness} min={-0.4} max={0.4} step={0.01} format={v => `${v > 0 ? '+' : ''}${Math.round(v * 100)}`} onChange={v => set('brightness', v)} />
       <Text type="supporting">Faces and close-ups work best. You can also drop an image or video on the page.</Text>
@@ -135,20 +136,21 @@ function DetailSection() {
 }
 
 function ShapeSection() {
-  const {config: c} = useStore();
+  const s = useStore(), c = s.config, glyphs = c.shape === 'glyph';
   return (
     <InspectorSection title="Shapes">
       <InspectorRow label="Shape">
         <Selector label="Shape" isLabelHidden size="sm" width="100%" value={c.shape} options={opts(SHAPES)} onChange={v => set('shape', v)} />
       </InspectorRow>
       {c.shape === 'circle' || c.shape === 'mixed' ? <SliderRow label="Circle size" value={c.fill} min={0.4} max={1} step={0.01} format={pct} onChange={v => set('fill', v)} /> : null}
+      {glyphs && !s.glyphCount ? <Text type="supporting">Open GLYF and put glyphs in its set. Until then, the cells are squares.</Text> : null}
       {c.shape !== 'circle' ? <SliderRow label="Gap" value={c.gap} min={0} max={0.4} step={0.01} format={pct} onChange={v => set('gap', v)} /> : null}
-      <SliderRow label="Outline" value={c.stroke} min={0} max={6} step={0.25} format={v => (v === 0 ? 'Off' : `${v} px`)} onChange={v => set('stroke', v)} />
+      {glyphs ? null : <SliderRow label="Outline" value={c.stroke} min={0} max={6} step={0.25} format={v => (v === 0 ? 'Off' : `${v} px`)} onChange={v => set('stroke', v)} />}
       <InspectorRow label="Colors">
-        {c.stroke > 0 ? <Swatch label="Outline color" value={c.strokeColor} onChange={v => set('strokeColor', v)} /> : null}
+        {c.stroke > 0 && !glyphs ? <Swatch label="Outline color" value={c.strokeColor} onChange={v => set('strokeColor', v)} /> : null}
         <Swatch label="Background" value={c.background} onChange={v => set('background', v)} />
       </InspectorRow>
-      <Text type="supporting">Outline width is for a 1080 px frame and scales with the export.</Text>
+      <Text type="supporting">{glyphs ? 'Each cell is a glyph from GLYF in its color: the stronger the tone against the background, the more ink in the glyph.' : 'Outline width is for a 1080 px frame and scales with the export.'}</Text>
     </InspectorSection>
   );
 }
@@ -233,7 +235,7 @@ function ExportSection() {
       <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={m => toast(m, 'error')} />
       <Text type="supporting">
         {s.media?.kind === 'camera'
-          ? 'PNG and SVG save the frame on screen. Video export works with images and video files, not the webcam.'
+          ? `PNG and SVG save the frame on screen. Video export works with images and video files, not ${s.media.live ? 'a live picture' : 'the webcam'}.`
           : !canVideo
             ? 'PNG and SVG save the frame on screen. Video export needs Chrome or Edge.'
             : `PNG and SVG save the frame on screen. The MP4 renders ${secs(videoSeconds())} at 30 fps${!isVideo && !moving ? '; turn on Resolve or Scatter so it moves' : ''}.`}

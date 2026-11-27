@@ -28,6 +28,13 @@ export const SHAPE_PATHS = {
   ring: 'M0.5 0A0.5 0.5 0 1 0 -0.5 0A0.5 0.5 0 1 0 0.5 0Z',
 };
 
+// GLYF's shared glyphs, set by live.js when the set loads or changes:
+// [{tint(color) → canvas, symbol(id) → SVG <symbol>}].
+// With none, a glyph layer draws squares.
+let glyphs = [];
+export function setGlyphs(list) { glyphs = list; }
+const glyphAt = k => (glyphs.length ? glyphs[k % glyphs.length] : null);
+
 /** Draws to a Canvas2D context. `base` maps scene pixels to canvas pixels. */
 export class CanvasPainter {
   constructor(ctx, base = [1, 0, 0, 1, 0, 0]) {
@@ -65,6 +72,14 @@ export class CanvasPainter {
     c.lineWidth = width;
     c.stroke(this.paths[shape]);
   }
+  /** Glyph k of GLYF's set in the unit box. */
+  glyph(k, m, color) {
+    const g = glyphAt(k);
+    if (!g) return this.fill('square', m, color);
+    const c = this.ctx;
+    c.setTransform(...mul(this.base, m));
+    c.drawImage(g.tint(color), -0.5, -0.5, 1, 1);
+  }
   /** A disc fading from `inner` at its centre to `outer` at its rim. */
   glow(m, inner, outer) {
     const c = this.ctx;
@@ -89,6 +104,7 @@ export class SvgPainter {
     this.defs = [];
     this.ids = 0;
     this.used = new Set();
+    this.glyphs = new Map(); // glyph -> symbol id
   }
   rect(x, y, w, h, color) {
     this.parts.push(`<rect x="${n3(x)}" y="${n3(y)}" width="${n3(w)}" height="${n3(h)}" fill="${color}"/>`);
@@ -107,6 +123,12 @@ export class SvgPainter {
     this.used.add(shape);
     this.parts.push(`<use href="#s-${shape}" transform="${mat(m)}" fill="none" stroke="${color}" stroke-width="${n3(width)}"/>`);
   }
+  glyph(k, m, color) {
+    const g = glyphAt(k);
+    if (!g) return this.fill('square', m, color);
+    if (!this.glyphs.has(g)) this.glyphs.set(g, 'gl' + this.glyphs.size);
+    this.parts.push(`<use href="#${this.glyphs.get(g)}" x="-0.5" y="-0.5" width="1" height="1" transform="${mat(m)}" color="${color}"/>`);
+  }
   glow(m, inner, outer) {
     const id = 'g' + this.ids++;
     this.defs.push(`<radialGradient id="${id}"><stop offset="0" stop-color="${inner}"/><stop offset="1" stop-color="${outer}"/></radialGradient>`);
@@ -115,7 +137,8 @@ export class SvgPainter {
   }
   toString() {
     const shapes = [...this.used].map(k => `<path id="s-${k}" d="${SHAPE_PATHS[k]}"/>`);
+    const symbols = [...this.glyphs].map(([g, id]) => g.symbol(id));
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${this.width} ${this.height}" width="${this.width}" height="${this.height}">`
-      + `<defs>${shapes.join('')}${this.defs.join('')}</defs>${this.parts.join('')}</svg>`;
+      + `<defs>${shapes.join('')}${symbols.join('')}${this.defs.join('')}</defs>${this.parts.join('')}</svg>`;
   }
 }

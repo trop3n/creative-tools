@@ -26,6 +26,8 @@ Inside the built suite the tools share the browser's storage (`packages/core/src
 - **Send to:** every tool can send its current picture (LEELA and BLOOM also their animation) to a tool that takes one: DURANDAL, GLYF, THOTH, PFHOR (images and video) or JJARO (an image as the foil's artwork). The other tool opens in a new tab with it loaded.
 - **Recent from the suite:** each of those tools lists the last 12 pictures and videos saved or sent from any tool, under Source.
 - **Suite palettes:** Brand plus any palette you save in DURANDAL, GLYF, LEELA (gradient stops), TYCHO, THOTH (backdrop) or PFHOR, usable in any of them.
+- **Live from another window:** every tool streams its stage; DURANDAL, GLYF, THOTH and PFHOR can take another window's picture as a live source, like a webcam. Keep both windows open and visible side by side (a hidden tab stops drawing).
+- **GLYF glyphs elsewhere:** GLYF shares the glyphs in its set; DURANDAL and PFHOR can draw cells as glyphs (picked by tone) and TYCHO has a Glyphs from GLYF shape, in PNG, MP4 and SVG.
 
 ## Commands
 
