@@ -3,7 +3,7 @@
 import {useSyncExternalStore} from 'react';
 import {
   toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, makeCanvas, isVideoFile, isImageFile,
-  loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage,
+  loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage, takeSent, TOOL_NAMES,
 } from '@studio/core';
 import {analyze, buildCells, drawCells, thresholdAt, canvasPainter, svgPainter} from './mosaic.js';
 import {sampleCanvas} from './samples.js';
@@ -54,7 +54,7 @@ export function useStore() {
   useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f); }, () => version);
   return S;
 }
-const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+export const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
 
 let saveTimer = 0;
 function persist() {
@@ -189,6 +189,8 @@ export function randomize() {
 }
 export const applyPalette = id => setConfig({...S.config, ...paletteColors(id)});
 const setColors = colors => setConfig({...S.config, colors, palette: ''});
+/** Use a suite palette's colors (up to MAX_COLORS). */
+export const applySuiteColors = colors => setColors(colors.slice(0, MAX_COLORS));
 export function setColor(i, c) { const colors = S.config.colors.slice(); colors[i] = c; setColors(colors); }
 export function addColor() {
   if (S.config.colors.length >= MAX_COLORS) return;
@@ -240,6 +242,13 @@ export async function openMedia(file) {
     S.mediaBusy = false; emit();
   }
 }
+/** Open the picture another tool sent here (Send to → PFHOR), if any. */
+export async function openSent() {
+  const file = await takeSent();
+  if (!file) return;
+  await openMedia(file);
+  toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
+}
 export async function startCamera() {
   S.mediaBusy = true; emit();
   try {
@@ -269,17 +278,27 @@ export function setExportSize(v) { S.exportSize = v; saved.set('exportSize', v);
 export function setExportLoops(v) { S.exportLoops = v; saved.set('exportLoops', v); emit(); }
 export function setMatchVideo(v) { S.matchVideo = v; saved.set('matchVideo', v); emit(); }
 
+/** The frame on screen at export size, as a PNG blob. */
+function pngBlob() {
+  const [w, h] = exportDims();
+  const c = exportTarget(w, h);
+  paintFrame(exportPainter, S.config, w, h, S.time);
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
 export async function exportPNG() {
   try {
-    const [w, h] = exportDims();
-    const c = exportTarget(w, h);
-    paintFrame(exportPainter, S.config, w, h, S.time);
-    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    const blob = await pngBlob();
     report(await saveFile(fileName() + '.png', blob, 'image/png'));
   } catch (e) {
     console.error(e);
     toast('Could not save the image: ' + e.message, 'error');
   }
+}
+/** The picture as Save PNG makes it, to send to another tool. */
+export async function stillBlob() {
+  const blob = await pngBlob();
+  if (!blob) throw new Error('Could not make the picture');
+  return {blob, name: fileName() + '.png'};
 }
 export async function exportSVG() {
   try {

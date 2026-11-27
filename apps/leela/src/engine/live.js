@@ -1,7 +1,7 @@
 // LEELA's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, putHandoff} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
 import {
   createGradientRenderer, cleanConfig, presetConfig, randomConfig, spreadPoints, parseColor, oklabToHex,
   PRESETS, MAX_STOPS, MAX_POINTS, effectCell,
@@ -56,7 +56,7 @@ export function useStore() {
   useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f); }, () => version);
   return S;
 }
-const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+export const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
 
 let saveTimer = 0;
 function persist() {
@@ -254,6 +254,11 @@ export function removeStop(i) {
   if (p.length <= 2) return;
   set('palette', p.filter((_, k) => k !== i));
 }
+/** Use a suite palette as the ramp: its colors in order, picked evenly when there are more than MAX_STOPS. */
+export function setStops(colors) {
+  const n = Math.min(colors.length, MAX_STOPS);
+  set('palette', Array.from({length: n}, (_, i) => colors[Math.round((i * (colors.length - 1)) / (n - 1))]));
+}
 export const reversePalette = () => set('palette', S.config.palette.slice().reverse());
 
 /* mesh points */
@@ -444,7 +449,8 @@ function renderFrame(cfg, w, h, time, bufs = {}) {
 }
 const offCanvas = () => off && off.canvas;
 
-async function renderPNG() {
+/** The frame on screen as a PNG at the export size: {blob, name}. */
+export async function renderPNG() {
   const {w, h} = outSize();
   return {blob: await pngBlob(renderFrame(S.config, w, h, S.time)), name: `${fileName()}-${w}x${h}.png`};
 }
@@ -463,7 +469,8 @@ export async function exportPNG() {
 let cancelExport = false;
 export function cancelVideo() { cancelExport = true; }
 
-async function renderMP4() {
+/** The animation as an MP4: {blob, name, codecNote}, or null if canceled. */
+export async function renderMP4() {
   const {w, h} = outSize(), {frames} = videoPlan(), fps = S.out.fps;
   const W = Math.floor(w / 2) * 2, H = Math.floor(h / 2) * 2; // video needs even sizes
   // The gradient as it is now: edits made during the render don't leak into it.
@@ -494,32 +501,6 @@ export async function exportMP4() {
     const res = await saveFile(out.name, out.blob, 'video/mp4');
     toast(res.message + (res.status === 'error' ? '' : out.codecNote), res.status === 'error' ? 'error' : 'info');
   } catch (e) {
-    toast(e.message, 'error');
-  }
-}
-
-/**
- * Open the frame (kind 'image') or the animation (kind 'video') in DURANDAL as its
- * source. Both tools share one site, so the file waits in the browser for it.
- */
-/**
- * Whether DURANDAL sits next to LEELA (the built suite: /leela/ beside /durandal/,
- * one origin). Dev servers and the single-file build run alone, so the hand-off
- * has nowhere to go.
- */
-export const canSendToDurandal = () => /\/leela\/?$/.test(location.pathname) && !import.meta.env?.DEV;
-
-export async function sendToDurandal(kind) {
-  // Open the tab now, while the click still counts as the person's, then point it there.
-  const tab = window.open('', '_blank');
-  try {
-    const out = kind === 'video' ? await renderMP4() : await renderPNG();
-    if (!out) { tab?.close(); return toast('Render canceled'); }
-    await putHandoff(out.blob, out.name, 'leela');
-    const url = new URL('../durandal/?from=leela', location.href).href;
-    if (tab) tab.location.href = url; else location.href = url;
-  } catch (e) {
-    tab?.close();
     toast(e.message, 'error');
   }
 }

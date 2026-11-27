@@ -3,7 +3,7 @@
 import {useSyncExternalStore} from 'react';
 import {
   toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, makeCanvas, isVideoFile, isImageFile,
-  loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage,
+  loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage, takeSent, TOOL_NAMES,
 } from '@studio/core';
 import {drawSource} from './source.js';
 import {createHalftone} from './halftone.js';
@@ -54,7 +54,7 @@ export function useStore() {
   useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f); }, () => version);
   return S;
 }
-const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+export const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
 
 let saveTimer = 0;
 function persist() {
@@ -162,6 +162,8 @@ export const setIn = (layer, key, value) => setConfig({...S.config, [layer]: {..
 /** Change a field of a layer's fill (shape, text). */
 export const setFill = (layer, key, value) => setIn(layer, 'fill', {...S.config[layer].fill, [key]: value});
 export function setBackdropColor(i, c) { const colors = S.config.backdrop.colors.slice(); colors[i] = c; setIn('backdrop', 'colors', colors); }
+/** Use a suite palette's colors as the three backdrop colors, repeating them if there are only two. */
+export const applyBackdropPalette = colors => setIn('backdrop', 'colors', [0, 1, 2].map(i => colors[i % colors.length]));
 
 /** Switch screens; a black or white solid backdrop flips so the frame isn't flooded with ink. */
 export function setMode(mode) {
@@ -238,6 +240,13 @@ export async function startCamera() {
 }
 export function removeMedia() { setMedia(null); }
 
+// Sent from another tool (Send to → THOTH): the file waits on the shelf.
+takeSent().then(async file => {
+  if (!file) return;
+  await openMedia(file);
+  if (S.media?.label === file.name) toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
+});
+
 /* ---------- export ---------- */
 let exportCanvas = null, exportRenderer = null, cancelExport = false;
 const exportSource = makeCanvas(2, 2);
@@ -259,14 +268,20 @@ export function setExportLoops(v) { S.exportLoops = v; saved.set('exportLoops', 
 export function setMatchVideo(v) { S.matchVideo = v; saved.set('matchVideo', v); emit(); }
 const report = r => toast(r.message, r.status === 'error' ? 'error' : 'info');
 
+/** The frame on screen at export size, as a PNG: what Save PNG saves and Send to sends. */
+export async function stillBlob() {
+  const [w, h] = exportDims();
+  const c = exportTarget(w, h);
+  paintFrame(exportRenderer, exportSource, S.config, S.time);
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('the graphics card could not read the frame back');
+  return {blob, name: fileName() + '.png'};
+}
+
 export async function exportPNG() {
   try {
-    const [w, h] = exportDims();
-    const c = exportTarget(w, h);
-    paintFrame(exportRenderer, exportSource, S.config, S.time);
-    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
-    if (!blob) throw new Error('the graphics card could not read the frame back');
-    report(await saveFile(fileName() + '.png', blob, 'image/png'));
+    const {blob, name} = await stillBlob();
+    report(await saveFile(name, blob, 'image/png'));
   } catch (e) {
     console.error(e);
     toast('Could not save the image: ' + e.message, 'error');

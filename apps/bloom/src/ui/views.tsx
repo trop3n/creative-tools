@@ -24,11 +24,12 @@ import {asHex} from '../engine/color.js';
 import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, skipToBloom, set, toggleSpecies,
   applyPalette, setRampStop, addRamp, removeRamp, addRampStop, removeRampStop, setStemColor, setBackground, shuffleColors,
-  exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLength, localTime, doneAt,
+  exportPNG, exportMP4, cancelMP4, renderPNG, renderMP4, toast, videoSupported, videoSeconds, setExportSize, setExportLength, localTime, doneAt,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
+import {SendToRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -241,6 +242,8 @@ function ExportSection() {
           <Button label="Render MP4" size="sm" variant="secondary" icon={<Icon icon={Film} size={ICON} />} isDisabled={!canVideo} onClick={exportMP4} />
         </HStack>
       )}
+      <SendToRow kind="image" make={renderPNG} isDisabled={!!s.exporting} onError={m => toast(m, 'error')} />
+      <SendToRow kind="video" make={renderMP4} isDisabled={!!s.exporting || !canVideo} onError={m => toast(m, 'error')} />
       <Text type="supporting">
         {canVideo
           ? `The PNG is the frame on screen. The MP4 renders ${videoSeconds()} s at 30 fps from the first sprout, frame by frame, so it never drops a frame.`

@@ -14,14 +14,15 @@ import {Switch} from '@astryxdesign/core/Switch';
 import {Text} from '@astryxdesign/core/Text';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Camera, CameraOff, Circle, Clapperboard, ClipboardCopy, Download, ImageUp, LayoutGrid, Minus, Pause, Play, Plus, Square, Volume2, VolumeX} from 'lucide-react';
-import {S, A, useStore, byId, PALETTES, MAX_PALETTE} from '../engine/store.js';
+import {S, A, useStore, byId, toast, PALETTES, MAX_PALETTE} from '../engine/store.js';
 import {PATTERNS} from '../engine/patterns.js';
-import {setGen, setOutCanvas, exportPNG, exportSVG, copySVG} from '../engine/generator.js';
+import {setGen, setOutCanvas, exportPNG, exportSVG, copySVG, pngBlob} from '../engine/generator.js';
 import {
   useSample, loadMediaFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, setMirror, stopCamera, toggleRecord,
   seekRibbons, renderRibbons,
 } from '../engine/media.js';
 import {CustomSizeRow, GlyphArt, ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
+import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 import {pickFiles} from '@studio/core';
 import {CUSTOM, FRAME_RATIOS, frameIds, frameLabel} from '@studio/core/frames';
 
@@ -223,6 +224,7 @@ function PaletteEditor() {
         <IconButton label="Add a color" tooltip="Add a color" size="sm" variant="ghost" isDisabled={pal.length >= MAX_PALETTE} icon={<Icon icon={Plus} size={ICON} />} onClick={() => setPal([...pal, pal[pal.length - 1]])} />
         <IconButton label="Remove the last color" tooltip="Remove the last color" size="sm" variant="ghost" isDisabled={pal.length <= 1} icon={<Icon icon={Minus} size={ICON} />} onClick={() => setPal(pal.slice(0, -1))} />
       </InspectorRow>
+      <SuitePaletteRow colors={pal} onUse={c => setPal(c.slice(0, MAX_PALETTE))} onSaved={n => toast(`Saved "${n}" to the suite palettes`)} />
       {g.color === 'palette' ? (
         <InspectorRow label="Match">
           <SegmentedControl label="Match colors" size="sm" layout="fill" value={g.match} onChange={v => setGen('match', v)}>
@@ -279,6 +281,7 @@ export function GenerateInspector() {
             <Button label="Webcam" size="sm" icon={<Icon icon={Camera} size={ICON} />} onClick={() => startWebcam()} />
           )}
         </HStack>
+        <RecentFromSuite onOpen={loadMediaFile} />
         <Text type="supporting">You can also drop an image or video on the canvas, or paste an image.</Text>
       </InspectorSection>
 
@@ -502,6 +505,7 @@ export function GenerateInspector() {
           <Button label="Save SVG" size="sm" variant="primary" icon={<Icon icon={Download} size={ICON} />} onClick={exportSVG} />
           <Button label="Copy SVG" size="sm" icon={<Icon icon={ClipboardCopy} size={ICON} />} onClick={copySVG} />
         </HStack>
+        <SendToRow make={pngBlob} isDisabled={m.exporting} onError={msg => toast(msg, 'error')} />
         <Text type="supporting">The SVG keeps every mark as a vector copy of its glyph symbol.</Text>
       </InspectorSection>
     </>

@@ -1,5 +1,8 @@
 // Saving and opening files. Works both as a plain web page (anchor download,
-// file picker) and inside a claude.ai Artifact (the `downloads` capability).
+// file picker) and inside a claude.ai Artifact (the `downloads` capability). Pictures and
+// videos saved inside the built suite also go on the shelf (suite.js), so other tools can
+// open them under "Recent from the suite".
+import {currentTool, isShelfType, shelfPut} from './suite.js';
 
 /**
  * Offer a generated file to the viewer.
@@ -15,6 +18,7 @@ export async function saveFile(filename, data, mime) {
   if (dl) {
     try {
       await dl.save({filename, data});
+      shelve(data, filename, mime);
       return {status: 'saved', message: 'Saved ' + filename};
     } catch (e) {
       return e && e.code === 'declined'
@@ -30,7 +34,17 @@ export async function saveFile(filename, data, mime) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  shelve(blob, filename, mime);
   return {status: 'saved', message: 'Saved ' + filename};
+}
+
+/** Keep a copy of a saved picture or video on the shelf (in the background; failures don't matter). */
+function shelve(data, filename, mime) {
+  try {
+    if (!currentTool()) return;
+    const blob = data instanceof Blob && data.type ? data : new Blob([data], {type: mime});
+    if (isShelfType(blob.type)) shelfPut(blob, filename).catch(() => {});
+  } catch (e) { /* storage blocked: the save itself still worked */ }
 }
 
 /** Open the system file picker without a file input in the page. */

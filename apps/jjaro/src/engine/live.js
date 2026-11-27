@@ -1,7 +1,7 @@
 // JJARO's app state, the simulation loop, pointer handling and every action the UI
 // takes. Engine code mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, takeSent, TOOL_NAMES} from '@studio/core';
 import {parseColor, oklabToLinear} from '@studio/core/gradient';
 import {Cloth, QUALITY, rng} from './cloth.js';
 import {lightDirs, dropLayout, PATTERN_IDS, PRINT_IDS} from './foil.js';
@@ -104,6 +104,13 @@ export async function loadArt(file) {
   } catch (e) {
     S.toast?.(e.message || 'That image could not be read', 'error');
   }
+}
+/** Print the image another tool sent here (Send to → JJARO), if any. */
+export async function openSent() {
+  const file = await takeSent();
+  if (!file) return;
+  await loadArt(file);
+  toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
 }
 /** Go back to the sample artwork. */
 export function clearArt() { saved.set('art.v1', null); showArt(sampleArt()); }
@@ -289,7 +296,7 @@ export function gust() {
 export function resetView() { setView({orbit: DEFAULT_CONFIG.orbit, elevation: DEFAULT_CONFIG.elevation, zoom: DEFAULT_CONFIG.zoom}); }
 
 /* ---------- saved looks, project files and links ---------- */
-const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+export const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
 const storeLooks = () => saved.set('looks.v1', S.looks);
 
 export function saveLook(name) {
@@ -408,17 +415,26 @@ function renderStill(W, H, sheet, transparent) {
   return out;
 }
 
+/** The still as Save PNG makes it: export size, frozen folds, transparent if set. */
+function pngBlob() {
+  const [w, h] = dims(S.exportSize);
+  const c = renderStill(w, h, freeze(), S.transparent);
+  return new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('PNG export failed'))), 'image/png'));
+}
 export async function exportPNG() {
   try {
-    const [w, h] = dims(S.exportSize);
-    const c = renderStill(w, h, freeze(), S.transparent);
-    const blob = await new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('PNG export failed'))), 'image/png'));
+    const blob = await pngBlob();
     const r = await saveFile(fileName() + '.png', blob, 'image/png');
     toast(r.message, r.status === 'error' ? 'error' : 'info');
   } catch (e) {
     console.error(e);
     toast('Could not save the image: ' + e.message, 'error');
   }
+}
+
+/** The PNG export, to send to another tool. */
+export async function stillBlob() {
+  return {blob: await pngBlob(), name: fileName() + '.png'};
 }
 
 export const videoSupported = canEncodeVideo;

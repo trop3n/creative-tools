@@ -224,12 +224,23 @@ export function buildSVG() {
 }
 export const fileBase = () => 'glyf-' + slug(S.media.label.replace(/\(sample\)|\.[a-z0-9]+$/gi, '')) + '-' + S.gen.cols;
 
-export const exportPNG = () => {
-  if (!last) return toast('Nothing to export yet');
+/** The output as Save PNG makes it: a PNG blob, or null if the browser can't make one. */
+const pngOf = () => {
   let cv = outCv;
   if (S.gen.transparent) { cv = mk(outCv.width, outCv.height); cv.getContext('2d').drawImage(layerCv, 0, 0); }
-  cv.toBlob(b => (b ? saveFile(fileBase() + '.png', b, 'image/png') : toast('PNG export failed', 'error')), 'image/png');
+  return new Promise(res => cv.toBlob(res, 'image/png'));
 };
+export const exportPNG = () => {
+  if (!last) return toast('Nothing to export yet');
+  pngOf().then(b => (b ? saveFile(fileBase() + '.png', b, 'image/png') : toast('PNG export failed', 'error')));
+};
+/** The output as a PNG to send to another tool. */
+export async function pngBlob() {
+  if (!last) throw new Error('Nothing to send yet');
+  const blob = await pngOf();
+  if (!blob) throw new Error('Could not make the picture');
+  return {blob, name: fileBase() + '.png'};
+}
 export const exportSVG = () => { const s = buildSVG(); s ? saveFile(fileBase() + '.svg', s, 'image/svg+xml') : toast('Nothing to export yet'); };
 export const copySVG = () => {
   const s = buildSVG(); if (!s) return toast('Nothing to export yet');

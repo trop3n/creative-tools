@@ -48,7 +48,7 @@ export function useStore() {
   useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f); }, () => version);
   return S;
 }
-const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+export const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
 
 let saveTimer = 0;
 function persist() {
@@ -166,6 +166,8 @@ export function addColor() {
   if (cs.length >= MAX_COLORS) return;
   setColors([...cs, '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')]);
 }
+/** Use a suite palette's colors (up to MAX_COLORS) as the color list. */
+export const applySuitePalette = colors => setColors(colors.slice(0, MAX_COLORS));
 export function removeColor(i) {
   if (S.config.colors.length <= 2) return toast('Keep at least two colors', 'info');
   setColors(S.config.colors.filter((_, k) => k !== i));
@@ -207,13 +209,20 @@ export function setExportLoops(v) { S.exportLoops = v; saved.set('exportLoops', 
 
 async function report(r) { toast(r.message, r.status === 'error' ? 'error' : 'info'); }
 
+/** The frame on screen at export size, as a PNG: what Save PNG saves and Send to sends. */
+export async function stillBlob() {
+  const [w, h] = exportDims();
+  const c = exportTarget(w, h);
+  paintFrame(exportPainter, S.config, w, h, S.time);
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('the browser could not make the picture');
+  return {blob, name: fileName() + '.png'};
+}
+
 export async function exportPNG() {
   try {
-    const [w, h] = exportDims();
-    const c = exportTarget(w, h);
-    paintFrame(exportPainter, S.config, w, h, S.time);
-    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
-    report(await saveFile(fileName() + '.png', blob, 'image/png'));
+    const {blob, name} = await stillBlob();
+    report(await saveFile(name, blob, 'image/png'));
   } catch (e) {
     console.error(e);
     toast('Could not save the image: ' + e.message, 'error');

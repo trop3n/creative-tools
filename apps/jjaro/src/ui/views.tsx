@@ -19,10 +19,11 @@ import {SETUPS} from '../engine/cloth.js';
 import {ASPECTS, METALS, PAPERS, PRESETS} from '../engine/config.js';
 import {PATTERNS, PRINTS, MAX_LIGHTS, MAX_DROPS} from '../engine/foil.js';
 import {
-  useStore, loadArt, clearArt, exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExport, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
+  useStore, loadArt, clearArt, exportPNG, stillBlob, toast, exportMP4, cancelMP4, videoSupported, videoSeconds, setExport, applyPreset, randomize, saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, attachCanvas, pointerDown, pointerMove, pointerUp, wheel, set, setBackground, togglePlay, reset, reseed, gust, resetView,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
+import {RecentFromSuite, SendToRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -202,6 +203,7 @@ export function Inspector() {
               <Button label="Choose image" size="sm" variant="secondary" icon={<Icon icon={ImageUp} size={ICON} />} onClick={openArt} />
               {s.art?.custom ? <Button label="Use the sample" size="sm" variant="ghost" onClick={clearArt} /> : null}
             </HStack>
+            <RecentFromSuite kinds={['image']} onOpen={loadArt} />
             <SliderRow label="Size" value={c.artSize} min={0.1} max={1} step={0.01} format={pct} onChange={v => set('artSize', v)} />
             {c.print === 'ink' ? (
               <SliderRow label="Ink" value={c.ink} min={0} max={1} step={0.01} format={pct} onChange={v => set('ink', v)} />
@@ -378,6 +380,7 @@ function ExportSection() {
           <Button label="Render MP4" size="sm" variant="secondary" icon={<Icon icon={Film} size={ICON} />} isDisabled={!canVideo} onClick={exportMP4} />
         </HStack>
       )}
+      <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={m => toast(m, 'error')} />
       <Text type="supporting">
         {canVideo
           ? `Both keep the folds as they are now. The MP4 is ${videoSeconds()} s at 30 fps: the lights come round ${s.loops === 1 ? 'once' : s.loops + ' times'}, so it loops without a jump.`

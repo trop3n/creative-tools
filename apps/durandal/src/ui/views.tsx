@@ -18,10 +18,10 @@ import {ArrowDown, ArrowUp, Eye, EyeOff, Camera, CameraOff, Check, Circle, Clapp
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS, EFFECTS, EFFECT_BY_ID} from '@studio/core/dither';
 import {CUSTOM, FRAME_RATIOS, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
-import {useStore, currentParams} from '../engine/state.js';
+import {useStore, currentParams, toast} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportJPG, exportSVG, importPalette, exportPalette, exportDims, gpuAvailable,
-  paletteColors, setImageCount, repickImageColors, editCustom, isAnimating, addEffect, setEffect, removeEffect, moveEffect,
+  paletteColors, setImageCount, repickImageColors, editCustom, isAnimating, stillBlob, addEffect, setEffect, removeEffect, moveEffect,
 } from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
@@ -30,6 +30,7 @@ import {
 } from '../engine/media.js';
 import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
+import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
 const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#c99530'];
@@ -248,6 +249,7 @@ export function Inspector() {
             <Button label="Webcam" size="sm" icon={<Icon icon={Camera} size={ICON} />} onClick={() => startWebcam()} />
           )}
         </HStack>
+        <RecentFromSuite onOpen={loadFile} />
         <Text type="supporting">You can also drop an image or video anywhere on the page, or paste an image.</Text>
       </InspectorSection>
 
@@ -396,6 +398,7 @@ export function Inspector() {
             {s.media.batch && s.media.progress ? <Text type="supporting">{s.media.progress}</Text> : null}
           </HStack>
         ) : null}
+        <SendToRow make={stillBlob} isDisabled={s.media.exporting} onError={m => toast(m, 'error')} />
         <Text type="supporting">
           {s.result && !fixedSize(look.frame, [look.customW, look.customH]) ? `${exportDims(s.result).join(' × ')} px` : ' '}
         </Text>
@@ -479,6 +482,7 @@ function PaletteControls() {
           </HStack>
         </>
       ) : null}
+      <SuitePaletteRow colors={colors} onUse={c => edit(c)} onSaved={n => toast(`Saved "${n}" to the suite palettes`)} />
       <HStack gap={1} wrap="wrap">
         <Button
           label="Import palette…"

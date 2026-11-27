@@ -23,10 +23,11 @@ import {PRESETS, PALETTES, ASPECTS, MAX_COLORS} from '../engine/config.js';
 import {
   useStore, attachCanvas, applyPreset, randomize, togglePlay, restart, set, applyPalette, setColor, addColor, removeColor, reverseColors,
   pickSample, openMedia, startCamera, exportPNG, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
-  setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink,
+  setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink, stillBlob, applySuiteColors, toast,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
+import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -106,6 +107,7 @@ function SourceSection() {
         <Button label={m ? 'Replace' : 'Open image or video'} size="sm" variant="secondary" icon={<Icon icon={ImagePlus} size={ICON} />} isDisabled={s.mediaBusy} onClick={pick} />
         <Button label="Webcam" size="sm" variant="ghost" icon={<Icon icon={Camera} size={ICON} />} isDisabled={s.mediaBusy} onClick={startCamera} />
       </HStack>
+      <RecentFromSuite onOpen={openMedia} />
       {m ? <Text type="supporting" maxLines={1}>{m.label}</Text> : null}
       {m?.kind === 'camera' ? <Switch label="Mirror the webcam" size="sm" value={c.mirror} onChange={v => set('mirror', v)} /> : null}
       <SliderRow label="Contrast" value={c.contrast} min={0.5} max={2.5} step={0.01} format={times} onChange={v => set('contrast', v)} />
@@ -164,6 +166,7 @@ function ColorsSection() {
         {c.colors.length > 2 ? <IconButton label="Remove the last color" tooltip="Remove the last color" size="sm" variant="ghost" icon={<Icon icon={Minus} size={ICON} />} onClick={removeColor} /> : null}
         <IconButton label="Reverse the colors" tooltip="Reverse" size="sm" variant="ghost" icon={<Icon icon={ArrowLeftRight} size={ICON} />} onClick={reverseColors} />
       </HStack>
+      <SuitePaletteRow colors={c.colors} onUse={applySuiteColors} onSaved={n => toast(`Saved "${n}" to the suite palettes`)} />
       <InspectorRow label="Mapping">
         <Selector label="Color mapping" isLabelHidden size="sm" width="100%" value={c.mapping} options={opts(MAPPINGS)} onChange={v => set('mapping', v)} />
       </InspectorRow>
@@ -227,6 +230,7 @@ function ExportSection() {
           <Button label="Render MP4" size="sm" variant="secondary" icon={<Icon icon={Film} size={ICON} />} isDisabled={!canVideo} onClick={exportMP4} />
         </HStack>
       )}
+      <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={m => toast(m, 'error')} />
       <Text type="supporting">
         {s.media?.kind === 'camera'
           ? 'PNG and SVG save the frame on screen. Video export works with images and video files, not the webcam.'

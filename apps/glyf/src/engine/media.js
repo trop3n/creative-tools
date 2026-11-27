@@ -2,7 +2,7 @@
 // and video exporters from @studio/core.
 import {
   loadImageFile, isVideoFile, isMediaFile, openVideoFile, openWebcam, frameCanvasFor, drawVideoFrame,
-  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas as mk,
+  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas as mk, takeSent, TOOL_NAMES,
 } from '@studio/core';
 import {S, emit, toast, saveFile, saveGen} from './store.js';
 import {render, schedule, getOutCanvas, fileBase} from './generator.js';
@@ -58,6 +58,12 @@ export function useSample(kind) {
 export function initSource() {
   const k = SAMPLE_NAMES[S.gen.sample] ? S.gen.sample : 'sphere';
   S.gen.sample = k;
+  // Sent from another tool (Send to → GLYF): the file waits on the shelf.
+  takeSent().then(file => {
+    if (!file) return;
+    loadMediaFile(file);
+    toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
+  });
   if (k === 'ribbons') { startRibbons(); return; }
   if (k === 'pattern') { startPattern(); return; }
   media.src = sampleCanvas(k);

@@ -8,7 +8,7 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | `apps/launcher` | Home page: one card per tool, read from `suite.json` |
 | `apps/glyf` | GLYF: draw glyphs (rectangles, ellipses, quarters, triangles, polygons, lines; add, cut and keep; any-angle turns, mirror and radial copies) or pick them from a catalog of 19 tunable shape families, then use them as the characters of an image, video, webcam feed, the moving Ribbons or a procedural pattern; glyphs matched by tone and by shape at edges, optionally turned to fit; one ink, the source's colors or a flat palette; exports PNG, SVG and MP4 (Ribbons loop seamlessly) |
 | `apps/durandal` | DURANDAL: dither images, video or a webcam feed into 1-bit or palette pixel art (31 styles: 15 error diffusion kernels, Bayer, cluster and other ordered and pattern styles; up to 16 colors from presets, the image, a custom set or an imported .hex or .gpl palette; saturation, sharpen and noise before dithering; CMYK print with four angled ink screens; pattern styles run on the GPU via WebGL2 at full resolution; cells as squares, round dots, diamonds or lines with gaps for dot-matrix and LED looks; a reorderable stack of glitch, light and texture effects over the result); exports PNG, SVG, JPG and MP4 (and PNGs of many images at once in a batch), with keyframed settings and effects over a video, or over a still's own timeline rendered as a looping MP4; saved looks and .durandal.json project files |
-| `apps/leela` | LEELA: animated grainy gradients and mesh gradients on the GPU (WebGL2), blended in Oklab, with noise-warped shapes, drift, breathe and flow motion, seamless loops and film grain; pixelate, ASCII, ribbed glass and DURANDAL dithering effects; presets, a seeded randomizer, saved looks, share links and project files; PNG up to 8192 px and MP4 export, and a hand-off to DURANDAL |
+| `apps/leela` | LEELA: animated grainy gradients and mesh gradients on the GPU (WebGL2), blended in Oklab, with noise-warped shapes, drift, breathe and flow motion, seamless loops and film grain; pixelate, ASCII, ribbed glass and DURANDAL dithering effects; presets, a seeded randomizer, saved looks, share links and project files; PNG up to 8192 px and MP4 export |
 | `apps/bloom` | BLOOM: procedural flowers (carnation, lily, tulip, daisy, cosmos, dahlia) that grow along wandering stems and bloom on a three-stop backdrop, in flat Oklab color ramps, on the GPU (WebGL2) with wind, camera drift and depth of field; presets, a seeded randomizer, regrow loops; exports PNG and frame-accurate MP4 |
 | `apps/tycho` | TYCHO: a recursive grid of rectangular cells, each a looping pattern module of 1–3 stacked layers (seven shapes as grids, checkers, stripes, sunbursts, concentric rings, single shapes or glows) with 10 motions, drawn flat with Canvas2D; cuts to a new layout or new modules on the beat, with BPM and tap tempo, so every sequence loops seamlessly; presets, palettes up to 24 colors, saved looks, share links and project files; exports PNG, SVG and MP4 |
 | `apps/thoth` | THOTH: a live halftone sandbox. Animated type, shapes, gradient fields (linear, radial, conic, bands), images, video or a webcam are drawn with Canvas2D, then screened on the GPU (WebGL2) as additive RGB, four-ink CMYK or one-ink dots in circle, square, diamond or line shapes, with merging oversized dots; hue cycling, seamless loops, presets, saved looks, share links and project files; exports PNG and MP4 |
@@ -18,6 +18,14 @@ share a core library, one Astryx theme and one origin (so they can share saved d
 | `packages/theme` (`@studio/theme`) | The suite's Astryx theme and self-hosted fonts (Montserrat, JetBrains Mono) |
 | `packages/build` (`@studio/build`) | Shared Vite config and the `studio-inline` single-file step |
 | `suite.json` | The tool registry: name, folder, URL path, category, description, preview |
+
+## Connected tools
+
+Inside the built suite the tools share the browser's storage (`packages/core/src/suite.js`):
+
+- **Send to:** every tool can send its current picture (LEELA and BLOOM also their animation) to a tool that takes one: DURANDAL, GLYF, THOTH, PFHOR (images and video) or JJARO (an image as the foil's artwork). The other tool opens in a new tab with it loaded.
+- **Recent from the suite:** each of those tools lists the last 12 pictures and videos saved or sent from any tool, under Source.
+- **Suite palettes:** Brand plus any palette you save in DURANDAL, GLYF, LEELA (gradient stops), TYCHO, THOTH (backdrop) or PFHOR, usable in any of them.
 
 ## Commands
 

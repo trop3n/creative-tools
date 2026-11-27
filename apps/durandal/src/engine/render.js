@@ -486,6 +486,14 @@ export function stillOutput(r) {
   const f = fixedFrame();
   return f ? fixedOutput(r, f) : scaledOutput(exportScale(), null, r);
 }
+/** The picture as a still export makes it, as a PNG to send to another tool. */
+export async function stillBlob() {
+  const r = S.result;
+  if (!r || (!isLiveGpu(r) && !(r.colors ? r.indices : r.mask))) throw new Error('Nothing to send yet');
+  const blob = await new Promise(res => stillOutput(r).toBlob(res, 'image/png'));
+  if (!blob) throw new Error('Could not make the picture');
+  return {blob, name: fileBase() + '.png'};
+}
 /** The still on the stage as loaded (before the Frame crop), to put back after a batch. */
 export const currentStill = () => (src && !isVideo(src.base) ? src.base : null);
 

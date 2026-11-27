@@ -14,7 +14,7 @@ import {Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {
-  ArrowLeftRight, Check, Clapperboard, Dices, Download, FolderOpen, Image as ImageIcon, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Send, Shuffle, Trash2,
+  ArrowLeftRight, Check, Clapperboard, Dices, Download, FolderOpen, Link, Minus, Move, Pause, Play, Plus, RotateCcw, Save, Shuffle, Trash2,
 } from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
 import {cleanSide} from '@studio/core/frames';
@@ -22,11 +22,12 @@ import {PRESETS, MAX_STOPS, MAX_POINTS} from '@studio/core/gradient';
 import {STYLES} from '@studio/core/dither';
 import {
   useStore, attachCanvas, applyPreset, randomize, reseed, togglePlay, restart, toggleHandles, set, setPair, setShape, asHex,
-  setStop, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp, pointerLeave,
+  setStop, setStops, addStop, removeStop, reversePalette, setPoint, addPoint, removePoint, pointerDown, pointerMove, pointerUp, pointerLeave,
   saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
-  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, sendToDurandal, canSendToDurandal, attachFx, gradientColors,
+  SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, renderPNG, renderMP4, toast, attachFx, gradientColors,
 } from '../engine/live.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
+import {SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -187,6 +188,7 @@ export function Inspector() {
             {c.palette.length > 2 ? <IconButton label="Remove the last color" tooltip="Remove the last color" size="sm" variant="ghost" icon={<Icon icon={Minus} size={ICON} />} onClick={() => removeStop(c.palette.length - 1)} /> : null}
             <IconButton label="Reverse the colors" tooltip="Reverse" size="sm" variant="ghost" icon={<Icon icon={ArrowLeftRight} size={ICON} />} onClick={reversePalette} />
           </InspectorRow>
+          <SuitePaletteRow colors={c.palette.map(asHex)} onUse={setStops} onSaved={n => toast(`Saved "${n}" to the suite palettes`)} />
           <InspectorRow label="Backdrop">
             <Swatch label="Backdrop" value={asHex(c.background)} onChange={v => set('background', v)} />
           </InspectorRow>
@@ -402,17 +404,8 @@ function ExportSection() {
         </>
       ) : null}
 
-      {canSendToDurandal() ? (
-        <>
-          <InspectorRow label="Send to">
-            <Button label="Frame" size="sm" variant="ghost" icon={<Icon icon={ImageIcon} size={ICON} />} isDisabled={s.exporting} onClick={() => sendToDurandal('image')} />
-            {moving ? (
-              <Button label="Animation" size="sm" variant="ghost" icon={<Icon icon={Send} size={ICON} />} isDisabled={s.exporting || !canEncodeVideo()} onClick={() => sendToDurandal('video')} />
-            ) : null}
-          </InspectorRow>
-          <Text type="supporting">Sends this frame or animation to DURANDAL, which opens in a new tab with it as the source, ready to dither.</Text>
-        </>
-      ) : null}
+      <SendToRow kind="image" make={renderPNG} isDisabled={s.exporting} onError={m => toast(m, 'error')} />
+      {moving ? <SendToRow kind="video" make={renderMP4} isDisabled={s.exporting || !canEncodeVideo()} onError={m => toast(m, 'error')} /> : null}
     </InspectorSection>
   );
 }

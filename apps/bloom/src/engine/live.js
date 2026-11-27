@@ -50,7 +50,7 @@ export function useStore() {
   useSyncExternalStore(f => { subs.add(f); return () => subs.delete(f); }, () => version);
   return S;
 }
-const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
+export const toast = (msg, kind = 'info') => S.toast?.(msg, kind);
 
 let saveTimer = 0;
 function persist() {
@@ -211,13 +211,20 @@ const fileName = () => 'bloom-' + (S.preset || S.config.species.join('-')) + '-'
 export function setExportSize(v) { S.exportSize = v; saved.set('exportSize', v); emit(); }
 export function setExportLength(v) { S.exportLength = v; saved.set('exportLength', v); emit(); }
 
+/** The frame on screen as the PNG export makes it: {blob, name}. */
+export async function renderPNG() {
+  const [w, h] = exportDims();
+  const c = exportTarget(w, h);
+  exportRenderer.render(sceneFrame(S.config, S.time, w / h));
+  const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+  if (!blob) throw new Error('Could not make the picture');
+  return {blob, name: fileName() + '.png'};
+}
+
 export async function exportPNG() {
   try {
-    const [w, h] = exportDims();
-    const c = exportTarget(w, h);
-    exportRenderer.render(sceneFrame(S.config, S.time, w / h));
-    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
-    const r = await saveFile(fileName() + '.png', blob, 'image/png');
+    const {blob, name} = await renderPNG();
+    const r = await saveFile(name, blob, 'image/png');
     toast(r.message, r.status === 'error' ? 'error' : 'info');
   } catch (e) {
     console.error(e);
@@ -229,8 +236,9 @@ export const videoSupported = canEncodeVideo;
 /** Seconds an MP4 covers: one regrow cycle, or the chosen length. */
 export const videoSeconds = () => (S.config.cycle > 0 ? S.config.cycle : S.exportLength);
 
-export async function exportMP4() {
-  if (S.exporting) return;
+/** The animation as the MP4 export makes it: {blob, name, codecNote}, or null if canceled. */
+export async function renderMP4() {
+  if (S.exporting) return null;
   const fps = 30, frames = Math.round(videoSeconds() * fps);
   const [w, h] = exportDims();
   cancelExport = false;
@@ -244,18 +252,26 @@ export async function exportMP4() {
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
       isCancelled: () => cancelExport,
     });
-    if (blob) {
-      const r = await saveFile(fileName() + '.mp4', blob, 'video/mp4');
-      toast(r.message + (r.status === 'error' ? '' : codecNote), r.status === 'error' ? 'error' : 'info');
-    } else toast('Export cancelled');
-  } catch (e) {
-    console.error(e);
-    toast(e.message || 'Could not make the video', 'error');
+    return blob ? {blob, name: fileName() + '.mp4', codecNote} : null;
   } finally {
     S.exporting = null;
     last = 0;
     draw();
     emit();
+  }
+}
+
+export async function exportMP4() {
+  if (S.exporting) return;
+  try {
+    const out = await renderMP4();
+    if (out) {
+      const r = await saveFile(out.name, out.blob, 'video/mp4');
+      toast(r.message + (r.status === 'error' ? '' : out.codecNote), r.status === 'error' ? 'error' : 'info');
+    } else toast('Export cancelled');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'Could not make the video', 'error');
   }
 }
 export function cancelMP4() { cancelExport = true; }

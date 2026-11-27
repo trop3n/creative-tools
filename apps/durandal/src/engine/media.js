@@ -3,7 +3,7 @@
 // @studio/core, shared with GLYF.
 import {
   loadImageFile, isImageFile, isVideoFile, slug, openVideoFile, openWebcam,
-  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff,
+  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff, takeSent, TOOL_NAMES,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
 import {renderNow, idle, isBusy, stillOutput, currentStill, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating} from './render.js';
@@ -94,7 +94,13 @@ export function loadSample(kind) {
 
 export function initSource() {
   loadSample(S.look.sample);
-  // Opened from another tool (e.g. LEELA's "Send to DURANDAL"): take the file it left.
+  // Sent from another tool (Send to → DURANDAL): the file waits on the shelf.
+  takeSent().then(file => {
+    if (!file) return;
+    loadFile(file);
+    toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
+  });
+  // The older hand-off (a single waiting file), from a link made before the shelf.
   const params = new URLSearchParams(location.search);
   if (params.has('from')) {
     history.replaceState(null, '', location.pathname);

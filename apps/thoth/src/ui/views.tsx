@@ -20,12 +20,13 @@ import {MOTIONS, BACKDROPS, FILLS, SHAPES} from '../engine/source.js';
 import {DOT_SHAPES} from '../engine/halftone.js';
 import {PRESETS, ASPECTS, MODES, WEIGHTS} from '../engine/config.js';
 import {
-  useStore, attachCanvas, applyPreset, randomize, togglePlay, restart, set, setIn, setFill, setBackdropColor, setMode,
-  openMedia, startCamera, removeMedia, exportPNG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
-  setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink,
+  useStore, attachCanvas, applyPreset, randomize, togglePlay, restart, set, setIn, setFill, setBackdropColor, applyBackdropPalette, setMode,
+  openMedia, startCamera, removeMedia, exportPNG, stillBlob, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
+  setMatchVideo, saveLook, applyLook, deleteLook, saveProject, openFile, copyLink, toast,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
+import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -253,6 +254,7 @@ function MediaSection() {
         <Button label="Webcam" size="sm" variant="ghost" icon={<Icon icon={Camera} size={ICON} />} isDisabled={s.mediaBusy} onClick={startCamera} />
         {m ? <IconButton label="Remove the image or video" tooltip="Remove" size="sm" variant="ghost" icon={<Icon icon={Trash2} size={ICON} />} onClick={removeMedia} /> : null}
       </HStack>
+      <RecentFromSuite onOpen={openMedia} />
       {m ? (
         <>
           <Text type="supporting" maxLines={1}>{m.label}</Text>
@@ -286,6 +288,9 @@ function BackdropSection() {
             <Swatch key={i} label={`Backdrop color ${i + 1}`} value={B.colors[i]} onChange={v => setBackdropColor(i, v)} />
           ))}
         </InspectorRow>
+      ) : null}
+      {!B.hue || B.kind === 'solid' ? (
+        <SuitePaletteRow colors={B.colors} onUse={applyBackdropPalette} onSaved={n => toast(`Saved "${n}" to the suite palettes`)} />
       ) : null}
       {B.kind === 'linear' || B.kind === 'bands' || B.kind === 'conic' ? <SliderRow label="Angle" value={B.angle} min={-180} max={180} step={1} format={deg} onChange={v => setIn('backdrop', 'angle', v)} /> : null}
       {B.kind === 'bands' ? <SliderRow label="Bands" value={B.count} min={1} max={16} step={1} onChange={v => setIn('backdrop', 'count', v)} /> : null}
@@ -349,6 +354,7 @@ function ExportSection() {
           <Button label="Render MP4" size="sm" variant="secondary" icon={<Icon icon={Film} size={ICON} />} isDisabled={!canVideo} onClick={exportMP4} />
         </HStack>
       )}
+      <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={msg => toast(msg, 'error')} />
       <Text type="supporting">
         {s.media?.kind === 'camera'
           ? 'The PNG is the frame on screen. Video export works with images and video files, not the webcam.'

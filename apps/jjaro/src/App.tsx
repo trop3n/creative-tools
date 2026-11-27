@@ -16,7 +16,7 @@ import {Theme} from '@astryxdesign/core/theme';
 import {useToast} from '@astryxdesign/core/Toast';
 import {Settings2} from 'lucide-react';
 import {studioTheme} from '@studio/theme';
-import {S, saved, loadArt, openProject} from './engine/live.js';
+import {S, saved, loadArt, openProject, openSent} from './engine/live.js';
 import {Stage, StageToolbar, Inspector} from './ui/views';
 import {ICON} from './ui/parts';
 
@@ -85,6 +85,7 @@ export default function App() {
   const inspector = useResizable({defaultSize: 320, minSize: 280, maxSize: 440});
   const [drawer, setDrawer] = useState(false);
   useDropAndPaste();
+  useEffect(() => { openSent(); }, []);
 
   return (
     <Theme theme={studioTheme} mode={appearance}>

@@ -22,12 +22,13 @@ import {SHAPES, SHAPE_IDS, MOTIONS, MOTION_IDS, timing} from '../engine/modules.
 import {PRESETS, PALETTES, ASPECTS, MAX_COLORS, SHUFFLE_MODES, BEAT_CHOICES} from '../engine/config.js';
 import {
   useStore, attachCanvas, applyPreset, randomize, newLayout, newModules, togglePlay, restart, nextCut, set, toggleIn,
-  applyPalette, setColor, addColor, removeColor, tapTempo, loopSeconds,
-  exportPNG, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
-  saveLook, applyLook, deleteLook, saveProject, openProject, copyLink,
+  applyPalette, setColor, addColor, removeColor, applySuitePalette, tapTempo, loopSeconds,
+  exportPNG, stillBlob, exportSVG, exportMP4, cancelMP4, videoSupported, videoSeconds, setExportSize, setExportLoops,
+  saveLook, applyLook, deleteLook, saveProject, openProject, copyLink, toast,
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
+import {SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -182,6 +183,7 @@ function ColorsSection() {
         {c.colors.length < MAX_COLORS ? <IconButton label="Add a color" tooltip="Add a color" size="sm" variant="ghost" icon={<Icon icon={Plus} size={ICON} />} onClick={addColor} /> : null}
         {c.colors.length > 2 ? <IconButton label="Remove the last color" tooltip="Remove the last color" size="sm" variant="ghost" icon={<Icon icon={Minus} size={ICON} />} onClick={() => removeColor(c.colors.length - 1)} /> : null}
       </HStack>
+      <SuitePaletteRow colors={c.colors} onUse={applySuitePalette} onSaved={n => toast(`Saved "${n}" to the suite palettes`)} />
       <Text type="supporting">Each module picks {c.perModule} of these {c.colors.length} colors: a background, then colors that stand out from it. Neighboring cells never share a background when the palette allows.</Text>
     </InspectorSection>
   );
@@ -283,6 +285,7 @@ function ExportSection() {
           <Button label="Render MP4" size="sm" variant="secondary" icon={<Icon icon={Film} size={ICON} />} isDisabled={!canVideo} onClick={exportMP4} />
         </HStack>
       )}
+      <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={msg => toast(msg, 'error')} />
       <Text type="supporting">
         {canVideo
           ? `PNG and SVG save the frame on screen. The MP4 renders ${secs(videoSeconds())} at 30 fps from the start, and loops seamlessly.`
