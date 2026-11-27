@@ -11,7 +11,7 @@ import {saveFile} from '@studio/core';
 import {STYLE_BY_ID, defaultParams, cleanEffects} from '@studio/core/dither';
 import {FRAME_RATIOS, cleanSide, isFrame} from '@studio/core/frames';
 import {S, emit, persist, toast, saved, LOOK_DEFAULT} from './state.js';
-import {schedule, reframe, reapplyKeys, keysApplied, currentVideoTime, fileBase} from './render.js';
+import {schedule, reframe, reapplyKeys, keysApplied, clockTime, isAnimating, fileBase} from './render.js';
 
 const APP = 'durandal', VERSION = 1;
 // Look keys a saved look carries (the rest are about the source or export).
@@ -72,6 +72,7 @@ function cleanLook(raw, keys = Object.keys(LOOK_DEFAULT)) {
     if (k === 'frame' && v !== 'source' && !isFrame(v, FRAME_RATIOS)) continue;
     if (k === 'customW' || k === 'customH') { out[k] = cleanSide(v, d); continue; }
     if (k === 'imageCount') { out[k] = Math.round(clamp(v, [2, 16])); continue; }
+    if (k === 'animSeconds') { out[k] = isFinite(v) ? clamp(v, [1, 30]) : d; continue; }
     out[k] = v;
   }
   return out;
@@ -83,6 +84,7 @@ function cleanKeys(raw) {
     .filter(k => isObj(k) && typeof k.t === 'number' && isFinite(k.t) && k.t >= 0 && STYLE_BY_ID[k.style])
     .map(k => {
       const key = {t: k.t, style: k.style, values: cleanSettings(k.values), params: cleanParams(k.style, k.params)};
+      if (Array.isArray(k.effects)) key.effects = cleanEffects(k.effects);
       const name = typeof k.name === 'string' ? k.name.trim().slice(0, 40) : '';
       return name ? {...key, name} : key;
     })
@@ -100,6 +102,7 @@ export function projectData() {
     params: S.paramsByStyle,
     look: cleanLook(S.look),
     video: S.media.kind === 'video' ? {name: S.media.label, keys: S.media.keys, ease: S.media.ease !== false} : pendingKeys,
+    anim: isAnimating() ? {keys: S.media.keys, ease: S.media.ease !== false} : null, // an animated still (its length is look.animSeconds)
   };
 }
 
@@ -142,11 +145,16 @@ function applyProject(p, label) {
       note = ` Open ${name} to use its ${keys.length} keyframes.`;
     }
   }
+  if (isObj(p.anim) && Array.isArray(p.anim.keys)) {
+    if (S.media.kind === 'sample' || S.media.kind === 'image') {
+      Object.assign(S.media, {anim: true, keys: cleanKeys(p.anim.keys), ease: p.anim.ease !== false, time: 0, playing: false, duration: S.look.animSeconds});
+    } else note += ' Its animation is for a still: open an image or a sample, then open the project again.';
+  }
   const hasKeys = isObj(p.video) && Array.isArray(p.video.keys) && p.video.keys.length;
   if (!hasKeys && S.media.kind === 'video' && S.media.keys.length) {
     // The project has no keyframes, but this video does: show the project's settings now,
     // rather than letting the video's keyframes write over them on the next frame.
-    keysApplied(currentVideoTime());
+    keysApplied(clockTime());
     note += ` This video's ${S.media.keys.length} keyframes take over again when it plays or you scrub.`;
   } else reapplyKeys();
   persist(); reframe(); emit(); // reframe: the project may bring a different Frame; it re-dithers either way

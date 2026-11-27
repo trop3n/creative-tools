@@ -2,6 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EFFECTS, newEffect, cleanEffects, applyEffects, hasEffects} from '../src/dither/effects.js';
+import {makeKey, valuesAt} from '../src/dither/keyframes.js';
 
 /** A two-tone test picture: a dithered-looking checker with a bright square in the middle. */
 function picture(W, H) {
@@ -80,4 +81,14 @@ test('glitches land on whole cells: at 3 pixels per cell they match the 1-pixel 
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) if (a[(y * W + x) * 4 + c] !== b[((y * k + 1) * W * k + x * k + 1) * 4 + c]) bad++;
     assert.equal(bad, 0, `${id}: ${bad} cells differ`);
   }
+});
+
+test('keyframes carry the effect stack: sliders blend when the stacks match, else step', () => {
+  const st = {style: 'atkinson', block: 4}, glow = newEffect('glow');
+  const a = makeKey(0, st, {}, [{...glow, strength: 0}]), b = makeKey(2, st, {}, [{...glow, strength: 200}]);
+  assert.equal(valuesAt([a, b], 1, {ease: false}).effects[0].strength, 100);
+  const c = makeKey(2, st, {}, [newEffect('tint')]);
+  assert.equal(valuesAt([a, c], 1.5, {ease: false}).effects[0].id, 'glow');
+  assert.equal(valuesAt([a, c], 2).effects[0].id, 'tint');
+  assert.equal(valuesAt([makeKey(0, st, {}), b], 0).effects, undefined); // old keyframes leave effects alone
 });

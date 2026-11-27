@@ -21,11 +21,12 @@ import {CUSTOM, FRAME_RATIOS, fixedSize, fixedSizeLabel, frameIds, frameLabel} f
 import {useStore, currentParams} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, exportDims, gpuAvailable,
-  paletteColors, setImageCount, repickImageColors, editCustom, addEffect, setEffect, removeEffect, moveEffect,
+  paletteColors, setImageCount, repickImageColors, editCustom, isAnimating, addEffect, setEffect, removeEffect, moveEffect,
 } from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
   setMirrorImage, toggleRecord, seekTo, setKeyframe, removeKeyframe, clearKeyframes, setEase, renameKeyframe, moveKeyframe,
+  setAnimate, setAnimSeconds, renderAnimation,
 } from '../engine/media.js';
 import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
@@ -44,13 +45,22 @@ const BLURBS: Record<string, string> = {
   'sierra-lite': 'Tiny kernel, gritty texture.',
   'stevenson-arce': 'Wide, airy scatter.',
   ostromukhov: 'Weights shift with tone. Even, wormless dots.',
+  fan: 'Floyd–Steinberg leaning left. Fewer worms.',
+  'shiau-fan': 'Small and quick, tuned against artifacts.',
+  'shiau-fan-2': 'A wider Shiau–Fan, smoother grain.',
+  'false-floyd-steinberg': 'Three taps. Fast, blocky texture.',
+  row: 'Error runs along each row only: streaks.',
   bayer: 'Regular crosshatch grid. Retro screens.',
-  bittone: 'Clustered 4×4 dots, print-like.',
+  bittone: 'Clustered dots that grow from the middle, print-like.',
+  ign: 'A fine, grid-free ordered pattern.',
   dots: 'Round halftone dots on a rotated grid.',
   lines: 'Engraved lines that swell in shadow.',
   crosshatch: 'Pen hatching that layers up in shadow.',
   stipple: 'Scattered dots with no grid. Hand stippling.',
   diamonds: 'Diamond dots that grow and join.',
+  squares: 'Square dots that grow into a checkerboard.',
+  crosses: 'Plus signs that thicken into a grid.',
+  hex: 'Round dots on a honeycomb grid.',
   spiral: 'Arms winding out from the center.',
   wave: 'Sine bands drifting down the frame.',
   rings: 'Concentric ripples from the center.',
@@ -163,7 +173,7 @@ export function StageToolbar() {
       size="sm"
       startContent={
         <>
-          {media.kind === 'video' ? (
+          {media.kind === 'video' || isAnimating() ? (
             <>
               <IconButton
                 label={media.playing ? 'Pause' : 'Play'}
@@ -174,14 +184,16 @@ export function StageToolbar() {
                 icon={<Icon icon={media.playing ? Pause : Play} size={ICON} />}
                 onClick={playPause}
               />
-              <IconButton
-                label={media.sound ? 'Turn sound off' : 'Turn sound on'}
-                tooltip={media.sound ? 'Sound on' : 'Sound off'}
-                size="sm"
-                variant="ghost"
-                icon={<Icon icon={media.sound ? Volume2 : VolumeX} size={ICON} />}
-                onClick={() => setSound(!media.sound)}
-              />
+              {media.kind === 'video' ? (
+                <IconButton
+                  label={media.sound ? 'Turn sound off' : 'Turn sound on'}
+                  tooltip={media.sound ? 'Sound on' : 'Sound off'}
+                  size="sm"
+                  variant="ghost"
+                  icon={<Icon icon={media.sound ? Volume2 : VolumeX} size={ICON} />}
+                  onClick={() => setSound(!media.sound)}
+                />
+              ) : null}
               <Text type="supporting" hasTabularNumbers>
                 {clock(media.time)} / {clock(media.duration)}
               </Text>
@@ -240,7 +252,8 @@ export function Inspector() {
       </InspectorSection>
 
       {s.media.kind === 'video' ? <VideoSection /> : null}
-      {s.media.kind === 'video' ? <KeyframesSection /> : null}
+      {s.media.kind === 'sample' || s.media.kind === 'image' ? <AnimateSection /> : null}
+      {s.media.kind === 'video' || isAnimating() ? <KeyframesSection /> : null}
       {s.media.kind === 'camera' ? <WebcamSection /> : null}
 
       <InspectorSection title={style.name}>
@@ -449,6 +462,55 @@ function PaletteControls() {
       ) : null}
       <Text type="supporting">Up to {MAX_COLORS} colors. Changing one saves the set as your custom palette.</Text>
     </>
+  );
+}
+
+/** A still's own timeline: keyframes along it, looped while playing, rendered to MP4. */
+function AnimateSection() {
+  const {media: m, look} = useStore();
+  return (
+    <InspectorSection title="Animate">
+      <Switch label="Animate this still" size="sm" value={!!m.anim} isDisabled={m.exporting} onChange={setAnimate} />
+      {m.anim ? (
+        <>
+          <Slider
+            label="Position"
+            isLabelHidden
+            min={0}
+            max={1000}
+            value={m.duration ? Math.round((m.time / m.duration) * 1000) : 0}
+            onChange={(v: number) => seekFraction(v / 1000)}
+            valueDisplay="none"
+            marks={m.duration ? m.keys.map((k: any) => ({value: Math.round((k.t / m.duration) * 1000)})) : undefined}
+            isDisabled={m.exporting}
+          />
+          {m.duration && m.keys.length ? <KeyframeStrip /> : null}
+          <SliderRow label="Length" value={look.animSeconds} min={1} max={30} step={0.5} format={v => `${v} s`} onChange={setAnimSeconds} />
+          <InspectorRow label="Frame rate">
+            <SegmentedControl label="Frame rate" size="sm" layout="fill" value={look.fps} onChange={v => setLook('fps', v)}>
+              {['24', '25', '30', '60'].map(f => (
+                <SegmentedControlItem key={f} value={f} label={f} />
+              ))}
+            </SegmentedControl>
+          </InspectorRow>
+          <Button
+            label={m.exporting ? 'Cancel render' : 'Render loop .mp4'}
+            size="sm"
+            variant={m.exporting ? 'destructive' : 'primary'}
+            icon={<Icon icon={Clapperboard} size={ICON} />}
+            isDisabled={!canEncodeVideo()}
+            tooltip={canEncodeVideo() ? undefined : 'This browser cannot encode video. Use Chrome or Edge.'}
+            onClick={renderAnimation}
+          />
+          <Text type="supporting" hasTabularNumbers>
+            {m.progress ||
+              'It loops: the last frame leads back into the first, so make the last keyframe match the first for a seamless loop. Moving effects change as it plays, even with no keyframes.'}
+          </Text>
+        </>
+      ) : (
+        <Text type="supporting">Give this picture a timeline: keyframe the sliders and effects along it, play it as a loop and render an MP4.</Text>
+      )}
+    </InspectorSection>
   );
 }
 
@@ -714,7 +776,7 @@ function LooksSection() {
   );
 }
 
-/** Keyframe the settings over the video's time; they ease between keyframes as it plays and renders. */
+/** Keyframe the settings over a video's or an animated still's time; they ease between keyframes as it plays and renders. */
 function KeyframesSection() {
   const {media: m} = useStore();
   const here = m.keys.find((k: any) => Math.abs(k.t - m.time) <= 1 / 60);
@@ -773,7 +835,7 @@ function KeyframesSection() {
       <Switch label="Ease in and out" size="sm" value={m.ease !== false} onChange={setEase} />
       <Text type="supporting">
         {m.keys.length < 2
-          ? 'Pause, set the sliders, and set a keyframe. Do it again at another time, and pixel size, threshold, tone, blur and the style’s own sliders glide between them as the video plays and renders.'
+          ? 'Pause, set the sliders, and set a keyframe. Do it again at another time, and pixel size, threshold, tone, blur, the style’s own sliders and the effects glide between them as it plays and renders.'
           : 'Changes you make while paused stay on screen until you set or update a keyframe; playing or scrubbing goes back to the keyframes. A style change takes effect at its keyframe.'}
       </Text>
     </InspectorSection>

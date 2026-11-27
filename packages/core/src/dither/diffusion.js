@@ -36,6 +36,15 @@ export const KERNELS = {
     [2, -2, 12], [2, 0, 26], [2, 2, 12],
     [3, -3, 5], [3, -1, 12], [3, 1, 12], [3, 3, 5],
   ]),
+  // Zhigang Fan (1992): Floyd–Steinberg's weights leaning back to the left, fewer worms.
+  fan: k(16, [[0, 1, 7], [1, -2, 1], [1, -1, 3], [1, 0, 5]]),
+  // Shiau & Fan (1996): small kernels tuned against Fan's own artifacts.
+  'shiau-fan': k(8, [[0, 1, 4], [1, -2, 1], [1, -1, 1], [1, 0, 2]]),
+  'shiau-fan-2': k(16, [[0, 1, 8], [1, -3, 1], [1, -2, 1], [1, -1, 2], [1, 0, 4]]),
+  // Three taps, all the error kept: quick and blocky.
+  'false-floyd-steinberg': k(8, [[0, 1, 3], [1, 0, 3], [1, 1, 2]]),
+  // Error only goes right along the row, so rows don't talk: streaks and scanline grit.
+  row: k(1, [[0, 1, 1]]),
 };
 
 /**

@@ -139,22 +139,28 @@ let keyTime = null; // the video time keyframes were last applied at
  */
 function applyKeys() {
   const keys = S.media.keys;
-  if (!keys || !keys.length || S.media.kind !== 'video' || !src || !isVideo(src.el)) return;
-  const t = src.el.currentTime;
-  if (t === keyTime) return;
+  if (!keys || !keys.length || !src) return;
+  const t = clockTime();
+  if (t === null || t === keyTime) return;
   keyTime = t;
   const at = valuesAt(keys, t, {ease: S.media.ease !== false});
   if (!STYLE_BY_ID[at.style]) return;
   Object.assign(S.settings, at.values);
   S.settings.style = at.style;
   S.paramsByStyle[at.style] = {...(S.paramsByStyle[at.style] || {}), ...at.params};
+  if (at.effects) S.look.effects = at.effects;
 }
 /** Apply the keyframes again on the next render (after they change). */
 export const reapplyKeys = () => { keyTime = null; };
 /** The current values are what the keyframes say at `t` (a keyframe was just set there). */
 export const keysApplied = t => { keyTime = t; };
-/** The showing video's time (null for stills and the webcam). */
-export const currentVideoTime = () => (src && isVideo(src.el) && S.media.kind === 'video' ? src.el.currentTime : null);
+/** A sample or image with Animate on: it has a timeline of its own. */
+export const isAnimating = () => !!S.media.anim && (S.media.kind === 'sample' || S.media.kind === 'image');
+/** The time keyframes read: a video's position or an animated still's timeline (null for other stills and the webcam). */
+export function clockTime() {
+  if (S.media.kind === 'video') return src && isVideo(src.el) ? src.el.currentTime : null;
+  return isAnimating() ? S.media.time : null;
+}
 
 export const isBusy = () => jobs.size > 0;
 /** Resolves once the worker has nothing in flight. */
@@ -292,7 +298,7 @@ const shaped = () => !isPlainCells(S.look.cellShape, (S.look.gap || 0) / 100);
 const fxOn = () => hasEffects(S.look.effects);
 /** Moving effects change about 12 times a second of video (or of webcam time); stills keep frame 0. */
 function effectFrame() {
-  const t = currentVideoTime();
+  const t = clockTime();
   if (t !== null) return Math.floor(t * 12);
   return S.media.kind === 'camera' ? Math.floor(performance.now() / 83.3) : 0;
 }

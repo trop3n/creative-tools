@@ -10,6 +10,7 @@ export const saved = toolStore('durandal');
 export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', frame: 'source', customW: CUSTOM.w, customH: CUSTOM.h, cellShape: 'square', gap: 0, gapTone: 'dark', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true,
   custom: ['#242222', '#00304e', '#c99530', '#dfdfdf'], // custom palette
   imageColors: [], imageCount: 6, // palette picked from the source
+  animSeconds: 4, // an animated still's length
   effects: []}; // the effect stack, top to bottom (see @studio/core/dither effects.js)
 export const TONE_KEYS = ['brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
 
@@ -26,7 +27,8 @@ export const S = {
   media: {
     kind: 'sample', label: '', w: 0, h: 0,
     playing: false, time: 0, duration: 0, sound: false, volume: 0.8, // video
-    keys: [], ease: true, // video keyframes (see keyframes.js)
+    keys: [], ease: true, // keyframes over a video or an animated still (see keyframes.js)
+    anim: false, // a still with a timeline of its own (time, duration and playing above)
     exporting: false, progress: '', // MP4 render
     cams: [], camId: '', recording: false, recTime: 0, // webcam
   },

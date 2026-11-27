@@ -3,10 +3,10 @@
 // @studio/core, shared with GLYF.
 import {
   loadImageFile, isImageFile, isVideoFile, openVideoFile, openWebcam,
-  cameraErrorMessage, renderVideoToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff,
+  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff,
 } from '@studio/core';
 import {S, emit, persist, toast} from './state.js';
-import {renderNow, idle, isBusy, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame} from './render.js';
+import {renderNow, idle, isBusy, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating} from './render.js';
 import {makeKey, putKey, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
 import {isProjectFile, openProject, takePendingKeys} from './project.js';
 
@@ -76,8 +76,12 @@ let loadSeq = 0;
 
 function setStill(c, kind, label) {
   loadSeq++;
+  const wasVideo = M().kind === 'video';
   stopLive();
-  Object.assign(M(), {kind, label, w: c.width, h: c.height});
+  // A video's keyframes are about its own time; an animation carries over to the next still.
+  if (wasVideo) M().keys = [];
+  Object.assign(M(), {kind, label, w: c.width, h: c.height, duration: M().anim ? S.look.animSeconds : 0});
+  reapplyKeys();
   renderNow(c).catch(() => {});
   emit();
 }
@@ -175,12 +179,14 @@ async function loadVideo(file) {
 }
 
 export function playPause() {
+  if (isAnimating()) { if (!M().exporting) animPlay(!M().playing); return; }
   const v = live.vid;
   if (!v || M().exporting) return;
   if (v.paused) v.play().then(() => syncVideoUI(true)).catch(() => {});
   else { v.pause(); syncVideoUI(true); }
 }
 export function seekFraction(f) {
+  if (isAnimating()) return animSeek(f * M().duration);
   const v = live.vid;
   if (!v || M().exporting || !isFinite(v.duration)) return;
   v.pause();
@@ -189,6 +195,7 @@ export function seekFraction(f) {
 }
 /** Pause and jump to a time in seconds. */
 export function seekTo(t) {
+  if (isAnimating()) return animSeek(t);
   const v = live.vid;
   if (!v || M().exporting) return;
   v.pause();
@@ -199,11 +206,11 @@ export function seekTo(t) {
 /* ---------- keyframes ---------- */
 /** Keyframe the current settings at the current time (replacing one already there). */
 export function setKeyframe() {
-  const v = live.vid;
-  if (!v || M().exporting) return;
-  const t = v.currentTime, style = STYLE_BY_ID[S.settings.style];
+  const t = clockTime();
+  if (t === null || M().exporting) return;
+  const style = STYLE_BY_ID[S.settings.style];
   const params = {...defaultParams(style), ...(S.paramsByStyle[style.id] || {})};
-  const key = makeKey(t, S.settings, params);
+  const key = makeKey(t, S.settings, params, S.look.effects || []);
   // Updating a keyframe keeps its name.
   const old = M().keys.find(k => Math.abs(k.t - t) <= 1 / 60);
   if (old?.name) key.name = old.name;
@@ -226,9 +233,8 @@ export function renameKeyframe(t, name) {
  * that would land on another keyframe, so a drag can't silently replace one.
  */
 export function moveKeyframe(t, to) {
-  const v = live.vid;
-  if (!v || M().exporting) return null;
-  to = +Math.max(0, Math.min(to, v.duration || to)).toFixed(3);
+  if (clockTime() === null || M().exporting) return null;
+  to = +Math.max(0, Math.min(to, M().duration || to)).toFixed(3);
   if (M().keys.some(k => k.t !== t && Math.abs(k.t - to) <= 1 / 60)) {
     toast('There’s already a keyframe there');
     return null;
@@ -349,6 +355,103 @@ export async function renderVideo() {
   lastVT = -1;
   syncVideoUI(true);
   emit();
+}
+
+/* ---------- animated stills ---------- */
+// A still with Animate on has a timeline of its own (M().time, M().duration): keyframes
+// ease the settings and effects along it, it loops while playing, and it renders to MP4.
+let animRaf = 0, animLast = 0;
+const hasMovingEffects = () => (S.look.effects || []).some(e => e.on && e.moving);
+function animTick(now) {
+  animRaf = 0;
+  if (!isAnimating() || !M().playing || M().exporting) { if (M().playing) { M().playing = false; emit(); } return; }
+  const d = M().duration || 1;
+  M().time = (M().time + Math.min(0.1, (now - animLast) / 1000)) % d;
+  animLast = now;
+  // Keyframes change the dither; Moving effects only need a fresh paint.
+  if (M().keys.length) { if (!isBusy()) renderNow().catch(() => {}); }
+  else if (hasMovingEffects()) paint();
+  if (now - lastEmit > 250) { lastEmit = now; emit(); }
+  animRaf = requestAnimationFrame(animTick);
+}
+function animPlay(on) {
+  M().playing = on;
+  if (on && !animRaf) { animLast = performance.now(); animRaf = requestAnimationFrame(animTick); }
+  emit();
+}
+function animSeek(t) {
+  if (M().exporting) return;
+  M().playing = false;
+  M().time = Math.max(0, Math.min(t, M().duration));
+  schedule(); emit();
+}
+/** Turn a still's timeline on or off. */
+export function setAnimate(on) {
+  if (M().exporting) return;
+  Object.assign(M(), {anim: on, time: 0, duration: on ? S.look.animSeconds : 0});
+  animPlay(false);
+  reapplyKeys(); schedule();
+}
+/** The animation's length in seconds. */
+export function setAnimSeconds(s) {
+  if (M().exporting) return;
+  S.look.animSeconds = s; persist();
+  M().duration = s;
+  if (M().time > s) M().time = s;
+  reapplyKeys(); schedule(); emit();
+}
+
+/** Render the animated still to MP4: every frame of one loop, keyframes and effects applied. */
+export async function renderAnimation() {
+  if (!isAnimating()) return;
+  if (M().exporting) { cancelExport = true; return; }
+  cancelExport = false;
+  animPlay(false);
+  const fps = +S.look.fps || 30, total = Math.max(1, Math.round(M().duration * fps)), back = M().time;
+  Object.assign(M(), {exporting: true, progress: 'Starting…'});
+  emit();
+  // As with video: settings stay as they were while it renders, except what keyframes change.
+  const snap = lockedState(), pinned = {last: '', warned: false};
+  let cells = null, out = null, n = 0;
+  /** Frame i, drawn at the first frame's size (Pixel size keyframes change the cell count). */
+  const frameAt = async i => {
+    if (pinned.last && JSON.stringify(lockedState()) !== pinned.last) {
+      restoreState(snap);
+      if (!pinned.warned) { pinned.warned = true; toast('Settings are locked while the animation renders'); }
+    }
+    M().time = i / fps; // the last frame leads into the first, so it loops
+    reapplyKeys();
+    const r = await renderNow();
+    pinned.last = JSON.stringify(lockedState());
+    const fixed = fixedFrame();
+    cells = fixed ? fixedOutput(r, fixed, cells) : scaledOutput(fitScale(r, 1920), cells, r);
+    if (!out) out = makeCanvas(Math.max(2, Math.floor(cells.width / 2) * 2), Math.max(2, Math.floor(cells.height / 2) * 2));
+    const x = out.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.drawImage(cells, 0, 0, out.width, out.height);
+    return out;
+  };
+  try {
+    await idle();
+    await frameAt(0); // sets the size
+    const res = await encodeFramesToMp4({
+      width: out.width, height: out.height, fps, frames: total,
+      drawFrame: frameAt,
+      onProgress: p => { M().progress = p.phase; M().time = (p.frame / p.total) * M().duration; if (n++ % 3 === 0) emit(); },
+      isCancelled: () => cancelExport,
+    });
+    if (res.cancelled) toast('Render canceled');
+    else {
+      const saved = await saveFile(fileBase() + '-loop.mp4', res.blob, 'video/mp4');
+      toast(saved.message + (saved.status === 'error' ? '' : res.codecNote), saved.status === 'error' ? 'error' : 'info');
+    }
+  } catch (e) {
+    toast('Animation render failed: ' + (e.message || e), 'error');
+  }
+  restoreState(snap);
+  if (pinned.warned) persist();
+  Object.assign(M(), {exporting: false, progress: '', time: back});
+  reapplyKeys(); schedule(); emit();
 }
 
 /* ---------- live recording (webcam) ---------- */

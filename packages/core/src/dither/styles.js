@@ -31,6 +31,11 @@ export const STYLES = [
   diffusionStyle('two-row-sierra', 'Two-Row Sierra'),
   diffusionStyle('sierra-lite', 'Sierra Lite'),
   diffusionStyle('stevenson-arce', 'Stevenson–Arce'),
+  diffusionStyle('fan', 'Fan'),
+  diffusionStyle('shiau-fan', 'Shiau–Fan'),
+  diffusionStyle('shiau-fan-2', 'Shiau–Fan 2'),
+  diffusionStyle('false-floyd-steinberg', 'False Floyd–Steinberg'),
+  diffusionStyle('row', 'Row only'),
   {
     // Weights change with the input level (always a serpentine scan), for blue-noise dots.
     id: 'ostromukhov', name: 'Ostromukhov', family: 'Error diffusion',
@@ -39,7 +44,8 @@ export const STYLES = [
   },
 
   fieldStyle('bayer', 'Bayer', [{key: 'size', label: 'Matrix', type: 'select', default: 4, options: [2, 4, 8, 16]}]),
-  fieldStyle('bittone', 'Cluster'),
+  fieldStyle('bittone', 'Cluster', [{key: 'size', label: 'Matrix', type: 'select', default: 4, options: [4, 8]}]),
+  fieldStyle('ign', 'Interleaved gradient'),
   fieldStyle('dots', 'Halftone dots', [
     {key: 'cell', label: 'Cell size', min: 2, max: 32, step: 1, default: 6},
     {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 45},
@@ -54,6 +60,18 @@ export const STYLES = [
     {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 45},
   ]),
   fieldStyle('stipple', 'Stipple'),
+  fieldStyle('squares', 'Square dots', [
+    {key: 'cell', label: 'Cell size', min: 2, max: 32, step: 1, default: 8},
+    {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 0},
+  ]),
+  fieldStyle('crosses', 'Crosses', [
+    {key: 'cell', label: 'Cell size', min: 2, max: 32, step: 1, default: 8},
+    {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 0},
+  ]),
+  fieldStyle('hex', 'Hex dots', [
+    {key: 'cell', label: 'Cell size', min: 3, max: 32, step: 1, default: 8},
+    {key: 'angle', label: 'Angle', min: 0, max: 60, step: 1, default: 0},
+  ]),
   fieldStyle('diamonds', 'Diamonds', [
     {key: 'cell', label: 'Cell size', min: 2, max: 32, step: 1, default: 8},
     {key: 'angle', label: 'Angle', min: 0, max: 90, step: 1, default: 0},

@@ -129,10 +129,45 @@ export function equalize(field, w = 256, h = 256, n = 256) {
 }
 const rad = deg => (deg * Math.PI) / 180;
 
+/** A spot function on a rotated square grid of p.cell pixels, evened out so tones keep their share. */
+function gridSpot(p, spot) {
+  const cell = p.cell ?? 8, a = rad(p.angle ?? 0), c = Math.cos(a), s = Math.sin(a);
+  const frac = v => v - Math.floor(v);
+  return equalize((x, y) => spot(frac((x * c + y * s) / cell), frac((-x * s + y * c) / cell)));
+}
+
+/** An 8×8 clustered-dot matrix: cells ranked by a round spot function, so dots grow from the middle. */
+export const CLUSTER8_MATRIX = (() => {
+  const n = 8, cells = [];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const u = (x + 0.5) / n - 0.5, v = (y + 0.5) / n - 0.5;
+    cells.push({x, y, d: Math.hypot(u, v) + (x * n + y) * 1e-9}); // tiny tie-break keeps the order fixed
+  }
+  cells.sort((p, q) => q.d - p.d);
+  const m = Array.from({length: n}, () => new Array(n));
+  cells.forEach((c, i) => { m[c.y][c.x] = i; });
+  return m;
+})();
+
 // Field builders: (w, h, params) => (x, y) => 0..255
 export const FIELDS = {
   bayer: (w, h, p) => matrixField(bayerMatrix(p.size ?? 4)),
-  bittone: () => matrixField(BITTONE_MATRIX),
+  bittone: (w, h, p) => matrixField((p.size ?? 4) === 8 ? CLUSTER8_MATRIX : BITTONE_MATRIX),
+  // Jimenez's interleaved gradient noise (2014): a fixed, grid-free ordered pattern.
+  ign: () => (x, y) => {
+    const t = 52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1);
+    return (t - Math.floor(t)) * 255;
+  },
+  // Square dots on a grid that grow into each other.
+  squares: (w, h, p) => gridSpot(p, (u, v) => 1 - Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5))),
+  // Plus signs that thicken and join into a grid.
+  crosses: (w, h, p) => gridSpot(p, (u, v) => 1 - Math.min(Math.abs(u - 0.5), Math.abs(v - 0.5))),
+  // Round dots on a hexagonal grid, like a honeycomb screen.
+  hex: (w, h, p) => {
+    const cell = p.cell ?? 8, a = rad(p.angle ?? 0), dirs = [0, 60, 120].map(d => [Math.cos(a + rad(d)), Math.sin(a + rad(d))]);
+    const k = (TAU / cell) * 2 / Math.sqrt(3);
+    return equalize((x, y) => dirs.reduce((s, [c, d]) => s + Math.cos(k * (x * c + y * d)), 0));
+  },
   // A sine that runs once across the width and drifts down the rows.
   wave: (w, h, p) => {
     const cycles = p.cycles ?? 1, slant = p.slant ?? 10;

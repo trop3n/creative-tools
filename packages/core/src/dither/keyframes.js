@@ -1,20 +1,25 @@
-// Keyframes: snapshots of the numeric settings at points in a video's time, eased
+// Keyframes: snapshots of the numeric settings at points in time (a video's, or an animated still's), eased
 // between during playback and rendering. A keyframe is
 //   {t, style, values: {block, threshold, …}, params: {…the style's sliders}}
 // Style switches happen at a keyframe (no blending between styles); a style's
-// slider params blend only between two keyframes of the same style.
+// slider params blend only between two keyframes of the same style. A keyframe can also
+// hold the effect stack (`effects`); its sliders blend between two keyframes whose stacks
+// list the same effects in the same order, and anything else steps at the next keyframe.
 import {STYLE_BY_ID, defaultParams} from './styles.js';
+import {EFFECT_BY_ID} from './effects.js';
 
 /** Settings that can animate: everything that is a plain number on a slider. */
 export const ANIMATABLE = ['block', 'threshold', 'strength', 'black', 'brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
 // Whole-number settings (pixel size and blur radius change in whole steps).
 const WHOLE = new Set(['block', 'blur']);
 
-/** Snapshot the current settings as a keyframe at time t (seconds). */
-export function makeKey(t, settings, params) {
+/** Snapshot the current settings (and the effect stack, if given) as a keyframe at time t (seconds). */
+export function makeKey(t, settings, params, effects) {
   const values = {};
   for (const k of ANIMATABLE) if (typeof settings[k] === 'number') values[k] = settings[k];
-  return {t, style: settings.style, values, params: {...params}};
+  const key = {t, style: settings.style, values, params: {...params}};
+  if (Array.isArray(effects)) key.effects = effects.map(e => ({...e}));
+  return key;
 }
 
 /** Add a keyframe, replacing any within `tolerance` seconds of it. Returns a new sorted array. */
@@ -63,7 +68,27 @@ export function valuesAt(keys, t, {ease = true} = {}) {
       params[spec.key] = toStep(a.params[spec.key] + (b.params[spec.key] - a.params[spec.key]) * f, spec);
     }
   }
-  return {style: a.style, values, params};
+  const out = {style: a.style, values, params};
+  if (a.effects) out.effects = blendEffects(a.effects, b.effects, f);
+  return out;
 }
 
-const snapshot = k => ({style: k.style, values: {...k.values}, params: {...k.params}});
+/** a's stack, its sliders moved toward b's when b lists the same effects in the same order. */
+function blendEffects(a, b, f) {
+  const same = Array.isArray(b) && b.length === a.length && a.every((e, i) => e.id === b[i].id);
+  return a.map((e, i) => {
+    const def = EFFECT_BY_ID[e.id], out = {...e};
+    if (!same || !def) return out;
+    for (const spec of def.params) {
+      if (spec.type || typeof e[spec.key] !== 'number' || typeof b[i][spec.key] !== 'number') continue;
+      out[spec.key] = toStep(e[spec.key] + (b[i][spec.key] - e[spec.key]) * f, spec);
+    }
+    return out;
+  });
+}
+
+const snapshot = k => {
+  const s = {style: k.style, values: {...k.values}, params: {...k.params}};
+  if (k.effects) s.effects = k.effects.map(e => ({...e}));
+  return s;
+};
