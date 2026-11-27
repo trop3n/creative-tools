@@ -14,14 +14,14 @@ import {Toolbar} from '@astryxdesign/core/Toolbar';
 import {Slider} from '@astryxdesign/core/Slider';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {IconButton} from '@astryxdesign/core/IconButton';
-import {Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Pencil, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX, X} from 'lucide-react';
+import {ArrowDown, ArrowUp, Eye, EyeOff, Camera, CameraOff, Check, Circle, Clapperboard, Crosshair, Diamond, Download, FolderOpen, Save, Trash2, ImageUp, Minus, Pause, Pencil, Play, Plus, RefreshCw, RotateCcw, Square, Volume2, VolumeX, X} from 'lucide-react';
 import {pickFiles, canEncodeVideo} from '@studio/core';
-import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS} from '@studio/core/dither';
+import {STYLES, STYLE_BY_ID, PALETTES, MAX_COLORS, SHAPES, INKS as PROCESS_INKS, EFFECTS, EFFECT_BY_ID} from '@studio/core/dither';
 import {CUSTOM, FRAME_RATIOS, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {useStore, currentParams} from '../engine/state.js';
 import {
   setCanvas, setSetting, setParam, setStyle, setLook, resetTone, exportPNG, exportSVG, exportDims, gpuAvailable,
-  paletteColors, setImageCount, repickImageColors, editCustom,
+  paletteColors, setImageCount, repickImageColors, editCustom, addEffect, setEffect, removeEffect, moveEffect,
 } from '../engine/render.js';
 import {
   SAMPLES, loadSample, loadFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, stopCamera,
@@ -322,6 +322,8 @@ export function Inspector() {
         ) : null}
       </InspectorSection>
 
+      <EffectsSection />
+
       <LooksSection />
 
       <InspectorSection title="Export">
@@ -575,6 +577,77 @@ function KeyframeStrip() {
 }
 
 /** Named looks kept in this browser, and project files that hold everything. */
+/** The effect stack: glitch, light and texture passes over the dithered picture, top to bottom. */
+function EffectsSection() {
+  const {look} = useStore();
+  const list: any[] = look.effects || [];
+  return (
+    <InspectorSection title="Effects">
+      <InspectorRow label="Add">
+        <Selector
+          label="Add an effect"
+          isLabelHidden
+          size="sm"
+          width="100%"
+          placeholder="Choose an effect"
+          value=""
+          options={EFFECTS.map(e => ({value: e.id, label: `${e.name} (${e.family})`}))}
+          onChange={v => { if (v) addEffect(v); }}
+        />
+      </InspectorRow>
+      {list.length ? null : (
+        <Text type="supporting">Glitch, light and texture passes over the dithered picture, run top to bottom. They show in the preview, PNG and MP4, not in SVG.</Text>
+      )}
+      {list.map((fx, i) => <EffectItem key={i} fx={fx} i={i} last={i === list.length - 1} />)}
+    </InspectorSection>
+  );
+}
+
+function EffectItem({fx, i, last}: {fx: any; i: number; last: boolean}) {
+  const def: any = EFFECT_BY_ID[fx.id];
+  if (!def) return null;
+  const set = (k: string, v: unknown) => setEffect(i, k, v);
+  return (
+    <VStack gap={2}>
+      <HStack gap={0} vAlign="center">
+        <StackItem size="fill">
+          <Text type="label" weight="semibold" color={fx.on ? undefined : 'secondary'} maxLines={1}>
+            {i + 1}. {def.name}
+          </Text>
+        </StackItem>
+        <IconButton label={fx.on ? `Turn off ${def.name}` : `Turn on ${def.name}`} tooltip={fx.on ? 'Turn off' : 'Turn on'} size="sm" variant="ghost" icon={<Icon icon={fx.on ? Eye : EyeOff} size={ICON} />} onClick={() => set('on', !fx.on)} />
+        <IconButton label={`Move ${def.name} up`} tooltip="Move up" size="sm" variant="ghost" isDisabled={i === 0} icon={<Icon icon={ArrowUp} size={ICON} />} onClick={() => moveEffect(i, -1)} />
+        <IconButton label={`Move ${def.name} down`} tooltip="Move down" size="sm" variant="ghost" isDisabled={last} icon={<Icon icon={ArrowDown} size={ICON} />} onClick={() => moveEffect(i, 1)} />
+        <IconButton label={`Remove ${def.name}`} tooltip="Remove" size="sm" variant="ghost" icon={<Icon icon={X} size={ICON} />} onClick={() => removeEffect(i)} />
+      </HStack>
+      {fx.on ? (
+        <>
+          <Text type="supporting">{def.hint}</Text>
+          {def.params.map((p: any) =>
+            p.type === 'toggle' ? (
+              <Switch key={p.key} label={p.label} size="sm" value={!!fx[p.key]} onChange={v => set(p.key, v)} />
+            ) : p.type === 'choice' ? (
+              <InspectorRow key={p.key} label={p.label}>
+                <SegmentedControl label={`${def.name} ${p.label}`} size="sm" layout="fill" value={fx[p.key]} onChange={v => set(p.key, v)}>
+                  {p.options.map((o: any) => (
+                    <SegmentedControlItem key={o.value} value={o.value} label={o.label} />
+                  ))}
+                </SegmentedControl>
+              </InspectorRow>
+            ) : p.type === 'color' ? (
+              <InspectorRow key={p.key} label={p.label}>
+                <Swatch label={`${def.name} color`} value={fx[p.key]} onChange={v => set(p.key, v)} />
+              </InspectorRow>
+            ) : (
+              <SliderRow key={p.key} label={p.label} value={fx[p.key]} min={p.min} max={p.max} step={p.step} format={v => `${v}${p.unit === ' cells' && v === 1 ? ' cell' : p.unit || ''}`} onChange={v => set(p.key, v)} />
+            ),
+          )}
+        </>
+      ) : null}
+    </VStack>
+  );
+}
+
 function LooksSection() {
   const {looks, recents} = useStore() as any;
   const [name, setName] = useState('');

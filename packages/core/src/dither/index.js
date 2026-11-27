@@ -9,3 +9,4 @@ export * from './cells.js';
 export * from './svg.js';
 export * from './keyframes.js';
 export * from './gpu.js';
+export * from './effects.js';

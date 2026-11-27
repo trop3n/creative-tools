@@ -9,7 +9,8 @@ export const saved = toolStore('durandal');
 
 export const LOOK_DEFAULT = {ink: '#00304e', paper: '#dfdfdf', exportScale: 'full', frame: 'source', customW: CUSTOM.w, customH: CUSTOM.h, cellShape: 'square', gap: 0, gapTone: 'dark', sample: 'spheres', fps: '30', audio: true, mirror: true, gpu: true,
   custom: ['#242222', '#00304e', '#c99530', '#dfdfdf'], // custom palette
-  imageColors: [], imageCount: 6}; // palette picked from the source
+  imageColors: [], imageCount: 6, // palette picked from the source
+  effects: []}; // the effect stack, top to bottom (see @studio/core/dither effects.js)
 export const TONE_KEYS = ['brightness', 'contrast', 'midtones', 'highlights', 'shadows', 'blur'];
 
 const storedSettings = saved.get('settings.v1', {}) || {};

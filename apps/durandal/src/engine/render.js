@@ -2,7 +2,7 @@
 // painting, settings and still export.
 import {makeCanvas, saveFile, slug} from '@studio/core';
 import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
-import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither} from '@studio/core/dither';
+import {valuesAt, paintMask, paintIndices, paintCells, isPlainCells, extremeColor, indicesToSVG, maskToSVG, adaptivePalette, PALETTE_BY_ID, MAX_COLORS, STYLE_BY_ID, createGpuDither, applyEffects, hasEffects, newEffect, MAX_EFFECTS} from '@studio/core/dither';
 import DitherWorker from './dither.worker.js?worker&inline';
 import {S, emit, persist, toast, currentParams} from './state.js';
 
@@ -268,7 +268,7 @@ export function setCanvas(c) {
   resize?.disconnect();
   canvas = c;
   // Shaped cells are painted at screen resolution, so repaint when the stage resizes.
-  if (c && typeof ResizeObserver !== 'undefined') { resize = new ResizeObserver(() => { if (shaped()) paint(); }); resize.observe(c); }
+  if (c && typeof ResizeObserver !== 'undefined') { resize = new ResizeObserver(() => { if (shaped() || fxOn()) paint(); }); resize.observe(c); }
   paint();
 }
 export const getCanvas = () => canvas;
@@ -288,13 +288,45 @@ const cellsOf = r => ({
 });
 const shaped = () => !isPlainCells(S.look.cellShape, (S.look.gap || 0) / 100);
 
-/** Preview pixels per cell: 1 for plain squares (CSS scales them up); about the screen size for shapes. */
+/* ---------- effects ---------- */
+const fxOn = () => hasEffects(S.look.effects);
+/** Moving effects change about 12 times a second of video (or of webcam time); stills keep frame 0. */
+function effectFrame() {
+  const t = currentVideoTime();
+  if (t !== null) return Math.floor(t * 12);
+  return S.media.kind === 'camera' ? Math.floor(performance.now() / 83.3) : 0;
+}
+/** Run the effect stack over canvas c, painted at k pixels per cell. */
+function runEffects(c, k) {
+  if (!fxOn()) return;
+  const x = c.getContext('2d'), im = x.getImageData(0, 0, c.width, c.height);
+  applyEffects(im.data, c.width, c.height, S.look.effects, {k, frame: effectFrame()});
+  x.putImageData(im, 0, 0);
+}
+const setEffects = list => { S.look.effects = list; persist(); paint(); };
+export function addEffect(id) {
+  const fx = newEffect(id), list = S.look.effects || [];
+  if (!fx) return;
+  if (list.length >= MAX_EFFECTS) return toast(`That's ${MAX_EFFECTS} effects, the most a stack takes. Remove one first.`);
+  setEffects([...list, fx]);
+}
+export function setEffect(i, key, value) { setEffects(S.look.effects.map((e, j) => (j === i ? {...e, [key]: value} : e))); }
+export function removeEffect(i) { setEffects(S.look.effects.filter((_, j) => j !== i)); }
+export function moveEffect(i, d) {
+  const list = [...S.look.effects], j = i + d;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  setEffects(list);
+}
+
+/** Preview pixels per cell: 1 for plain squares (CSS scales them up); about the screen size for shapes and effects. */
 function previewScale(r) {
-  if (!shaped() || !canvas) return 1;
+  if ((!shaped() && !fxOn()) || !canvas) return 1;
   const dpr = globalThis.devicePixelRatio || 1;
   const fit = Math.min(canvas.clientWidth / r.w, canvas.clientHeight / r.h) * dpr;
   const k = fit > 0 ? Math.round(fit) : Math.floor(S.settings.block) || 1;
-  return Math.max(1, Math.min(k, Math.floor(4096 / Math.max(r.w, r.h)) || 1));
+  // Effects run on the CPU every frame, so their preview stays smaller.
+  return Math.max(1, Math.min(k, Math.floor((fxOn() ? 2048 : 4096) / Math.max(r.w, r.h)) || 1));
 }
 
 /** A CPU result (or a read-back GPU one) painted as RGBA at outW×outH; null if its bits are gone. */
@@ -326,6 +358,7 @@ export function paint() {
     if (!px) return emit(); // a GPU result whose engine has gone; the CPU result is on its way
     x.putImageData(new ImageData(px, W, H), 0, 0);
   }
+  runEffects(canvas, k);
   if (mirror) {
     const m = mirror.getContext('2d');
     m.imageSmoothingEnabled = false;
@@ -349,6 +382,7 @@ export function scaledOutput(k, into, r = S.result) {
     const px = pixels(r, w, h);
     if (px) x.putImageData(new ImageData(px, w, h), 0, 0);
   }
+  runEffects(out, k);
   return out;
 }
 
@@ -452,5 +486,6 @@ export async function exportSVG() {
   if (!bits) return toast('That frame is gone. Try again.', 'error');
   const svg = r.colors ? indicesToSVG(bits, r.w, r.h, r.colors, opts) : maskToSVG(bits, r.w, r.h, S.look.ink, S.look.paper, opts);
   const res = await saveFile(fileBase() + '.svg', new Blob([svg], {type: 'image/svg+xml'}), 'image/svg+xml');
-  toast(res.message, res.status === 'error' ? 'error' : 'info');
+  const note = res.status !== 'error' && fxOn() ? ' The SVG has the dither only; effects are in PNG and MP4.' : '';
+  toast(res.message + note, res.status === 'error' ? 'error' : 'info');
 }

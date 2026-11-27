@@ -278,7 +278,7 @@ export function setMirrorImage(on) { S.look.mirror = on; persist(); lastVT = -1;
 
 /* ---------- MP4 render (video files) ---------- */
 // Everything that changes how a frame comes out.
-const LOOK_LOCKED = ['ink', 'paper', 'cellShape', 'gap', 'gapTone', 'custom', 'imageColors', 'imageCount', 'gpu'];
+const LOOK_LOCKED = ['ink', 'paper', 'cellShape', 'gap', 'gapTone', 'custom', 'imageColors', 'imageCount', 'gpu', 'effects'];
 const lockedState = () => structuredClone({settings: S.settings, params: S.paramsByStyle, look: Object.fromEntries(LOOK_LOCKED.map(k => [k, S.look[k]]))});
 function restoreState(snap) {
   const c = structuredClone(snap);

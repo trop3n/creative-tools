@@ -8,14 +8,14 @@
 // A saved look is a named preset kept in this browser: style, settings, the
 // style's sliders and the color and cell-shape choices, without the source.
 import {saveFile} from '@studio/core';
-import {STYLE_BY_ID, defaultParams} from '@studio/core/dither';
+import {STYLE_BY_ID, defaultParams, cleanEffects} from '@studio/core/dither';
 import {FRAME_RATIOS, cleanSide, isFrame} from '@studio/core/frames';
 import {S, emit, persist, toast, saved, LOOK_DEFAULT} from './state.js';
 import {schedule, reframe, reapplyKeys, keysApplied, currentVideoTime, fileBase} from './render.js';
 
 const APP = 'durandal', VERSION = 1;
 // Look keys a saved look carries (the rest are about the source or export).
-const LOOK_KEYS = ['ink', 'paper', 'custom', 'imageCount', 'cellShape', 'gap', 'gapTone'];
+const LOOK_KEYS = ['ink', 'paper', 'custom', 'imageCount', 'cellShape', 'gap', 'gapTone', 'effects'];
 
 /* ---------- checking what comes in ---------- */
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -64,6 +64,7 @@ function cleanLook(raw, keys = Object.keys(LOOK_DEFAULT)) {
   for (const k of keys) {
     const v = raw[k], d = LOOK_DEFAULT[k];
     if (v === undefined) continue;
+    if (k === 'effects') { out[k] = cleanEffects(v); continue; }
     if (Array.isArray(d)) { if (Array.isArray(v) && v.every(isHex)) out[k] = v.slice(0, 16); continue; }
     if (typeof v !== typeof d) continue;
     if ((k === 'ink' || k === 'paper') && !isHex(v)) continue;

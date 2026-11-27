@@ -147,6 +147,14 @@ Added so GLYF can make moving grids of colored tiles (the reference was a caddis
 - **Patterns** (Source → Built-in → Pattern; `engine/patterns.js`): Noise, Waves, Rings, Spiral, Cells and Gradient fields with Scale, Detail, Angle and Seed, drawn at the frame's shape; GLYF reads them like a picture, so with Fit, a palette or quarter-circle glyphs they make whole-image patterns, saved as SVG or PNG.
 - **Checked:** `npm test` (GLYF now included), doctor 0 failures, headless Edge: before/after comparisons on Spheres and Rings, patterns with Fit and palettes, the catalog (add to set, add and edit), a Keep line in the editor, Ribbons, a real video file, the fake webcam in four tools.
 
+## DURANDAL effect stack (Nov. 27)
+
+- **Why:** DURANDAL is modeled on Dither Boy. Compared against Dither Boy's product page and reviews (not the app itself), the biggest gaps were its glitch and special effects, its stack of effects, and animating a still. This is the first step: the effect stack.
+- **Engine** (`packages/core/src/dither/effects.js`, checks in `packages/core/test/effects.test.js`): 10 effects run on the painted RGBA after dithering, top to bottom. Glitch: Block glitch, Slice shift, Pixel sort, Wave warp, Chromatic aberration. Light: Glow, Scan lines, Vignette. Texture: Grain, Tint. Sizes are in cells (`k` = output pixels per cell), so the preview and a full-size export match; the glitches land on whole cells (tested at 1 and 3 pixels per cell). Seeded effects with Moving on change about 12 times a second of video (or webcam time); stills use frame 0.
+- **App:** Effects section in the inspector (add from a list, turn on or off, move up or down, remove; at most 12). Stored in `look.effects`, so saved looks, project files (`cleanEffects` checks them on the way in) and the MP4 render lock carry it. With effects on, the preview paints at screen size (capped at 2048 on the long side) instead of one pixel per cell, so soft effects don't look blocky. SVG export has the dither only and says so.
+- **Checked:** core tests, doctor 0 failures, headless Edge: three stacks previewed and exported as PNG (1200 × 800 in about 0.6 s, glow included). **Not checked:** an MP4 render or webcam with effects (same `scaledOutput` path as the PNG), speed on long 1080p videos.
+- **Next steps toward Dither Boy:** (2) animate a still (keyframes on a timeline without a video, reusing `keyframes.js`, plus MP4 export); (3) more dither algorithms; smaller: saturation, noise and sharpen before dithering, palette import and export, JPG export.
+
 ## What's next
 
 1. ~~Geomator~~ **Done Nov. 19 as TYCHO** (`apps/tycho`, port 5184). It draws flat Canvas2D, exports PNG, SVG and MP4, and runs its engine checks with `npm test -w @studio/tycho`.
