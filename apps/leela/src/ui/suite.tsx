@@ -1,5 +1,6 @@
 // Suite connections in the inspector: open what other tools saved or sent, send the
-// current picture to another tool, and use or save suite-wide palettes. The engine
+// current picture to another tool, watch another window live, and use or save
+// suite-wide palettes. The engine
 // side lives in @studio/core (suite.js). The same file sits in each tool's ui/ folder.
 import {useEffect, useState} from 'react';
 import {Button} from '@astryxdesign/core/Button';
@@ -9,11 +10,12 @@ import {HStack, StackItem} from '@astryxdesign/core/Layout';
 import {Selector} from '@astryxdesign/core/Selector';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {BookmarkPlus, Send} from 'lucide-react';
-import {currentTool, watchShelf, shelfFile, shelfLabel, sendTargets, sendTo, suitePalettes, savePalette, watchPalettes} from '@studio/core';
+import {currentTool, watchShelf, shelfFile, shelfLabel, sendTargets, sendTo, suitePalettes, savePalette, watchPalettes, watchLiveSources} from '@studio/core';
 import {ICON, InspectorRow} from './parts';
 
 type ShelfItem = {id: string; name: string; type: string; from: string; at: number; size: number};
 type Made = {blob: Blob; name: string} | null;
+type LiveSource = {id: string; tool: string; name: string; label: string};
 
 /** Pictures and videos on the shelf (of the given kinds), newest first; empty outside the suite. */
 export function useShelf(kinds: string[] = ['image', 'video']) {
@@ -40,6 +42,37 @@ export function RecentFromSuite({onOpen, kinds}: {onOpen: (file: File) => void; 
           const f = id ? await shelfFile(id) : null;
           if (f) onOpen(f);
         }}
+      />
+    </InspectorRow>
+  );
+}
+
+/** Tools open in other windows that can stream their picture here; empty outside the suite. */
+export function useLiveSources() {
+  const [list, setList] = useState<LiveSource[]>([]);
+  useEffect(() => watchLiveSources(setList), []);
+  return list;
+}
+
+/**
+ * "Live from another window": use another tool, open in a window beside this one, as the
+ * source, like a webcam. onPick(id, name) opens it (openLiveSource in @studio/core).
+ */
+export function LiveFromSuite({onPick, isDisabled}: {onPick: (id: string, name: string) => void; isDisabled?: boolean}) {
+  const list = useLiveSources();
+  if (!list.length) return null;
+  return (
+    <InspectorRow label="Live">
+      <Selector
+        label="Live from another window"
+        isLabelHidden
+        size="sm"
+        width="100%"
+        placeholder="Live from another window…"
+        value=""
+        isDisabled={isDisabled}
+        options={list.map(s => ({value: s.id, label: s.label ? `${s.name}: ${s.label}` : s.name}))}
+        onChange={id => { const s = list.find(x => x.id === id); if (s) onPick(s.id, s.name); }}
       />
     </InspectorRow>
   );

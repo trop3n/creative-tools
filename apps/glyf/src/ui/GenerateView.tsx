@@ -18,11 +18,11 @@ import {S, A, useStore, byId, toast, PALETTES, MAX_PALETTE} from '../engine/stor
 import {PATTERNS} from '../engine/patterns.js';
 import {setGen, setOutCanvas, exportPNG, exportSVG, copySVG, pngBlob} from '../engine/generator.js';
 import {
-  useSample, loadMediaFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, setMirror, stopCamera, toggleRecord,
+  useSample, loadMediaFile, playPause, seekFraction, setSound, setVolume, renderVideo, startWebcam, startLive, setMirror, stopCamera, toggleRecord,
   seekRibbons, renderRibbons,
 } from '../engine/media.js';
 import {CustomSizeRow, GlyphArt, ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
-import {RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {LiveFromSuite, RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
 import {pickFiles} from '@studio/core';
 import {CUSTOM, FRAME_RATIOS, frameIds, frameLabel} from '@studio/core/frames';
 
@@ -276,11 +276,12 @@ export function GenerateInspector() {
             onClick={async () => { const [f] = await pickFiles('image/*,video/*'); loadMediaFile(f); }}
           />
           {m.kind === 'camera' ? (
-            <Button label="Stop camera" size="sm" icon={<Icon icon={CameraOff} size={ICON} />} onClick={stopCamera} />
+            <Button label={m.live ? 'Stop live' : 'Stop camera'} size="sm" icon={<Icon icon={CameraOff} size={ICON} />} onClick={stopCamera} />
           ) : (
             <Button label="Webcam" size="sm" icon={<Icon icon={Camera} size={ICON} />} onClick={() => startWebcam()} />
           )}
         </HStack>
+        <LiveFromSuite onPick={startLive} isDisabled={m.exporting} />
         <RecentFromSuite onOpen={loadMediaFile} />
         <Text type="supporting">You can also drop an image or video on the canvas, or paste an image.</Text>
       </InspectorSection>
@@ -376,11 +377,11 @@ export function GenerateInspector() {
       ) : null}
 
       {m.kind === 'camera' ? (
-        <InspectorSection title="Webcam">
+        <InspectorSection title={m.live ? 'Live' : 'Webcam'}>
           {m.cams.length > 1 ? (
             <Selector label="Camera" size="sm" options={m.cams} value={m.camId} onChange={v => startWebcam(v)} />
           ) : null}
-          <Switch label="Mirror image" size="sm" value={m.mirror} onChange={setMirror} />
+          {m.live ? null : <Switch label="Mirror image" size="sm" value={m.mirror} onChange={setMirror} />}
           <Text type="supporting">Record captures the output live, as you see it, with no sound. Columns are locked while recording.</Text>
         </InspectorSection>
       ) : null}

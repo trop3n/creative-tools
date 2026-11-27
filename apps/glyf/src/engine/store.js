@@ -1,8 +1,8 @@
 // One mutable app state plus a version counter. Engine code mutates S and calls
 // emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {readJSON, writeJSON, saveFile as coreSave} from '@studio/core';
-import {seedLib, tileShapes, TILE_NAMES, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, slug, setMode, modeOf, rotateEl, scaleEl, fitBox} from './shapes.js';
+import {readJSON, writeJSON, saveFile as coreSave, publishGlyphs} from '@studio/core';
+import {seedLib, tileShapes, TILE_NAMES, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, shapeInner, slug, setMode, modeOf, rotateEl, scaleEl, fitBox} from './shapes.js';
 import {CUSTOM} from '@studio/core/frames';
 import {FAMILY, FAMILIES, buildFamily, defaults} from './families.js';
 
@@ -50,7 +50,7 @@ export const S = {
   media: {
     kind: 'sample', label: 'Spheres (sample)', playing: false, time: 0, duration: 0,
     sound: false, volume: 0.8, exporting: false, progress: '', recording: false, recTime: 0,
-    cams: [], camId: '', mirror: true,
+    cams: [], camId: '', mirror: true, live: false,
   },
 };
 
@@ -76,7 +76,12 @@ export async function saveFile(filename, data, mime) {
 
 /* ---------- library ---------- */
 let saveT;
-export function saveLib() { clearTimeout(saveT); saveT = setTimeout(() => store('glyf.lib.v1', S.lib), 250); }
+export function saveLib() { clearTimeout(saveT); saveT = setTimeout(() => { store('glyf.lib.v1', S.lib); publishSet(); }, 250); }
+/** Share the glyphs in the set with the suite (PFHOR, DURANDAL and TYCHO can draw them). */
+export function publishSet() {
+  publishGlyphs(S.lib.shapes.filter(s => s.inSet && s.els.length).map(s => ({id: s.id, name: s.name, svg: shapeInner(s, 'sg-' + s.id)})));
+}
+publishSet();
 export const saveGen = () => store('glyf.gen.v1', S.gen);
 const saveCat = () => store('glyf.cat.v1', S.cat);
 /** The catalog's current family and its settings (defaults filled in). */

@@ -1,7 +1,7 @@
 // LEELA's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender} from '@studio/core';
 import {
   createGradientRenderer, cleanConfig, presetConfig, randomConfig, spreadPoints, parseColor, oklabToHex,
   PRESETS, MAX_STOPS, MAX_POINTS, effectCell,
@@ -67,6 +67,8 @@ function persist() {
 /* ---------- the canvas and the loop ---------- */
 let renderer = null, canvas = null, resize = null, raf = 0, last = 0, lastEmit = 0;
 let fxCanvas = null; // the stage's dither layer, over the gradient
+// Offer the stage to other windows of the suite (a new watcher gets one fresh draw).
+const live = createLiveSender({label: () => PRESETS.find(p => p.id === S.preset)?.name || '', onWatch: () => { if (canvas) draw(); }});
 
 /* ---------- the dither effect (DURANDAL's engine) ---------- */
 const byLightness = colors => colors.slice().sort((a, b) => parseColor(a)[0] - parseColor(b)[0]);
@@ -156,12 +158,14 @@ const hoverArg = () => (S.config.hover > 0 && hover.on > 0.002
 function draw() {
   if (!renderer || renderer.lost) return;
   renderer.render(S.config, S.time, null, hoverArg());
+  let shown = canvas;
   if (S.config.effect === 'dither' && fxCanvas) {
     const w = canvas.width, h = canvas.height;
     if (fxCanvas.width !== w || fxCanvas.height !== h) { fxCanvas.width = w; fxCanvas.height = h; }
-    try { composeDither(canvas, fxCanvas, w, h, S.config); }
+    try { shown = composeDither(canvas, fxCanvas, w, h, S.config); }
     catch (e) { console.error(e); }
   }
+  live.frame(shown); // in the same task as the WebGL render, before the buffer clears
 }
 
 /** The stage's dither layer (null to let go). */

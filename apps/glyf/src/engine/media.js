@@ -2,7 +2,7 @@
 // and video exporters from @studio/core.
 import {
   loadImageFile, isVideoFile, isMediaFile, openVideoFile, openWebcam, frameCanvasFor, drawVideoFrame,
-  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas as mk, takeSent, TOOL_NAMES,
+  cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas as mk, takeSent, TOOL_NAMES, openLiveSource,
 } from '@studio/core';
 import {S, emit, toast, saveFile, saveGen} from './store.js';
 import {render, schedule, getOutCanvas, fileBase} from './generator.js';
@@ -188,7 +188,7 @@ export function stopVideo() {
   if (media.dispose) { media.dispose(); media.dispose = null; }
   media.vid = null; media.file = null;
 }
-const grabFrame = () => { if (media.vid && media.src) drawVideoFrame(media.vid, media.src, media.kind === 'camera' && M().mirror); };
+const grabFrame = () => { if (media.vid && media.src) drawVideoFrame(media.vid, media.src, media.kind === 'camera' && !M().live && M().mirror); };
 function syncVidUI(force) {
   const v = media.vid; if (!v) return;
   const now = performance.now();
@@ -259,17 +259,18 @@ export async function renderVideo() {
   media.exporting = false; M().exporting = false; M().progress = ''; syncVidUI(true); emit();
 }
 
-/* ---------- webcam ---------- */
-export async function startWebcam(deviceId) {
+/* ---------- webcam (and a live picture from another window, which plays the same way, unmirrored) ---------- */
+export async function startWebcam(deviceId, live) {
   let cam;
-  try { cam = await openWebcam(deviceId); }
-  catch (e) { return toast(cameraErrorMessage(e), 'error'); }
+  try { cam = await (live ? openLiveSource(live.id, 'Live: ' + live.name) : openWebcam(deviceId)); }
+  catch (e) { return toast(live ? e.message : cameraErrorMessage(e), 'error'); }
   stopVideo();
   media.vid = cam.video; media.dispose = cam.dispose; lastVT = -1; S.gen.sample = null;
-  M().cams = cam.cameras; M().camId = cam.deviceId;
+  M().cams = cam.cameras; M().camId = cam.deviceId; M().live = !!live;
   setSource(frameCanvasFor(cam.video), 'camera', cam.label);
   grabFrame(); vidLoop(cam.video);
 }
+export const startLive = (id, name) => startWebcam('', {id, name});
 export function setMirror(on) { M().mirror = on; grabFrame(); emit(); schedule(); }
 export function stopCamera() { useSample('sphere'); }
 

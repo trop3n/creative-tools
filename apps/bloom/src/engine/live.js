@@ -1,7 +1,7 @@
 // BLOOM's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender} from '@studio/core';
 import {buildPlant, meshPlant, Mesh} from './plant.js';
 import {createBloomRenderer, frameCamera} from './renderer.js';
 import {toRGB} from './color.js';
@@ -83,6 +83,8 @@ export const doneAt = () => plantFor(S.config, localTime(S.config, S.time).round
 
 /* ---------- the canvas and the loop ---------- */
 let renderer = null, canvas = null, resize = null, raf = 0, last = 0, lastEmit = 0;
+// Offer the stage to other windows of the suite (a new watcher gets one fresh draw).
+const live = createLiveSender({label: () => PRESETS.find(p => p.id === S.preset)?.name || '', onWatch: () => draw()});
 
 /** Fit the canvas inside its frame at the chosen aspect, then size its pixels. */
 function fit() {
@@ -100,7 +102,9 @@ function fit() {
 }
 
 function draw() {
-  if (renderer && !renderer.lost && canvas.width > 1) renderer.render(sceneFrame(S.config, S.time, canvas.width / canvas.height));
+  if (!renderer || renderer.lost || canvas.width <= 1) return;
+  renderer.render(sceneFrame(S.config, S.time, canvas.width / canvas.height));
+  live.frame(canvas); // in the same task as the WebGL render, before the buffer clears
 }
 
 function tick(now) {

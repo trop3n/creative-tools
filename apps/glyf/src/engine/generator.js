@@ -1,6 +1,6 @@
 // Generator: rasterize glyphs, measure their ink, map source tones onto them.
 import {S, emit, saveGen, setLibListener, toast, saveFile} from './store.js';
-import {copyText} from '@studio/core';
+import {copyText, createLiveSender} from '@studio/core';
 import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
 import {glyphSVG, shapeInner, n2, slug} from './shapes.js';
 import {media, refreshPattern} from './media.js';
@@ -14,6 +14,8 @@ let outCv = null, layerCv = null, last = null, tok = 0, queued = false;
 export const setOutCanvas = c => { outCv = c; schedule(); };
 export const getOutCanvas = () => outCv;
 export const isBusy = () => media.exporting;
+// Offer the output to other windows of the suite (a new watcher gets one fresh render).
+const live = createLiveSender({label: () => S.media.label, onWatch: () => schedule()});
 
 const rasterCache = new Map();
 function rasterGlyph(shape) {
@@ -204,6 +206,7 @@ export async function render(quiet) {
   lx.globalCompositeOperation = 'source-over';
   const ox = outCv.getContext('2d');
   ox.fillStyle = g.paper; ox.fillRect(0, 0, W, H); ox.drawImage(layerCv, 0, 0);
+  live.frame(outCv);
   last = {cols, rows, glyphs, marks, cellCol, fixed};
   const stats = `${cols} × ${rows} cells · ${marks.length.toLocaleString()} marks · ${m} glyph${m > 1 ? 's' : ''}`;
   if (!quiet || stats !== S.stats) { S.stats = stats; emit(); }
