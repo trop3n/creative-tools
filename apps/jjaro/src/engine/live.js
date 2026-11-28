@@ -1,13 +1,16 @@
 // JJARO's app state, the simulation loop, pointer handling and every action the UI
 // takes. Engine code mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, takeSent, TOOL_NAMES, createLiveSender} from '@studio/core';
+import {
+  toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, takeSent, TOOL_NAMES, createLiveSender,
+  isImageFile, isVideoFile, registerRecipeTool, noteIncoming, noteStart,
+} from '@studio/core';
 import {parseColor, oklabToLinear} from '@studio/core/gradient';
 import {Cloth, QUALITY, rng} from './cloth.js';
 import {lightDirs, dropLayout, PATTERN_IDS, PRINT_IDS} from './foil.js';
 import {artFromFile, artFromData, artData, sampleArt} from './art.js';
 import {createRenderer, frameCamera, screenRay, pickParticle, onViewPlane, focusDistance, effectReach} from './renderer.js';
-import {frameDims} from '@studio/core/frames';
+import {frameDims, CUSTOM, cleanSide} from '@studio/core/frames';
 import {cleanConfig, presetConfig, randomConfig, DEFAULT_CONFIG, PRESETS, aspectOf, REBUILD_KEYS} from './config.js';
 
 export const saved = toolStore('jjaro');
@@ -89,9 +92,10 @@ build();
 // it fits); if it doesn't fit, it lasts until the page closes.
 function showArt(art) { S.art = art; draw(); emit(); }
 if (typeof document !== 'undefined') {
-  S.art = sampleArt();
+  const sample = S.art = sampleArt();
   const kept = saved.get('art.v1', null);
-  if (kept?.data) artFromData(kept.data, kept.name).then(showArt, () => {});
+  // Only if nothing else (a load, a recipe step) has replaced the sample meanwhile.
+  if (kept?.data) artFromData(kept.data, kept.name).then(art => { if (S.art === sample) { showArt(art); noteIncoming({name: art.name}); } }, () => {});
 }
 
 /** Load an image file as the artwork; switches to a kinegram if nothing prints yet. */
@@ -100,6 +104,7 @@ export async function loadArt(file) {
     const art = await artFromFile(file);
     if (!saved.set('art.v1', {data: artData(art), name: art.name})) S.toast?.('That image is too big to keep after the page closes', 'info');
     showArt(art);
+    noteIncoming(file);
     if (S.config.print === 'none') set('print', 'kinegram');
   } catch (e) {
     S.toast?.(e.message || 'That image could not be read', 'error');
@@ -113,7 +118,7 @@ export async function openSent() {
   toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
 }
 /** Go back to the sample artwork. */
-export function clearArt() { saved.set('art.v1', null); showArt(sampleArt()); }
+export function clearArt() { saved.set('art.v1', null); showArt(sampleArt()); noteStart(); }
 
 /* ---------- the canvas and the loop ---------- */
 let renderer = null, canvas = null, resize = null, raf = 0, last = 0, cam = null;
@@ -338,6 +343,7 @@ export async function openProject(file) {
       const art = await artFromData(p.art.data, String(p.art.name || 'Artwork'));
       saved.set('art.v1', {data: p.art.data, name: art.name});
       S.art = art;
+      noteIncoming({name: art.name});
     } catch (e) { toast('The artwork in that project could not be read', 'error'); }
   }
   setConfig(p.config);
@@ -445,8 +451,10 @@ export const videoSupported = canEncodeVideo;
 /** Seconds an MP4 covers: whole loops of the lights, so it loops cleanly. */
 export const videoSeconds = () => S.config.period * S.loops;
 
-export async function exportMP4() {
-  if (S.exporting) return;
+/** Render the MP4 that Render MP4 saves: {blob, name, codecNote}; blob is null when cancelled. */
+async function renderMP4() {
+  if (S.exporting) throw new Error('A video is already rendering');
+  if (!canEncodeVideo()) throw new Error('Video export needs Chrome or Edge');
   const fps = 30, seconds = videoSeconds(), frames = Math.round(seconds * fps);
   const [w, h] = dims(S.videoSize);
   const sheet = freeze(), c = S.config, t0 = S.time;
@@ -467,16 +475,71 @@ export async function exportMP4() {
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
       isCancelled: () => cancelExport,
     });
-    if (blob) {
-      const res = await saveFile(fileName() + '.mp4', blob, 'video/mp4');
-      toast(res.message + (res.status === 'error' ? '' : codecNote), res.status === 'error' ? 'error' : 'info');
-    } else toast('Export cancelled');
-  } catch (e) {
-    console.error(e);
-    toast(e.message || 'Could not make the video', 'error');
+    return {blob, name: fileName() + '.mp4', codecNote};
   } finally {
     S.exporting = null;
     emit();
   }
 }
+
+export async function exportMP4() {
+  if (S.exporting) return;
+  try {
+    const {blob, name, codecNote} = await renderMP4();
+    if (blob) {
+      const res = await saveFile(name, blob, 'video/mp4');
+      toast(res.message + (res.status === 'error' ? '' : codecNote), res.status === 'error' ? 'error' : 'info');
+    } else toast('Export cancelled');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'Could not make the video', 'error');
+  }
+}
 export function cancelMP4() { cancelExport = true; }
+
+/* ---------- recipes ---------- */
+// A step keeps the cloth and foil settings, the sample emblem (when it printed that),
+// the light's moment and the export settings. A loaded artwork is what the step is given.
+const SETTLE = 8; // seconds of simulation at most; the cloth tests settle within this
+registerRecipeTool({
+  // A run starts before the app mounts its toaster: wait a moment for it.
+  toast: (msg, kind) => (S.toast ? S.toast(msg, kind) : setTimeout(() => toast(msg, kind), 500)),
+  getSettings: () => ({
+    config: S.config, time: S.time, sampleArt: !S.art?.custom,
+    exportSize: S.exportSize, videoSize: S.videoSize, loops: S.loops, sway: S.sway, transparent: S.transparent,
+  }),
+  applySettings(s) {
+    // Pause on the step's moment, so the still is the frame that was saved.
+    S.playing = false; S.time = Number(s.time) || 0;
+    if ([1080, 2160, 4096, 8192].includes(s.exportSize)) setExport('exportSize', s.exportSize);
+    if ([1080, 1440, 2160].includes(s.videoSize)) setExport('videoSize', s.videoSize);
+    if (Number.isInteger(s.loops) && s.loops >= 1 && s.loops <= 4) setExport('loops', s.loops);
+    if (typeof s.sway === 'boolean') setExport('sway', s.sway);
+    if (typeof s.transparent === 'boolean') setExport('transparent', s.transparent);
+    if (s.sampleArt) showArt(sampleArt());
+    setConfig(s.config || S.config);
+  },
+  setSize: (w, h) => setConfig({...S.config, aspect: CUSTOM.id, customW: cleanSide(w, CUSTOM.w), customH: cleanSide(h, CUSTOM.h)}),
+  async load(file) {
+    if (!isImageFile(file)) throw new Error(isVideoFile(file) ? 'JJARO prints a still image, not a video. Run this recipe as a picture.' : `JJARO can't print ${file.name}`);
+    const before = S.art, print = S.config.print;
+    await loadArt(file);
+    if (S.art === before || !S.art?.custom) throw new Error(`JJARO could not read ${file.name}`);
+    if (S.config.print !== print) set('print', print); // keep the step's print mode
+  },
+  async ready() {
+    // A fresh sheet from the step's seed, left to fall and settle, a few steps a frame.
+    build();
+    for (let i = 1; i <= SETTLE * 60; i++) {
+      cloth.advance(1 / 60);
+      if (i > 60 && cloth.speed() < 0.05) break;
+      if (i % 20 === 0) { draw(); await new Promise(r => requestAnimationFrame(r)); }
+    }
+    draw();
+  },
+  renderStill: stillBlob,
+  async renderVideo() {
+    const {blob, name} = await renderMP4();
+    return blob ? {blob, name} : null;
+  },
+});

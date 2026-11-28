@@ -1,5 +1,5 @@
 // Generator: rasterize glyphs, measure their ink, map source tones onto them.
-import {S, emit, saveGen, setLibListener, toast, saveFile} from './store.js';
+import {S, emit, saveGen, setLibListener, toast, saveFile, genSet} from './store.js';
 import {copyText, createLiveSender} from '@studio/core';
 import {FRAME_RATIOS, cropRect, fixedSize, frameRatio} from '@studio/core/frames';
 import {glyphSVG, shapeInner, n2, slug} from './shapes.js';
@@ -10,7 +10,7 @@ const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export {mk};
 
-let outCv = null, layerCv = null, last = null, tok = 0, queued = false;
+let outCv = null, layerCv = null, last = null, tok = 0, done = 0, queued = false; // done: the last render that finished
 export const setOutCanvas = c => { outCv = c; schedule(); };
 export const getOutCanvas = () => outCv;
 export const isBusy = () => media.exporting;
@@ -128,20 +128,26 @@ export function schedule() {
   requestAnimationFrame(() => { queued = false; render(); });
 }
 setLibListener(schedule);
+/** Render now; resolves once the output is up to date (no newer render queued or in flight). False if there's nothing to show. */
+export async function renderSettled() {
+  await render(true);
+  for (let n = 0; (queued || done !== tok) && n < 600; n++) await new Promise(r => requestAnimationFrame(r)); // about 10 s at most
+  return !!last;
+}
 /** Change a generator setting, persist it and re-render. */
 export function setGen(k, v) { S.gen[k] = v; saveGen(); emit(); schedule(); }
 
 let rampKey = '';
 export async function render(quiet) {
   refreshPattern(); // a pattern source redraws itself when its settings or the frame change
-  const my = ++tok, set = S.lib.shapes.filter(s => s.inSet), src = media.src;
+  const my = ++tok, set = genSet(), src = media.src;
   const rs = await Promise.all(set.map(rasterGlyph));
   if (my !== tok) return;
   set.forEach((s, i) => (S.cov[s.id] = rs[i].cov));
   const glyphs = set.map((s, i) => ({s, cv: rs[i].cv, cov: rs[i].cov})).filter(g => g.cv && g.cov > 0.002).sort((a, b) => a.cov - b.cov);
   const rk = glyphs.map(g => g.s.id + ':' + g.cov).join();
   if (rk !== rampKey) { rampKey = rk; S.ramp = glyphs.map(g => ({id: g.s.id, cov: g.cov})); quiet = false; }
-  if (!outCv || !glyphs.length || !src) { last = null; S.stats = ''; emit(); return; }
+  if (!outCv || !glyphs.length || !src) { last = null; S.stats = ''; done = my; emit(); return; }
 
   const g = S.gen, m = glyphs.length, cols = g.cols;
   const custom = [g.customW, g.customH];
@@ -208,6 +214,7 @@ export async function render(quiet) {
   ox.fillStyle = g.paper; ox.fillRect(0, 0, W, H); ox.drawImage(layerCv, 0, 0);
   live.frame(outCv);
   last = {cols, rows, glyphs, marks, cellCol, fixed};
+  done = my;
   const stats = `${cols} × ${rows} cells · ${marks.length.toLocaleString()} marks · ${m} glyph${m > 1 ? 's' : ''}`;
   if (!quiet || stats !== S.stats) { S.stats = stats; emit(); }
 }

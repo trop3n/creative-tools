@@ -26,7 +26,7 @@ import {
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {LiveFromSuite, RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {LiveFromSuite, RecentFromSuite, SaveRecipeRow, SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -356,6 +356,7 @@ function ExportSection() {
         </HStack>
       )}
       <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={msg => toast(msg, 'error')} />
+      <SaveRecipeRow kind={isVideo ? 'video' : 'image'} onSaved={name => toast(`Saved the recipe "${name}"`)} />
       <Text type="supporting">
         {s.media?.kind === 'camera'
           ? 'The PNG is the frame on screen. Video export works with images and video files, not the webcam.'

@@ -10,6 +10,7 @@ import {Heading, Text} from '@astryxdesign/core/Text';
 import {Theme} from '@astryxdesign/core/theme';
 import {studioTheme} from '@studio/theme';
 import suite from '../../../suite.json';
+import Recipes from './Recipes';
 
 const previews = import.meta.glob('./previews/*.svg', {eager: true, query: '?url', import: 'default'}) as Record<string, string>;
 
@@ -94,6 +95,8 @@ export default function Launcher() {
                   </Grid>
                 </VStack>
               ))}
+
+              <Recipes />
 
               <Text type="supporting">
                 {suite.tools.length} tool{suite.tools.length === 1 ? '' : 's'}. Everything runs in your browser; saved work stays on this device.

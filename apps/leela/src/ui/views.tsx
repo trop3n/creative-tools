@@ -27,7 +27,7 @@ import {
   SIZES, MAX_SIDE, setOut, outSize, videoPlan, exportPNG, exportMP4, cancelVideo, renderPNG, renderMP4, toast, attachFx, gradientColors,
 } from '../engine/live.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
-import {SendToRow, SuitePaletteRow} from './suite';
+import {SaveRecipeRow, SendToRow, SuitePaletteRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -406,6 +406,7 @@ function ExportSection() {
 
       <SendToRow kind="image" make={renderPNG} isDisabled={s.exporting} onError={m => toast(m, 'error')} />
       {moving ? <SendToRow kind="video" make={renderMP4} isDisabled={s.exporting || !canEncodeVideo()} onError={m => toast(m, 'error')} /> : null}
+      <SaveRecipeRow kind={moving ? 'video' : 'image'} onSaved={name => toast(`Saved the recipe "${name}"`)} />
     </InspectorSection>
   );
 }

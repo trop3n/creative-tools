@@ -30,7 +30,7 @@ import {
 } from '../engine/media.js';
 import {saveProject, openProject, saveLook, applyLook, deleteLook, openRecent, forgetRecent} from '../engine/project.js';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {LiveFromSuite, RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {LiveFromSuite, RecentFromSuite, SaveRecipeRow, SendToRow, SuitePaletteRow} from './suite';
 
 const INKS = ['#00304e', '#242222', '#4c3046', '#c99530', '#90a344'];
 const PAPERS = ['#dfdfdf', '#ffffff', '#242222', '#00304e', '#c99530'];
@@ -407,6 +407,7 @@ export function Inspector() {
           </HStack>
         ) : null}
         <SendToRow make={stillBlob} isDisabled={s.media.exporting} onError={m => toast(m, 'error')} />
+        <SaveRecipeRow kind={s.media.kind === 'video' || isAnimating() ? 'video' : 'image'} onSaved={name => toast(`Saved the recipe "${name}"`)} />
         <Text type="supporting">
           {s.result && !fixedSize(look.frame, [look.customW, look.customH]) ? `${exportDims(s.result).join(' × ')} px` : ' '}
         </Text>

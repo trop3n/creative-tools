@@ -3,10 +3,11 @@
 import {
   loadImageFile, isVideoFile, isMediaFile, openVideoFile, openWebcam, frameCanvasFor, drawVideoFrame,
   cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas as mk, takeSent, TOOL_NAMES, openLiveSource,
+  noteIncoming, noteStart, registerRecipeTool,
 } from '@studio/core';
-import {S, emit, toast, saveFile, saveGen} from './store.js';
-import {render, schedule, getOutCanvas, fileBase} from './generator.js';
-import {fixedSize, frameRatio, FRAME_RATIOS} from '@studio/core/frames';
+import {S, emit, toast, saveFile, saveGen, cleanGen, useRecipeSet, genSet} from './store.js';
+import {render, schedule, getOutCanvas, fileBase, renderSettled, pngBlob, setGen} from './generator.js';
+import {fixedSize, frameRatio, FRAME_RATIOS, CUSTOM, cleanSide} from '@studio/core/frames';
 import {drawRibbons} from './ribbons.js';
 import {drawPattern, PATTERNS} from './patterns.js';
 
@@ -50,7 +51,7 @@ function setSource(canvas, kind, label) {
   emit(); schedule();
 }
 export function useSample(kind) {
-  stopVideo(); S.gen.sample = kind; saveGen();
+  stopVideo(); S.gen.sample = kind; saveGen(); noteStart();
   if (kind === 'ribbons') return startRibbons();
   if (kind === 'pattern') return startPattern();
   setSource(sampleCanvas(kind), 'sample', SAMPLE_NAMES[kind] + ' (sample)');
@@ -64,11 +65,52 @@ export function initSource() {
     loadMediaFile(file);
     toast(`Opened ${file.name} from ${TOOL_NAMES[file.from] || 'another tool'}`);
   });
+  registerRecipeTool(recipeHooks); // a recipe run starts after this, once it has read its step
   if (k === 'ribbons') { startRibbons(); return; }
   if (k === 'pattern') { startPattern(); return; }
   media.src = sampleCanvas(k);
   M().label = SAMPLE_NAMES[k] + ' (sample)';
 }
+
+/* ---------- recipes ---------- */
+// A recipe step here: the generator settings (the built-in source among them) and the
+// glyphs of the set, so a later library edit or another browser makes the same picture.
+// The glyphs are used for this run only (S.recipeSet); the library isn't touched.
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+const recipeHooks = {
+  toast,
+  getSettings: () => ({gen: S.gen, glyphs: genSet().map(s => ({name: s.name, els: s.els}))}),
+  applySettings(s) {
+    if (!s || typeof s !== 'object') return;
+    Object.assign(S.gen, cleanGen(s.gen)); saveGen();
+    if (Array.isArray(s.glyphs)) useRecipeSet(s.glyphs);
+    if (S.view !== 'gen') { S.view = 'gen'; history.replaceState(null, '', '#generate'); }
+    if (SAMPLE_NAMES[S.gen.sample]) useSample(S.gen.sample); else { emit(); schedule(); }
+  },
+  setSize(w, h) {
+    setGen('customW', cleanSide(w, S.gen.customW));
+    setGen('customH', cleanSide(h, S.gen.customH));
+    setGen('frame', CUSTOM.id);
+  },
+  async load(f) {
+    if (!isMediaFile(f)) throw new Error(`${f.name} is not an image or a video`);
+    await loadMediaFile(f);
+    if (M().label !== f.name) throw new Error(`could not open ${f.name}`);
+  },
+  async ready() {
+    for (let n = 0; !getOutCanvas() && n < 600; n++) await nextFrame(); // the stage's canvas mounts with the page
+    if (!(await renderSettled())) throw new Error(S.ramp.length ? 'there is nothing to show' : 'the glyph set has no glyphs with ink');
+  },
+  renderStill: pngBlob,
+  async renderVideo() {
+    let out = null;
+    const take = res => { if (!res.cancelled) out = {blob: res.blob, name: fileBase() + '.mp4'}; };
+    if (media.kind === 'video' && media.vid) await videoMp4(take);
+    else if (media.kind === 'ribbons') await ribbonsMp4(take);
+    else throw new Error('GLYF makes video from a video, or from Ribbons');
+    return out;
+  },
+};
 
 /* ---------- patterns: procedural still sources ---------- */
 let patKey = '';
@@ -141,9 +183,21 @@ export function seekRibbons(f) { if (media.kind === 'ribbons' && !media.exportin
 export async function renderRibbons() {
   if (media.kind !== 'ribbons') return;
   if (media.exporting) { exportCancel = true; return; }
+  try {
+    await ribbonsMp4(async res => {
+      if (res.cancelled) toast('Render canceled');
+      else {
+        await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
+        if (res.codecNote) setTimeout(() => toast('Video saved' + res.codecNote), 2300);
+      }
+    });
+  } catch (e) { toast('Video render failed: ' + (e.message || e), 'error'); }
+}
+/** Render the ribbons' loops to MP4 and hand the result ({blob} or {cancelled}) to `take` while the render state still holds; throws if it fails. */
+async function ribbonsMp4(take) {
   const g = S.gen, fps = +g.fps || 30, perLoop = Math.round(g.ribLoop * fps), frames = perLoop * Math.max(1, g.ribLoops);
   media.exporting = true; exportCancel = false; M().exporting = true; M().progress = 'Starting…'; emit();
-  let n = 0, even = null;
+  let n = 0, even = null, failed = null;
   try {
     paintRibbons(0); await render(true);
     const out = getOutCanvas(), W = out.width & ~1, H = out.height & ~1;
@@ -159,13 +213,10 @@ export async function renderRibbons() {
       onProgress: p => { M().progress = p.phase; if (n++ % 3 === 0) emit(); },
       isCancelled: () => exportCancel,
     });
-    if (res.cancelled) toast('Render canceled');
-    else {
-      await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
-      if (res.codecNote) setTimeout(() => toast('Video saved' + res.codecNote), 2300);
-    }
-  } catch (e) { toast('Video render failed: ' + (e.message || e), 'error'); }
+    await take(res);
+  } catch (e) { failed = e; }
   media.exporting = false; M().exporting = false; M().progress = ''; ribKey = ''; emit(); schedule();
+  if (failed) throw failed;
 }
 
 /* ---------- files ---------- */
@@ -176,7 +227,7 @@ export async function loadMediaFile(f) {
   if (!isMediaFile(f)) return toast('Choose an image or video file', 'error');
   try {
     const c = await loadImageFile(f);
-    stopVideo(); S.gen.sample = null; setSource(c, 'image', f.name);
+    stopVideo(); S.gen.sample = null; setSource(c, 'image', f.name); noteIncoming(f);
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -211,7 +262,7 @@ export async function loadVideoFile(f) {
   let src;
   try { src = await openVideoFile(f, {muted: !M().sound, volume: M().volume}); }
   catch (e) { return toast(e.message, 'error'); }
-  stopVideo();
+  stopVideo(); noteIncoming(f);
   const v = src.video;
   media.vid = v; media.file = f; media.dispose = src.dispose; lastVT = -1; S.gen.sample = null;
   setSource(frameCanvasFor(v), 'video', f.name);
@@ -239,9 +290,22 @@ export function resumeForShown() { if (media.kind === 'camera' && media.vid && m
 export async function renderVideo() {
   const v = media.vid; if (!v || media.kind !== 'video') return;
   if (media.exporting) { exportCancel = true; return; }
+  try {
+    await videoMp4(async res => {
+      if (res.cancelled) toast('Render canceled');
+      else {
+        await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
+        if (res.audioNote || res.codecNote) setTimeout(() => toast('Video saved' + res.audioNote + res.codecNote), 2300);
+      }
+    });
+  } catch (e) { toast('Video render failed: ' + (e.message || e), 'error'); }
+}
+/** Render the video to MP4 and hand the result to `take`, as ribbonsMp4 does. */
+async function videoMp4(take) {
+  const v = media.vid;
   media.exporting = true; exportCancel = false; v.pause();
   M().exporting = true; M().progress = 'Starting…'; emit();
-  let n = 0;
+  let n = 0, failed = null;
   try {
     const res = await renderVideoToMp4({
       video: v, file: media.file, fps: +S.gen.fps || 30, audio: !!S.gen.audio, background: S.gen.paper,
@@ -250,13 +314,10 @@ export async function renderVideo() {
       onProgress: p => { M().progress = p.phase; if (p.total) M().time = (p.frame / p.total) * v.duration; if (n++ % 3 === 0) emit(); },
       isCancelled: () => exportCancel,
     });
-    if (res.cancelled) toast('Render canceled');
-    else {
-      await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
-      if (res.audioNote || res.codecNote) setTimeout(() => toast('Video saved' + res.audioNote + res.codecNote), 2300);
-    }
-  } catch (e) { toast('Video render failed: ' + (e.message || e), 'error'); }
+    await take(res);
+  } catch (e) { failed = e; }
   media.exporting = false; M().exporting = false; M().progress = ''; syncVidUI(true); emit();
+  if (failed) throw failed;
 }
 
 /* ---------- webcam (and a live picture from another window, which plays the same way, unmirrored) ---------- */
@@ -264,7 +325,7 @@ export async function startWebcam(deviceId, live) {
   let cam;
   try { cam = await (live ? openLiveSource(live.id, 'Live: ' + live.name) : openWebcam(deviceId)); }
   catch (e) { return toast(live ? e.message : cameraErrorMessage(e), 'error'); }
-  stopVideo();
+  stopVideo(); noteIncoming({name: 'camera'});
   media.vid = cam.video; media.dispose = cam.dispose; lastVT = -1; S.gen.sample = null;
   M().cams = cam.cameras; M().camId = cam.deviceId; M().live = !!live;
   setSource(frameCanvasFor(cam.video), 'camera', cam.label);

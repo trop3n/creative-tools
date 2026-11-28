@@ -27,6 +27,7 @@ Inside the built suite the tools share the browser's storage (`packages/core/src
 - **Recent from the suite:** each of those tools lists the last 12 pictures and videos saved or sent from any tool, under Source.
 - **Suite palettes:** Brand plus any palette you save in DURANDAL, GLYF, LEELA (gradient stops), TYCHO, THOTH (backdrop) or PFHOR, usable in any of them.
 - **Live from another window:** every tool streams its stage; DURANDAL, GLYF, THOTH and PFHOR can take another window's picture as a live source, like a webcam. Keep both windows open and visible side by side (a hidden tab stops drawing).
+- **Recipes:** every picture a tool saves or sends remembers the chain of tools and settings that made it. Save recipe (in each tool's Export section) names it; the home page lists recipes and runs them again: at their own size or another (1080p, 4K, the LED wall), as a picture or a video, and on a new picture when the recipe started from one. Recipes download and import as .recipe.json.
 - **GLYF glyphs elsewhere:** GLYF shares the glyphs in its set; DURANDAL and PFHOR can draw cells as glyphs (picked by tone) and TYCHO has a Glyphs from GLYF shape, in PNG, MP4 and SVG.
 
 ## Commands

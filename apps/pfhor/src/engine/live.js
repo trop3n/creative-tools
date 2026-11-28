@@ -5,10 +5,11 @@ import {
   toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, makeCanvas, isVideoFile, isImageFile,
   loadImageFile, openVideoFile, seekVideo, openWebcam, cameraErrorMessage, takeSent, TOOL_NAMES,
   createLiveSender, openLiveSource, suiteGlyphs, watchGlyphs, rasterGlyphs, byInk, tintGlyph, glyphSymbol,
+  registerRecipeTool, noteIncoming, noteStart,
 } from '@studio/core';
 import {analyze, buildCells, drawCells, thresholdAt, canvasPainter, svgPainter} from './mosaic.js';
 import {sampleCanvas} from './samples.js';
-import {frameDims} from '@studio/core/frames';
+import {frameDims, CUSTOM, cleanSide} from '@studio/core/frames';
 import {cleanConfig, presetConfig, paletteColors, PRESETS, aspectOf, MAX_COLORS} from './config.js';
 
 export const saved = toolStore('pfhor');
@@ -185,10 +186,10 @@ export function attachCanvas(c) {
   emit();
 }
 
-if (typeof document !== 'undefined' && document.fonts) {
-  // The Type sample uses the suite font; redraw once it's ready.
-  document.fonts.load('800 64px montserrat').then(() => { cache.key = ''; draw(); }).catch(() => {});
-}
+// The Type sample uses the suite font; redraw once it's ready.
+const fontsLoaded = typeof document !== 'undefined' && document.fonts
+  ? document.fonts.load('800 64px montserrat').then(() => { cache.key = ''; draw(); }).catch(() => {})
+  : Promise.resolve();
 
 /* ---------- editing ---------- */
 function setConfig(cfg, preset = '') {
@@ -250,7 +251,7 @@ function setMedia(m) {
   cache.key = '';
   draw(); emit();
 }
-export function pickSample(id) { setMedia(null); set('sample', id); }
+export function pickSample(id) { setMedia(null); set('sample', id); noteStart(); }
 export async function openMedia(file) {
   if (!file) return;
   S.mediaBusy = true; emit();
@@ -258,10 +259,12 @@ export async function openMedia(file) {
     if (isImageFile(file)) {
       const c = await loadImageFile(file, 1600);
       setMedia({kind: 'image', label: file.name, el: c, w: c.width, h: c.height, dispose: () => {}});
+      noteIncoming(file);
     } else if (isVideoFile(file)) {
       const v = await openVideoFile(file, {muted: true, loop: true});
       v.video.play().catch(() => {});
       setMedia({kind: 'video', label: file.name, el: v.video, video: v.video, file, w: v.video.videoWidth, h: v.video.videoHeight, dispose: v.dispose});
+      noteIncoming(file);
     } else toast('Open an image or a video', 'info');
   } catch (e) {
     console.error(e);
@@ -283,6 +286,7 @@ async function openCamera(open, isLive) {
   try {
     const cam = await open();
     setMedia({kind: 'camera', live: isLive, label: cam.label || 'Webcam', el: cam.video, video: cam.video, w: cam.video.videoWidth, h: cam.video.videoHeight, dispose: cam.dispose});
+    noteIncoming({name: 'camera'});
   } catch (e) {
     toast(isLive ? e.message || 'Could not open the live picture' : cameraErrorMessage(e), 'error');
   } finally {
@@ -351,8 +355,11 @@ export function videoSeconds() {
   if (v && S.matchVideo && isFinite(v.duration) && v.duration > 0) return v.duration;
   return S.config.loop * S.exportLoops;
 }
-export async function exportMP4() {
-  if (S.exporting) return;
+/** Render the MP4 that Render MP4 saves: {blob, name, codecNote}; blob is null when cancelled. */
+async function renderMP4() {
+  if (S.exporting) throw new Error('A video is already rendering');
+  if (!canEncodeVideo()) throw new Error('Video export needs Chrome or Edge');
+  if (S.media?.kind === 'camera') throw new Error('Video export works with the samples, images and video files, not the webcam or a live window');
   const cfg = S.config;
   const fps = 30, frames = Math.max(1, Math.round(videoSeconds() * fps));
   const [w, h] = exportDims();
@@ -377,11 +384,7 @@ export async function exportMP4() {
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
       isCancelled: () => cancelExport,
     });
-    if (blob) { const r = await saveFile(name + '.mp4', blob, 'video/mp4'); report(r.status === 'error' ? r : {...r, message: r.message + codecNote}); }
-    else toast('Export cancelled');
-  } catch (e) {
-    console.error(e);
-    toast(e.message || 'Could not make the video', 'error');
+    return {blob, name: name + '.mp4', codecNote};
   } finally {
     S.exporting = null;
     cache.key = '';
@@ -389,6 +392,17 @@ export async function exportMP4() {
     last = 0;
     draw();
     emit();
+  }
+}
+export async function exportMP4() {
+  if (S.exporting) return;
+  try {
+    const {blob, name, codecNote} = await renderMP4();
+    if (blob) { const r = await saveFile(name, blob, 'video/mp4'); report(r.status === 'error' ? r : {...r, message: r.message + codecNote}); }
+    else toast('Export cancelled');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'Could not make the video', 'error');
   }
 }
 export function cancelMP4() { cancelExport = true; }
@@ -436,3 +450,38 @@ if (typeof window !== 'undefined') {
     toast('Opened the linked look');
   });
 }
+
+/* ---------- recipes ---------- */
+// A step keeps the look (palette, shape and the built-in sample), the moment shown and the
+// export size and length. A picture, video or camera is what the step is given.
+registerRecipeTool({
+  // A run starts before the app mounts its toaster: wait a moment for it.
+  toast: (msg, kind) => (S.toast ? S.toast(msg, kind) : setTimeout(() => toast(msg, kind), 500)),
+  getSettings: () => ({config: S.config, time: S.time, exportSize: S.exportSize, exportLoops: S.exportLoops, matchVideo: S.matchVideo}),
+  applySettings(s) {
+    // Pause on the step's moment, so the still is the frame that was saved.
+    S.playing = false; S.time = Number(s.time) || 0;
+    if ([1080, 1440, 2160, 3840].includes(s.exportSize)) setExportSize(s.exportSize);
+    if (Number.isInteger(s.exportLoops) && s.exportLoops >= 1 && s.exportLoops <= 8) setExportLoops(s.exportLoops);
+    if (typeof s.matchVideo === 'boolean') setMatchVideo(s.matchVideo);
+    setConfig(s.config || S.config);
+  },
+  setSize: (w, h) => setConfig({...S.config, aspect: CUSTOM.id, customW: cleanSide(w, CUSTOM.w), customH: cleanSide(h, CUSTOM.h)}),
+  async load(file) {
+    await openMedia(file);
+    if (S.media?.label !== file.name) throw new Error(`PFHOR could not open ${file.name}`);
+  },
+  async ready() {
+    await fontsLoaded;
+    const v = S.media?.video;
+    if (v && v.readyState < 2) await new Promise(r => v.addEventListener('loadeddata', r, {once: true}));
+    cache.key = '';
+    draw();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  },
+  renderStill: stillBlob,
+  async renderVideo() {
+    const {blob, name} = await renderMP4();
+    return blob ? {blob, name} : null;
+  },
+});

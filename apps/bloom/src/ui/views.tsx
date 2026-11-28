@@ -29,7 +29,7 @@ import {
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {SendToRow} from './suite';
+import {SaveRecipeRow, SendToRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -244,6 +244,7 @@ function ExportSection() {
       )}
       <SendToRow kind="image" make={renderPNG} isDisabled={!!s.exporting} onError={m => toast(m, 'error')} />
       <SendToRow kind="video" make={renderMP4} isDisabled={!!s.exporting || !canVideo} onError={m => toast(m, 'error')} />
+      <SaveRecipeRow kind="video" onSaved={name => toast(`Saved the recipe "${name}"`)} />
       <Text type="supporting">
         {canVideo
           ? `The PNG is the frame on screen. The MP4 renders ${videoSeconds()} s at 30 fps from the first sprout, frame by frame, so it never drops a frame.`

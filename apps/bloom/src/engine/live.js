@@ -1,7 +1,7 @@
 // BLOOM's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender, registerRecipeTool, noteStart} from '@studio/core';
 import {buildPlant, meshPlant, Mesh} from './plant.js';
 import {createBloomRenderer, frameCamera} from './renderer.js';
 import {toRGB} from './color.js';
@@ -332,3 +332,27 @@ if (typeof window !== 'undefined') {
     toast('Opened the linked look');
   });
 }
+
+/* ---------- recipes ---------- */
+// BLOOM starts a chain. A step keeps the bouquet (its frame and Custom size are in the
+// config), the moment shown (for a still), the export long side and the video length.
+noteStart();
+registerRecipeTool({
+  // A run starts before the app mounts its toaster: wait a moment for it.
+  toast: (msg, kind) => (S.toast ? S.toast(msg, kind) : setTimeout(() => toast(msg, kind), 500)),
+  getSettings: () => ({config: S.config, time: S.time, exportSize: S.exportSize, exportLength: S.exportLength}),
+  applySettings(s) {
+    // Pause on the step's moment, so the still is the frame that was saved.
+    S.playing = false; S.time = Math.max(0, Number(s.time) || 0);
+    if ([1080, 1440, 2160].includes(s.exportSize)) setExportSize(s.exportSize);
+    if (s.exportLength >= 2 && s.exportLength <= 30) setExportLength(Math.round(s.exportLength));
+    setConfig(s.config || S.config);
+  },
+  setSize: (w, h) => setConfig({...S.config, aspect: 'custom', customW: w, customH: h}),
+  ready: () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
+  renderStill: renderPNG,
+  renderVideo() {
+    if (!canEncodeVideo()) throw new Error('This browser cannot encode video. Use Chrome or Edge.');
+    return renderMP4();
+  },
+});

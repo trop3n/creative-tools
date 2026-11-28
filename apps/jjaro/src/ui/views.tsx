@@ -23,7 +23,7 @@ import {
 } from '../engine/live.js';
 import {CUSTOM, fixedSize, fixedSizeLabel, frameIds, frameLabel} from '@studio/core/frames';
 import {ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch, CustomSizeRow} from './parts';
-import {RecentFromSuite, SendToRow} from './suite';
+import {RecentFromSuite, SaveRecipeRow, SendToRow} from './suite';
 
 const styles = stylex.create({
   frame: {position: 'relative', width: '100%', height: '100%'},
@@ -381,6 +381,7 @@ function ExportSection() {
         </HStack>
       )}
       <SendToRow make={stillBlob} isDisabled={!!s.exporting} onError={m => toast(m, 'error')} />
+      <SaveRecipeRow kind="image" onSaved={name => toast(`Saved the recipe "${name}"`)} />
       <Text type="supporting">
         {canVideo
           ? `Both keep the folds as they are now. The MP4 is ${videoSeconds()} s at 30 fps: the lights come round ${s.loops === 1 ? 'once' : s.loops + ' times'}, so it loops without a jump.`

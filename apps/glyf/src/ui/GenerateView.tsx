@@ -22,7 +22,7 @@ import {
   seekRibbons, renderRibbons,
 } from '../engine/media.js';
 import {CustomSizeRow, GlyphArt, ICON, InspectorRow, InspectorSection, PresetChip, SliderRow, Swatch} from './parts';
-import {LiveFromSuite, RecentFromSuite, SendToRow, SuitePaletteRow} from './suite';
+import {LiveFromSuite, RecentFromSuite, SaveRecipeRow, SendToRow, SuitePaletteRow} from './suite';
 import {pickFiles} from '@studio/core';
 import {CUSTOM, FRAME_RATIOS, frameIds, frameLabel} from '@studio/core/frames';
 
@@ -87,6 +87,7 @@ export function GenerateRail() {
           <Button label="All" size="sm" variant="ghost" onClick={() => A.allInSet(true)} />
           <Button label="None" size="sm" variant="ghost" onClick={() => A.allInSet(false)} />
         </HStack>
+        {s.recipeSet ? <Text type="supporting">The ramp shows a recipe’s own glyphs. Change your set to use it again.</Text> : null}
         <Grid columns={{minWidth: 64}} gap={2}>
           {s.lib.shapes.map(g => (
             <SelectableCard key={g.id} label={g.name} padding={1} isSelected={!!g.inSet} onChange={v => A.setInSet(g.id, v)}>
@@ -507,6 +508,7 @@ export function GenerateInspector() {
           <Button label="Copy SVG" size="sm" icon={<Icon icon={ClipboardCopy} size={ICON} />} onClick={copySVG} />
         </HStack>
         <SendToRow make={pngBlob} isDisabled={m.exporting} onError={msg => toast(msg, 'error')} />
+        <SaveRecipeRow kind={m.kind === 'video' || m.kind === 'ribbons' ? 'video' : 'image'} onSaved={name => toast(`Saved the recipe "${name}"`)} />
         <Text type="supporting">The SVG keeps every mark as a vector copy of its glyph symbol.</Text>
       </InspectorSection>
     </>

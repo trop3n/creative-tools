@@ -7,4 +7,5 @@ export * from './handoff.js';
 export * from './suite.js';
 export * from './live.js';
 export * from './glyphs.js';
+export * from './recipes.js';
 export * from './dither/index.js';

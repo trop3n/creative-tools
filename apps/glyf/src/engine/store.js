@@ -3,7 +3,7 @@
 import {useSyncExternalStore} from 'react';
 import {readJSON, writeJSON, saveFile as coreSave, publishGlyphs} from '@studio/core';
 import {seedLib, tileShapes, TILE_NAMES, uid, clone, parseSVG, moveEl, xfEl, xfLocal, glyphSVG, shapeInner, slug, setMode, modeOf, rotateEl, scaleEl, fitBox} from './shapes.js';
-import {CUSTOM} from '@studio/core/frames';
+import {CUSTOM, cleanSide} from '@studio/core/frames';
 import {FAMILY, FAMILIES, buildFamily, defaults} from './families.js';
 
 /** Read (one argument) or write (two arguments) a JSON value in localStorage. */
@@ -44,6 +44,7 @@ export const S = {
   // The shape catalog: the chosen family, a tag filter, and each family's last settings.
   cat: Object.assign({family: FAMILIES[0].id, tag: '', params: {}}, store('glyf.cat.v1') || {}),
   gen: Object.assign({}, GEN_DEFAULT, store('glyf.gen.v1') || {}),
+  recipeSet: null,  // a recipe's own glyphs, used instead of the library's set until the library changes
   cov: {},          // glyph id -> ink coverage 0..1
   ramp: [],         // glyphs in the active ramp, light to dark
   stats: '',
@@ -87,14 +88,44 @@ const saveCat = () => store('glyf.cat.v1', S.cat);
 /** The catalog's current family and its settings (defaults filled in). */
 export const catFamily = () => FAMILY[S.cat.family] || FAMILIES[0];
 export const catParams = () => { const f = catFamily(); return {...defaults(f), ...(S.cat.params[f.id] || {})}; };
-export const byId = id => S.lib.shapes.find(s => s.id === id);
+export const byId = id => S.lib.shapes.find(s => s.id === id) || (S.recipeSet && S.recipeSet.find(s => s.id === id));
+/** The glyphs the generator uses: a recipe's own set while one is applied, else the library's set. */
+export const genSet = () => S.recipeSet || S.lib.shapes.filter(s => s.inSet);
+
+/* ---------- recipes ---------- */
+const isHex = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+/** Generator settings from a recipe: only known keys, each of its default's type (the sample may be null: a file was the source). */
+export function cleanGen(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, d] of Object.entries(GEN_DEFAULT)) {
+    const v = raw[k];
+    if (v === undefined) continue;
+    if (k === 'sample') { if (v === null || typeof v === 'string') out[k] = v; }
+    else if (Array.isArray(d)) { if (Array.isArray(v) && v.length && v.every(isHex)) out[k] = v.slice(0, MAX_PALETTE); }
+    else if (k === 'customW' || k === 'customH') out[k] = cleanSide(v, d);
+    else if (typeof v === typeof d && (typeof v !== 'number' || isFinite(v))) out[k] = v;
+  }
+  return out;
+}
+/**
+ * Use a recipe's glyphs ([{name, els}]) as the generator's set for now, without touching
+ * the library: the next change to the library brings its own set back. Glyphs the same
+ * as the library's set (same order) leave the library in charge.
+ */
+export function useRecipeSet(glyphs) {
+  const list = (Array.isArray(glyphs) ? glyphs : []).filter(g => g && Array.isArray(g.els));
+  const mine = S.lib.shapes.filter(s => s.inSet).map(s => ({name: s.name, els: s.els}));
+  const theirs = list.map(g => ({name: String(g.name || 'Glyph'), els: g.els}));
+  S.recipeSet = JSON.stringify(theirs) === JSON.stringify(mine) ? null : theirs.map((g, i) => ({id: 'recipe-' + i, ...g, inSet: true}));
+}
 export const cur = () => byId(S.ed.id);
 export const selEl = () => { const s = cur(); return s && s.els[S.ed.sel]; };
 
 let onLibChange = () => {};
 export const setLibListener = fn => { onLibChange = fn; };
 /** Call after any change to glyph content or the set. */
-export function changed() { saveLib(); onLibChange(); emit(); }
+export function changed() { S.recipeSet = null; saveLib(); onLibChange(); emit(); }
 
 export function pushHist() {
   const s = cur(); if (!s) return;

@@ -4,11 +4,13 @@
 import {
   loadImageFile, isImageFile, isVideoFile, slug, openVideoFile, openWebcam,
   cameraErrorMessage, renderVideoToMp4, encodeFramesToMp4, recordCanvas, makeCanvas, saveFile, takeHandoff, takeSent, TOOL_NAMES, openLiveSource,
+  noteIncoming, noteStart, registerRecipeTool,
 } from '@studio/core';
+import {CUSTOM, cleanSide} from '@studio/core/frames';
 import {S, emit, persist, toast} from './state.js';
-import {renderNow, idle, isBusy, stillOutput, currentStill, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating} from './render.js';
+import {renderNow, idle, isBusy, stillOutput, currentStill, scaledOutput, fixedOutput, fitScale, setMirror, fileBase, paletteColors, reapplyKeys, keysApplied, schedule, fixedFrame, paint, clockTime, isAnimating, setLook, stillBlob, glyphsReady} from './render.js';
 import {makeKey, putKey, STYLE_BY_ID, defaultParams} from '@studio/core/dither';
-import {isProjectFile, openProject, takePendingKeys} from './project.js';
+import {isProjectFile, openProject, takePendingKeys, recipeSettings, applyRecipeSettings} from './project.js';
 
 const M = () => S.media;
 /** Internal handles; S.media mirrors what the UI shows. */
@@ -90,6 +92,7 @@ export function loadSample(kind) {
   if (!SAMPLES[kind]) kind = 'spheres';
   S.look.sample = kind; persist();
   setStill(sampleCanvas(kind), 'sample', SAMPLES[kind] + ' (sample)');
+  noteStart();
 }
 
 export function initSource() {
@@ -110,7 +113,47 @@ export function initSource() {
       toast(`Opened ${file.name} from ${String(file.from || 'another tool').toUpperCase()}`);
     });
   }
+  registerRecipeTool(recipeHooks);
 }
+
+/* ---------- recipes ---------- */
+// A recipe step here: the project's settings (plus the sample, or a video's keyframes),
+// applied quietly, then the run's picture loaded and rendered (see @studio/core recipes.js).
+let recipeKeys = null; // a recipe's video keyframes, for the video the run loads
+const recipeHooks = {
+  toast,
+  getSettings: recipeSettings,
+  applySettings(s) {
+    if (s && SAMPLES[s.sample]) loadSample(s.sample);
+    recipeKeys = applyRecipeSettings(s);
+  },
+  setSize(w, h) {
+    setLook('customW', cleanSide(w, S.look.customW));
+    setLook('customH', cleanSide(h, S.look.customH));
+    setLook('frame', CUSTOM.id);
+  },
+  async load(file) {
+    if (!isImageFile(file) && !isVideoFile(file)) throw new Error(`${file.name} is not an image or a video`);
+    await loadFile(file);
+    if (M().label !== file.name) throw new Error(`could not open ${file.name}`);
+    if (M().kind === 'video' && recipeKeys) { Object.assign(M(), recipeKeys); reapplyKeys(); }
+  },
+  async ready() {
+    await glyphsReady().catch(() => {});
+    await idle();
+    // Dither the source once more with everything applied, and wait for it to be painted.
+    if (live.vid) await renderFrame(); else await renderNow();
+  },
+  renderStill: stillBlob,
+  async renderVideo() {
+    let out = null;
+    const take = name => res => { if (!res.cancelled) out = {blob: res.blob, name}; };
+    if (live.vid && M().kind === 'video') await videoMp4(take(fileBase() + '.mp4'));
+    else if (isAnimating()) await animationMp4(take(fileBase() + '-loop.mp4'));
+    else throw new Error('DURANDAL makes video from a video, or from a still with Animate on');
+    return out;
+  },
+};
 
 /** Open an image or a video file. */
 export async function loadFile(file) {
@@ -123,6 +166,7 @@ export async function loadFile(file) {
     const c = await loadImageFile(file, 2400);
     if (ticket !== loadSeq) return;
     setStill(c, 'image', file.name);
+    noteIncoming(file);
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -165,6 +209,7 @@ async function loadVideo(file) {
   catch (e) { return toast(e.message, 'error'); }
   if (ticket !== loadSeq) { src.dispose(); return; }
   stopLive();
+  noteIncoming(file);
   const v = src.video;
   Object.assign(live, {vid: v, file, dispose: src.dispose});
   // Keyframes from an opened project that named this video come along.
@@ -284,6 +329,7 @@ async function startCamera(open, message, isLive = false) {
   catch (e) { return toast(message(e), 'error'); }
   if (ticket !== loadSeq) { cam.dispose(); return; }
   stopLive();
+  noteIncoming({name: 'camera'});
   Object.assign(live, {vid: cam.video, dispose: cam.dispose});
   Object.assign(M(), {kind: 'camera', live: isLive, label: cam.label || 'Webcam', w: cam.video.videoWidth, h: cam.video.videoHeight, cams: cam.cameras, camId: cam.deviceId});
   startLoop(cam.video);
@@ -305,10 +351,26 @@ function restoreState(snap) {
   emit();
 }
 
+/** Render the loaded video to MP4 and save it (pressed again: cancel). */
 export async function renderVideo() {
-  const v = live.vid;
-  if (!v || M().kind !== 'video') return;
+  if (!live.vid || M().kind !== 'video') return;
   if (M().exporting) { cancelExport = true; return; }
+  try {
+    await videoMp4(async res => {
+      if (res.cancelled) toast('Render canceled');
+      else {
+        const saved = await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
+        toast(saved.message + (res.audioNote || '') + (saved.status === 'error' ? '' : res.codecNote), saved.status === 'error' ? 'error' : 'info');
+      }
+    });
+  } catch (e) {
+    toast('Video render failed: ' + (e.message || e), 'error');
+  }
+}
+
+/** Render the loaded video to MP4 and hand the result ({blob} or {cancelled}) to `take` while the render state still holds; throws if it fails. */
+async function videoMp4(take) {
+  const v = live.vid;
   cancelExport = false;
   v.pause();
   Object.assign(M(), {exporting: true, progress: 'Starting…'});
@@ -319,6 +381,7 @@ export async function renderVideo() {
   // the file. Keyframes still change settings frame by frame, so compare against the state
   // the previous frame left, and if anything else moved it, put the snapshot back.
   const snap = lockedState(), pinned = {last: JSON.stringify(lockedState()), warned: false};
+  let failed = null;
   try {
     await idle();
     const res = await renderVideoToMp4({
@@ -350,13 +413,9 @@ export async function renderVideo() {
       },
       isCancelled: () => cancelExport,
     });
-    if (res.cancelled) toast('Render canceled');
-    else {
-      const saved = await saveFile(fileBase() + '.mp4', res.blob, 'video/mp4');
-      toast(saved.message + (res.audioNote || '') + (saved.status === 'error' ? '' : res.codecNote), saved.status === 'error' ? 'error' : 'info');
-    }
+    await take(res);
   } catch (e) {
-    toast('Video render failed: ' + (e.message || e), 'error');
+    failed = e;
   }
   // An edit during the last frame, or any edit at all, shouldn't outlive the lock (or its save).
   if (JSON.stringify(lockedState()) !== pinned.last) { restoreState(snap); reapplyKeys(); pinned.warned = true; }
@@ -365,6 +424,7 @@ export async function renderVideo() {
   lastVT = -1;
   syncVideoUI(true);
   emit();
+  if (failed) throw failed;
 }
 
 /* ---------- animated stills ---------- */
@@ -415,6 +475,21 @@ export function setAnimSeconds(s) {
 export async function renderAnimation() {
   if (!isAnimating()) return;
   if (M().exporting) { cancelExport = true; return; }
+  try {
+    await animationMp4(async res => {
+      if (res.cancelled) toast('Render canceled');
+      else {
+        const saved = await saveFile(fileBase() + '-loop.mp4', res.blob, 'video/mp4');
+        toast(saved.message + (saved.status === 'error' ? '' : res.codecNote), saved.status === 'error' ? 'error' : 'info');
+      }
+    });
+  } catch (e) {
+    toast('Animation render failed: ' + (e.message || e), 'error');
+  }
+}
+
+/** Render one loop of the animated still and hand the result to `take`, as videoMp4 does. */
+async function animationMp4(take) {
   cancelExport = false;
   animPlay(false);
   const fps = +S.look.fps || 30, total = Math.max(1, Math.round(M().duration * fps)), back = M().time;
@@ -441,6 +516,7 @@ export async function renderAnimation() {
     x.drawImage(cells, 0, 0, out.width, out.height);
     return out;
   };
+  let failed = null;
   try {
     await idle();
     await frameAt(0); // sets the size
@@ -450,18 +526,15 @@ export async function renderAnimation() {
       onProgress: p => { M().progress = p.phase; M().time = (p.frame / p.total) * M().duration; if (n++ % 3 === 0) emit(); },
       isCancelled: () => cancelExport,
     });
-    if (res.cancelled) toast('Render canceled');
-    else {
-      const saved = await saveFile(fileBase() + '-loop.mp4', res.blob, 'video/mp4');
-      toast(saved.message + (saved.status === 'error' ? '' : res.codecNote), saved.status === 'error' ? 'error' : 'info');
-    }
+    await take(res);
   } catch (e) {
-    toast('Animation render failed: ' + (e.message || e), 'error');
+    failed = e;
   }
   restoreState(snap);
   if (pinned.warned) persist();
   Object.assign(M(), {exporting: false, progress: '', time: back});
   reapplyKeys(); schedule(); emit();
+  if (failed) throw failed;
 }
 
 /* ---------- batch ---------- */

@@ -3,6 +3,7 @@
 import {useSyncExternalStore} from 'react';
 import {
   toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender, suiteGlyphs, watchGlyphs, rasterGlyphs, tintGlyph, glyphSymbol,
+  registerRecipeTool, noteStart,
 } from '@studio/core';
 import {buildScene, drawScene, timing, roundAt} from './modules.js';
 import {CanvasPainter, SvgPainter, setGlyphs} from './paint.js';
@@ -129,10 +130,10 @@ export function attachCanvas(c) {
 
 /* ---------- GLYF's glyphs ---------- */
 // Rasterized once per set change; the painters tint and place them.
-let glyphLoad = 0;
+let glyphLoad = 0, glyphsLoaded = Promise.resolve(); // the latest rasterizing, for recipe runs
 function loadGlyphs() {
   const n = ++glyphLoad;
-  rasterGlyphs(suiteGlyphs(), 256).then(list => {
+  glyphsLoaded = rasterGlyphs(suiteGlyphs(), 256).then(list => {
     if (n !== glyphLoad) return; // a newer set is on its way
     const ok = list.filter(g => g.mask);
     setGlyphs(ok.map(g => ({tint: color => tintGlyph(g.mask, color), symbol: id => glyphSymbol(g, id)})));
@@ -266,8 +267,9 @@ export async function exportSVG() {
 export const videoSupported = canEncodeVideo;
 export const videoSeconds = () => loopSeconds() * S.exportLoops;
 
-export async function exportMP4() {
-  if (S.exporting) return;
+/** The loop as the MP4 export makes it: {blob, name, codecNote}, or null if canceled. */
+export async function renderMP4() {
+  if (S.exporting) return null;
   const cfg = S.config; // edits during the render don't leak in
   const fps = 30, frames = Math.round(videoSeconds() * fps);
   const [w, h] = exportDims();
@@ -283,16 +285,24 @@ export async function exportMP4() {
       onProgress: ({frame, total}) => { if (frame % 4 === 0 || frame === total) { S.exporting = {done: frame, total}; emit(); } },
       isCancelled: () => cancelExport,
     });
-    if (blob) { const r = await saveFile(name + '.mp4', blob, 'video/mp4'); report(r.status === 'error' ? r : {...r, message: r.message + codecNote}); }
-    else toast('Export cancelled');
-  } catch (e) {
-    console.error(e);
-    toast(e.message || 'Could not make the video', 'error');
+    return blob ? {blob, name: name + '.mp4', codecNote} : null;
   } finally {
     S.exporting = null;
     last = 0;
     draw();
     emit();
+  }
+}
+
+export async function exportMP4() {
+  if (S.exporting) return;
+  try {
+    const out = await renderMP4();
+    if (out) { const r = await saveFile(out.name, out.blob, 'video/mp4'); report(r.status === 'error' ? r : {...r, message: r.message + out.codecNote}); }
+    else toast('Export cancelled');
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'Could not make the video', 'error');
   }
 }
 export function cancelMP4() { cancelExport = true; }
@@ -348,3 +358,31 @@ if (typeof window !== 'undefined') {
     toast('Opened the linked look');
   });
 }
+
+/* ---------- recipes ---------- */
+// TYCHO starts a chain. A step keeps the grid (its frame and Custom size are in the
+// config), the moment shown (for a still), the export long side and the video's loops.
+noteStart();
+registerRecipeTool({
+  // A run starts before the app mounts its toaster: wait a moment for it.
+  toast: (msg, kind) => (S.toast ? S.toast(msg, kind) : setTimeout(() => toast(msg, kind), 500)),
+  getSettings: () => ({config: S.config, time: S.time, exportSize: S.exportSize, exportLoops: S.exportLoops}),
+  applySettings(s) {
+    // Pause on the step's moment, so the still is the frame that was saved (setConfig wraps it into the loop).
+    S.playing = false; S.time = Math.max(0, Number(s.time) || 0);
+    if ([1080, 1920, 2560, 3840].includes(s.exportSize)) setExportSize(s.exportSize);
+    if (s.exportLoops >= 1 && s.exportLoops <= 8) setExportLoops(Math.round(s.exportLoops));
+    setConfig(s.config || S.config);
+  },
+  setSize: (w, h) => setConfig({...S.config, aspect: 'custom', customW: w, customH: h}),
+  // GLYF's glyphs rasterize in the background; a glyph layer needs them before it draws.
+  async ready() {
+    await glyphsLoaded.catch(() => {});
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  },
+  renderStill: stillBlob,
+  renderVideo() {
+    if (!canEncodeVideo()) throw new Error('This browser cannot encode video. Use Chrome or Edge.');
+    return renderMP4();
+  },
+});

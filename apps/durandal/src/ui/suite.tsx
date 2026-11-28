@@ -1,6 +1,6 @@
 // Suite connections in the inspector: open what other tools saved or sent, send the
-// current picture to another tool, watch another window live, and use or save
-// suite-wide palettes. The engine
+// current picture to another tool, watch another window live, save the chain of
+// tools behind a picture as a recipe, and use or save suite-wide palettes. The engine
 // side lives in @studio/core (suite.js). The same file sits in each tool's ui/ folder.
 import {useEffect, useState} from 'react';
 import {Button} from '@astryxdesign/core/Button';
@@ -8,9 +8,10 @@ import {Icon} from '@astryxdesign/core/Icon';
 import {IconButton} from '@astryxdesign/core/IconButton';
 import {HStack, StackItem} from '@astryxdesign/core/Layout';
 import {Selector} from '@astryxdesign/core/Selector';
+import {Text} from '@astryxdesign/core/Text';
 import {TextInput} from '@astryxdesign/core/TextInput';
-import {BookmarkPlus, Send} from 'lucide-react';
-import {currentTool, watchShelf, shelfFile, shelfLabel, sendTargets, sendTo, suitePalettes, savePalette, watchPalettes, watchLiveSources} from '@studio/core';
+import {BookmarkPlus, ListOrdered, Send} from 'lucide-react';
+import {currentTool, watchShelf, shelfFile, shelfLabel, sendTargets, sendTo, suitePalettes, savePalette, watchPalettes, watchLiveSources, currentRecipe, describeRecipe, saveRecipe} from '@studio/core';
 import {ICON, InspectorRow} from './parts';
 
 type ShelfItem = {id: string; name: string; type: string; from: string; at: number; size: number};
@@ -160,6 +161,56 @@ export function SuitePaletteRow({colors, onUse, onSaved}: {colors: string[]; onU
           </StackItem>
           <Button label="Save" size="sm" variant="secondary" isDisabled={!naming.trim()} onClick={save} />
         </HStack>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * "Save recipe": name the chain of tools and settings behind what this tool shows, so
+ * the home page can make it again (at another size, or on a new picture). Hidden
+ * outside the suite or before the tool has registered its recipe hooks.
+ */
+export function SaveRecipeRow({kind = 'image', onSaved}: {kind?: 'image' | 'video'; onSaved?: (name: string) => void}) {
+  const [naming, setNaming] = useState<string | null>(null);
+  if (!currentTool()) return null;
+  const steps = naming !== null ? currentRecipe(kind) : null;
+  const save = () => {
+    const name = (naming || '').trim();
+    const r = name ? saveRecipe(name, currentRecipe(kind)) : null;
+    if (r) { setNaming(null); onSaved?.(name); }
+  };
+  return (
+    <>
+      <InspectorRow label="Recipe">
+        <Button
+          label={naming === null ? 'Save recipe…' : 'Cancel'}
+          size="sm"
+          variant="ghost"
+          icon={<Icon icon={ListOrdered} size={ICON} />}
+          onClick={() => setNaming(naming === null ? '' : null)}
+        />
+      </InspectorRow>
+      {naming !== null ? (
+        <>
+          <Text type="supporting">{steps ? describeRecipe(steps) : 'Nothing to save yet.'} Run it again from the home page, at another size or on a new picture.</Text>
+          <HStack gap={1}>
+            <StackItem size="fill">
+              <TextInput
+                label="Name for the recipe"
+                isLabelHidden
+                size="sm"
+                width="100%"
+                placeholder="Name this recipe"
+                value={naming}
+                hasAutoFocus
+                onChange={v => setNaming(v)}
+                onKeyDown={e => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setNaming(null); }}
+              />
+            </StackItem>
+            <Button label="Save" size="sm" variant="secondary" isDisabled={!naming.trim() || !steps} onClick={save} />
+          </HStack>
+        </>
       ) : null}
     </>
   );

@@ -4,7 +4,9 @@
 //   - the shelf: the last few images and videos any tool saved or sent (IndexedDB),
 //     which transformers offer under "Recent from the suite";
 //   - sendTo(): put the current picture on the shelf and open another tool with it;
-//   - suite palettes: color sets any tool can save and any tool can use (localStorage).
+//   - suite palettes: color sets any tool can save and any tool can use (localStorage);
+//   - recipes (recipes.js): each shelf item keeps the steps that made it, and recipe
+//     runs wait in a second store of the same database.
 //
 // Outside the built suite (a dev server, the single-file build) there are no
 // neighbors to send to: currentTool() is null and the UI hides these parts.
@@ -35,24 +37,28 @@ export function sendTargets(kind = 'image') {
 }
 
 /* ---------- the shelf ---------- */
-const DB = 'studio.shelf', STORE = 'items', KEEP = 12, MAX_BYTES = 300 * 1024 * 1024;
+const DB = 'studio.shelf', STORE = 'items', RUNS = 'runs', KEEP = 12, MAX_BYTES = 300 * 1024 * 1024;
 const SHELF_TYPES = /^(image\/(png|jpeg|webp|gif)|video\/(mp4|webm))$/;
 /** Files the shelf keeps: pictures and videos (not SVG or project files). */
 export const isShelfType = type => SHELF_TYPES.test(type || '');
 
 function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, {keyPath: 'id'});
+    const req = indexedDB.open(DB, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, {keyPath: 'id'});
+      if (!db.objectStoreNames.contains(RUNS)) db.createObjectStore(RUNS, {keyPath: 'id'});
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-async function tx(mode, fn) {
+async function tx(mode, fn, store = STORE) {
   const db = await openDb();
   try {
     return await new Promise((resolve, reject) => {
-      const t = db.transaction(STORE, mode), req = fn(t.objectStore(STORE));
+      const t = db.transaction(store, mode), req = fn(t.objectStore(store));
       t.oncomplete = () => resolve(req && 'result' in req ? req.result : undefined);
       t.onerror = () => reject(t.error);
       t.onabort = () => reject(t.error || new Error('The browser would not store the file'));
@@ -67,11 +73,17 @@ channel?.unref?.(); // Node (tests) would otherwise stay running for it
 const local = new Set();
 const changed = () => { channel?.postMessage('changed'); local.forEach(f => f()); };
 
-/** Put a file on the shelf, newest first, keeping the last 12. Returns its id. */
-export async function shelfPut(blob, name, from = currentTool()) {
+// recipes.js registers how to describe this tool's current output as recipe steps.
+let recipeHook = null;
+export const setRecipeHook = fn => { recipeHook = fn; };
+const recipeOf = type => { try { return recipeHook ? recipeHook(/^video\//.test(type || '') ? 'video' : 'image') : null; } catch (e) { return null; } };
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+/** Put a file on the shelf, newest first, keeping the last 12, with the recipe that made it. Returns its id. */
+export async function shelfPut(blob, name, from = currentTool(), recipe = recipeOf(blob && blob.type)) {
   if (!blob || blob.size > MAX_BYTES) throw new Error('That file is too big to pass between tools');
-  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  await tx('readwrite', s => s.put({id, blob, name: String(name || 'file'), type: blob.type, from: from || '', at: Date.now(), size: blob.size}));
+  const id = newId();
+  await tx('readwrite', s => s.put({id, blob, name: String(name || 'file'), type: blob.type, from: from || '', at: Date.now(), size: blob.size, recipe: recipe || null}));
   const all = await tx('readonly', s => s.getAll());
   const old = all.sort((a, b) => b.at - a.at).slice(KEEP);
   if (old.length) await tx('readwrite', s => { old.forEach(o => s.delete(o.id)); return null; });
@@ -79,7 +91,7 @@ export async function shelfPut(blob, name, from = currentTool()) {
   return id;
 }
 
-/** What's on the shelf, newest first: [{id, name, type, from, at, size}]. */
+/** What's on the shelf, newest first: [{id, name, type, from, at, size, recipe}]. */
 export async function shelfList() {
   try {
     const all = await tx('readonly', s => s.getAll());
@@ -89,15 +101,22 @@ export async function shelfList() {
   }
 }
 
-/** A shelf item as a File (with .from), or null if it's gone. */
+/** A shelf item as a File (with .from and .recipe), or null if it's gone. */
 export async function shelfFile(id) {
   try {
     const item = await tx('readonly', s => s.get(String(id)));
-    return item ? Object.assign(new File([item.blob], item.name, {type: item.type}), {from: item.from}) : null;
+    return item ? Object.assign(new File([item.blob], item.name, {type: item.type}), {from: item.from, recipe: item.recipe || null}) : null;
   } catch (e) {
     return null;
   }
 }
+
+/** Recipe runs in progress: put (returns the id), get, remove. */
+export const runStore = {
+  async put(run) { const id = run.id || newId(); await tx('readwrite', s => s.put({...run, id}), RUNS); return id; },
+  async get(id) { try { return (await tx('readonly', s => s.get(String(id)), RUNS)) || null; } catch (e) { return null; } },
+  async remove(id) { try { await tx('readwrite', s => s.delete(String(id)), RUNS); } catch (e) { /* already gone */ } },
+};
 
 export async function shelfRemove(id) { await tx('readwrite', s => s.delete(String(id))); changed(); }
 

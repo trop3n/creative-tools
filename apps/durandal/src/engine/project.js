@@ -159,7 +159,29 @@ function applyProject(p, label) {
     note += ` This video's ${S.media.keys.length} keyframes take over again when it plays or you scrub.`;
   } else reapplyKeys();
   persist(); reframe(); emit(); // reframe: the project may bring a different Frame; it re-dithers either way
-  toast('Opened ' + label + '.' + note);
+  if (label) toast('Opened ' + label + '.' + note);
+}
+
+/* ---------- recipes ---------- */
+/**
+ * This tool's step in a recipe: the project, with a video's keyframes kept for whatever
+ * video the recipe runs on (not tied to a file name), and the sample when that's the source.
+ */
+export function recipeSettings() {
+  const p = projectData();
+  p.video = S.media.kind === 'video' && S.media.keys.length ? {keys: S.media.keys, ease: S.media.ease !== false} : null;
+  p.sample = S.media.kind === 'sample' ? S.look.sample : null;
+  return p;
+}
+/**
+ * Apply a recipe step's settings as a project opens, without the toast. Returns its
+ * video keyframes ({keys, ease}, cleaned) for the video the run loads, or null.
+ */
+export function applyRecipeSettings(p) {
+  if (!isObj(p)) return null;
+  const {video, ...rest} = p;
+  applyProject(rest, '');
+  return isObj(video) && Array.isArray(video.keys) && video.keys.length ? {keys: cleanKeys(video.keys), ease: video.ease !== false} : null;
 }
 
 /* ---------- recent projects ---------- */

@@ -1,7 +1,7 @@
 // LEELA's app state, the animation loop and every action the UI takes. Engine code
 // mutates S and calls emit(); React reads it through useStore().
 import {useSyncExternalStore} from 'react';
-import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender} from '@studio/core';
+import {toolStore, saveFile, copyText, encodeFramesToMp4, canEncodeVideo, createLiveSender, registerRecipeTool, noteStart} from '@studio/core';
 import {
   createGradientRenderer, cleanConfig, presetConfig, randomConfig, spreadPoints, parseColor, oklabToHex,
   PRESETS, MAX_STOPS, MAX_POINTS, effectCell,
@@ -520,3 +520,30 @@ if (typeof window !== 'undefined') {
     toast('Opened the linked look');
   });
 }
+
+/* ---------- recipes ---------- */
+// LEELA starts a chain. A step keeps the gradient, the moment shown (for a still), the
+// export size and the video's frame rate and length.
+noteStart();
+registerRecipeTool({
+  // A run starts before the app mounts its toaster: wait a moment for it.
+  toast: (msg, kind) => (S.toast ? S.toast(msg, kind) : setTimeout(() => toast(msg, kind), 500)),
+  getSettings() {
+    const {w, h} = outSize(), o = S.out;
+    const out = o.size === 'stage' ? {size: 'custom', w, h} : {size: o.size, w: o.w, h: o.h};
+    return {config: S.config, time: S.time, out: {...out, fps: o.fps, seconds: o.seconds, loops: o.loops}};
+  },
+  applySettings(s) {
+    // Pause on the step's moment, so the still is the frame that was saved.
+    S.playing = false; S.time = Number(s.time) || 0;
+    setConfig(s.config || S.config);
+    if (s.out) setOut({...s.out, size: SIZES.some(z => z.id === s.out.size) ? s.out.size : 'custom', w: cleanSide(s.out.w, 1920), h: cleanSide(s.out.h, 1080)});
+  },
+  setSize: (w, h) => setOut({size: 'custom', w: cleanSide(w, 1920), h: cleanSide(h, 1080)}),
+  ready: () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))),
+  renderStill: renderPNG,
+  renderVideo() {
+    if (!canEncodeVideo()) throw new Error('This browser cannot encode video. Use Chrome or Edge.');
+    return renderMP4();
+  },
+});

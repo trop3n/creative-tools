@@ -301,9 +301,10 @@ const glyphCells = () => cellShape() === 'glyphs';
 const GLYPH_SIZE = 128; // raster size: crisp up to 128 pixels per cell
 let glyphSet = []; // GLYF's glyphs as masks, least ink first
 let glyphLoad = 0;
+let glyphsLoaded = Promise.resolve();
 function loadGlyphs() {
   const seq = ++glyphLoad;
-  rasterGlyphs(suiteGlyphs(), GLYPH_SIZE).then(list => {
+  glyphsLoaded = rasterGlyphs(suiteGlyphs(), GLYPH_SIZE).then(list => {
     if (seq !== glyphLoad) return;
     glyphSet = byInk(list);
     stamps.clear();
@@ -312,6 +313,8 @@ function loadGlyphs() {
 }
 /** True once GLYF's set is here to draw cells with. */
 export const hasGlyphs = () => glyphSet.length > 0;
+/** Resolves once GLYF's set has been drawn for glyph cells (a recipe run waits for it). */
+export const glyphsReady = () => glyphsLoaded;
 
 const luma = c => { const [r, g, b] = hexToRGB(c); return r * 299 + g * 587 + b * 114; };
 /** A stable hash of a cell's position, so a two-tone picture doesn't repeat one stamp. */
